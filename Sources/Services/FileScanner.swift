@@ -1,10 +1,16 @@
 import Foundation
+import AppKit
+
+/// Supported image file extensions (covers all formats handled by ImageLoaderRegistry).
+private let supportedExtensions = [
+    "png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif",
+    "svg", "pdf", "webp"
+]
 
 /// Scans files and directories to find supported image files.
 class FileScanner {
     /// Scan a list of URLs (files or directories), return only supported image files.
     static func scan(urls: [URL]) -> [URL] {
-        let supportedExtensions = ImageDecoderManager.shared.supportedExtensions()
         var results: [URL] = []
 
         for url in urls {
@@ -19,9 +25,7 @@ class FileScanner {
                     )
 
                     for item in directoryContents {
-                        let itemResourceValues = try? item.resourceValues(
-                            forKeys: [.isDirectoryKey]
-                        )
+                        let itemResourceValues = try? item.resourceValues(forKeys: [.isDirectoryKey])
                         if itemResourceValues?.isDirectory == true {
                             // Recursively scan subdirectories
                             let nested = scan(urls: [item])
@@ -32,9 +36,8 @@ class FileScanner {
                             if !ext.isEmpty && supportedExtensions.contains(ext) {
                                 results.append(item)
                             } else if ext.isEmpty {
-                                // No extension - try to detect if it's an image
-                                if let data = try? Data(contentsOf: item),
-                                   ImageIODecoder.canDecode(data) {
+                                // No extension - try to detect if it's an image using ImageLoaderRegistry
+                                if let _ = ImageLoaderRegistry.shared.loadImage(from: item) {
                                     results.append(item)
                                 }
                             }
@@ -44,10 +47,9 @@ class FileScanner {
                     // File: check extension
                     let ext = url.pathExtension.lowercased()
                     if supportedExtensions.contains(ext) || ext.isEmpty {
-                        // If no extension, try to detect
+                        // If no extension, try to detect using ImageLoaderRegistry
                         if ext.isEmpty {
-                            if let data = try? Data(contentsOf: url),
-                               ImageIODecoder.canDecode(data) {
+                            if let _ = ImageLoaderRegistry.shared.loadImage(from: url) {
                                 results.append(url)
                             }
                         } else {
