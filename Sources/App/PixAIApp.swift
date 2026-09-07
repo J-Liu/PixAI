@@ -83,15 +83,100 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     
     /// Load images from URLs (files and/or directories).
     private func loadImages(from urls: [URL]) {
-        let scanned = FileScanner.scan(urls: urls)
-        Logger.shared.log("loadImages: scanned \(scanned.count) files")
+        var imageUrls: [URL] = []
         
-        imageURLs = scanned
+        // Separate files and directories from the input
+        var files: [URL] = []
+        var directories: [URL] = []
+        
+        for url in urls {
+            do {
+                let isDir = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory
+                if isDir == true {
+                    directories.append(url)
+                } else {
+                    files.append(url)
+                }
+            } catch {
+                // Treat as file if we can't determine
+                files.append(url)
+            }
+        }
+        
+        // Case 1: Single file → find all images in the same directory (non-recursive)
+        if files.count == 1, directories.isEmpty {
+            let file = files[0]
+            let parentDir = file.deletingLastPathComponent()
+            if FileManager.default.fileExists(atPath: parentDir.path) {
+                imageUrls = scanDirectoryOnly(parentDir)
+                Logger.shared.log("Single file opened: found \(imageUrls.count) images in parent directory")
+            } else {
+                // Parent doesn't exist, use the single file
+                imageUrls = FileScanner.scan(urls: [file])
+            }
+        }
+        // Case 2: Multiple files (no directories) → use exactly those files
+        else if files.count > 1, directories.isEmpty {
+            imageUrls = FileScanner.scan(urls: files)
+            Logger.shared.log("Multiple files opened: using exactly these \(files.count) files")
+        }
+        // Case 3: Directories (single or multiple) → scan recursively
+        else if !directories.isEmpty {
+            let scanned = FileScanner.scan(urls: directories)
+            imageUrls = scanned
+            Logger.shared.log("Directory/ies opened: scanned \(scanned.count) files from \(directories.count) directory(ies)")
+        }
+        
+        // Edge case: mix of files and directories (shouldn't happen in normal usage)
+        if !files.isEmpty, !directories.isEmpty {
+            let dirScans = FileScanner.scan(urls: directories)
+            imageUrls = dirScans + FileScanner.scan(urls: files)
+        }
+        
+        Logger.shared.log("loadImages: total \(imageUrls.count) files in array")
+        
+        imageURLs = imageUrls
         currentIndex = 0
         
         if !imageURLs.isEmpty {
             loadImage(at: 0)
         }
+    }
+    
+    /// Scan only the immediate directory contents (no recursion).
+    private func scanDirectoryOnly(_ directory: URL) -> [URL] {
+        var results: [URL] = []
+        do {
+            let items = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            )
+            for item in items {
+                let isDir = try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory
+                if isDir == true {
+                    // Skip subdirectories (no recursion)
+                    continue
+                }
+                let ext = item.pathExtension.lowercased()
+                if !ext.isEmpty && supportedExtensions.contains(ext) {
+                    results.append(item)
+                } else if ext.isEmpty {
+                    // No extension - try to detect
+                    do {
+                        _ = try Data(contentsOf: item)
+                        if ImageLoaderRegistry.shared.loadImage(from: item) != nil {
+                            results.append(item)
+                        }
+                    } catch {
+                        // Not an image, skip
+                    }
+                }
+            }
+        } catch {
+            Logger.shared.log("Failed to scan directory \(directory): \(error)")
+        }
+        return results.sorted { $0.absoluteString < $1.absoluteString }
     }
     
     /// Load and display the image at the given index.

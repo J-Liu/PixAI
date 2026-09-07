@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// Supported image file extensions (covers all formats handled by ImageLoaderRegistry).
-private let supportedExtensions = [
+let supportedExtensions = [
     "png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif",
     "svg", "pdf", "webp"
 ]
