@@ -158,6 +158,9 @@ class ZoomableImageView: NSView {
 
         zoomScale = clamped
         isFitMode = false
+        // Any manual zoom leaves the toggle alternation back at "fit": the next
+        // double-click / toolbar click will fit to window.
+        nextToggleIsFit = true
         imageOrigin = NSPoint(x: cursor.x - qx * zoomScale, y: cursor.y - qy * zoomScale)
         clampOrigin()
         needsDisplay = true
@@ -177,6 +180,24 @@ class ZoomableImageView: NSView {
     /// Switch to exactly 100% (1:1 pixels), keeping the view center fixed.
     func zoomTo100Percent() {
         setZoom(to: 1.0, centeredOn: NSPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    /// Toggle between "fit to window" and 100% (double-click or toolbar button).
+    /// The action ALTERNATES regardless of the current mode: the first use fits,
+    /// the next switches to 100%, the next fits again, and so on. Any manual
+    /// zoom resets the alternation back to "fit".
+    func toggleFitOr100Percent() {
+        guard image != nil else { return }
+        let willFit = nextToggleIsFit
+        nextToggleIsFit = !willFit
+        if willFit {
+            resetToFit()
+        } else {
+            zoomTo100Percent()
+        }
+        // zoomTo100Percent is a no-op when already at exactly 100% (no callback),
+        // so report the state change explicitly to keep the toolbar icon in sync.
+        onZoomChange?()
     }
 
     private func centerImage() {
@@ -222,7 +243,17 @@ class ZoomableImageView: NSView {
         onZoomChange?()
     }
 
-    // MARK: - Mouse / wheel events
+    // MARK: - Mouse / wheel / pinch events
+
+    /// Trackpad pinch: zoom centered on the pinch location. Per Apple's docs,
+    /// `event.magnification` is the fractional delta since the previous event,
+    /// so `1 + magnification` is the multiplicative factor for this event.
+    override func magnify(with event: NSEvent) {
+        guard image != nil else { return }
+        let factor = 1.0 + event.magnification
+        let cursor = convert(event.locationInWindow, from: nil)
+        zoom(by: factor, centeredOn: cursor)
+    }
 
     override func scrollWheel(with event: NSEvent) {
         guard image != nil else { return }
@@ -248,9 +279,10 @@ class ZoomableImageView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard image != nil else { return }
 
-        // Double-click: reset to "fit to window" mode.
+        // Double-click: toggle between "fit to window" and 100% (first use fits,
+        // next switches to 100%, alternating).
         if event.clickCount == 2 {
-            resetToFit()
+            toggleFitOr100Percent()
             updateCursor()
             return
         }
