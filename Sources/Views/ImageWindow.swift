@@ -30,6 +30,11 @@ class ImageWindow {
     /// is saved; discarded entirely when the window closes.
     private var rotationSteps: Int = 0
     
+    /// Drives slideshow playback (P / Space keys, toolbar play-pause button).
+    /// The slide interval defaults to 3 s and will later be configurable via
+    /// a config file / settings UI.
+    private let slideshow = SlideshowController()
+
     private var closeObserver: NSObjectProtocol?
     
     init() {
@@ -112,6 +117,10 @@ class ImageWindow {
                 // and onZoomChange syncs the toolbar icon afterwards.
                 self?.container?.imageView?.toggleFitOr100Percent()
             },
+            onPlayPauseTap: { [weak self] in
+                Logger.shared.log("Toolbar play/pause button tapped")
+                self?.togglePlayPause()
+            },
             onRotateClockwiseTap: { [weak self] in
                 Logger.shared.log("Toolbar rotate-clockwise button tapped")
                 self?.rotateClockwise()
@@ -172,11 +181,27 @@ class ImageWindow {
             onExitFullscreen: { [weak self] in
                 Logger.shared.log("Keyboard handler: exit full screen (Esc/Enter)")
                 self?.exitFullScreen()
+            },
+            onPlayPause: { [weak self] in
+                Logger.shared.log("Keyboard handler: play/pause (Space)")
+                self?.togglePlayPause()
+            },
+            onStartOrStopSlideshow: { [weak self] in
+                Logger.shared.log("Keyboard handler: start/stop slideshow (P)")
+                self?.startOrStopSlideshow()
+            },
+            isSlideshowActive: { [weak self] in
+                self?.slideshow.isActive ?? false
             }
         )
         container.keyboardHandler = keyboardHandler
         container.addSubview(keyboardHandler)
-        
+
+        // Slideshow controller: owns the countdown; this window reacts to ticks.
+        slideshow.onTick = { [weak self] in
+            self?.slideshowTick()
+        }
+
         // Set the container as content view (same size, so nothing jumps),
         // then lay out all children explicitly.
         window.contentView = container
@@ -190,6 +215,8 @@ class ImageWindow {
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
+            // Never leave a running slideshow timer behind.
+            self.slideshow.stop()
             if let token = self.closeObserver {
                 NotificationCenter.default.removeObserver(token)
                 self.closeObserver = nil
@@ -237,8 +264,14 @@ class ImageWindow {
     
     /// Load images from URLs (files and/or directories).
     func loadImages(from urls: [URL]) {
+        // A new image set invalidates any running slideshow.
+        if slideshow.isActive {
+            Logger.shared.log("Slideshow stopped (new images loaded)")
+            endSlideshow(finished: false)
+        }
+
         var imageUrls: [URL] = []
-        
+
         // Separate files and directories from the input
         var files: [URL] = []
         var directories: [URL] = []
@@ -570,33 +603,137 @@ class ImageWindow {
         guard window.styleMask.contains(.fullScreen) else { return }
         window.toggleFullScreen(nil)
     }
-    
+
+    // MARK: - Slideshow
+
+    /// Start the slideshow: auto full screen, then advance every `interval` seconds.
+    private func startSlideshow() {
+        guard !imageURLs.isEmpty else { return }
+        Logger.shared.log("Slideshow started: \(imageURLs.count) images, \(slideshow.interval)s each")
+        slideshow.start()
+        updatePlayPauseIcon()
+        window.toggleFullScreen(nil)   // auto full screen on start
+    }
+
+    /// Pause the running slideshow (Space key / toolbar button).
+    private func pauseSlideshow() {
+        guard slideshow.isPlaying else { return }
+        Logger.shared.log("Slideshow paused at index \(currentIndex)")
+        slideshow.pause()
+        updatePlayPauseIcon()
+    }
+
+    /// Resume a paused slideshow (Space key / toolbar button).
+    private func resumeSlideshow() {
+        guard slideshow.state == .paused else { return }
+        Logger.shared.log("Slideshow resumed at index \(currentIndex)")
+        slideshow.resume()
+        updatePlayPauseIcon()
+    }
+
+    /// Stop the slideshow and return to window mode (P / Enter / Esc keys).
+    private func stopSlideshow() {
+        guard slideshow.isActive else { return }
+        Logger.shared.log("Slideshow stopped")
+        endSlideshow(finished: false)
+    }
+
+    /// Toggle play/pause (Space key, toolbar play-pause button).
+    /// Starts the slideshow when it is not running yet.
+    func togglePlayPause() {
+        guard !imageURLs.isEmpty else { return }
+        switch slideshow.state {
+        case .stopped: startSlideshow()
+        case .playing: pauseSlideshow()
+        case .paused: resumeSlideshow()
+        }
+    }
+
+    /// P key: start the slideshow when stopped, exit it (back to window mode) otherwise.
+    func startOrStopSlideshow() {
+        if slideshow.isActive {
+            stopSlideshow()
+        } else {
+            startSlideshow()
+        }
+    }
+
+    /// Called by the controller after a full interval elapses while playing:
+    /// advance to the next image, or finish at the last one.
+    private func slideshowTick() {
+        guard slideshow.isPlaying else { return }
+        if currentIndex < imageURLs.count - 1 {
+            loadImage(at: currentIndex + 1)
+        } else {
+            endSlideshow(finished: true)
+        }
+    }
+
+    /// Finish the slideshow: stop playback, exit full screen (back to window
+    /// mode), and — when the whole list was played — hint in the status bar.
+    private func endSlideshow(finished: Bool) {
+        slideshow.stop()
+        updatePlayPauseIcon()
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+        if finished {
+            Logger.shared.log("Slideshow finished at the last image")
+            showStatusBarHint("播放结束 (playback ended)", for: 3.0)
+        }
+    }
+
+    /// Mirror the play state onto the toolbar button icon: pause icon while
+    /// playing, play icon when stopped or paused.
+    private func updatePlayPauseIcon() {
+        toolbar?.setPlayPauseShowsPauseIcon(slideshow.isPlaying)
+    }
+
+    /// Temporarily show a hint in the bottom status bar; the normal
+    /// filename/size/zoom/index content is restored after `duration` seconds
+    /// (navigation rewrites it earlier anyway).
+    private func showStatusBarHint(_ message: String, for duration: TimeInterval) {
+        guard let label = statusBarLabel else { return }
+        label.attributedStringValue = Self.statusString(message)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            self?.updateStatusBar()
+        }
+    }
+
     /// Go to previous image with loop.
     /// One press at the first image shows the hint AND jumps to the last image immediately.
     private func goPrevious() {
         guard imageURLs.count > 1 else { return }
-        
+
         if currentIndex == 0 {
             Logger.shared.log("At first image, showing wrap-around message")
             showStatusMessage("First image, wrapping to last")
         }
-        
+
         currentIndex = (currentIndex - 1 + imageURLs.count) % imageURLs.count
         loadImage(at: currentIndex)
+        // Manual jump during playback: keep playing with a fresh interval.
+        if slideshow.isPlaying {
+            slideshow.restartCountdown()
+        }
     }
-    
+
     /// Go to next image with loop.
     /// One press at the last image shows the hint AND jumps to the first image immediately.
     private func goNext() {
         guard imageURLs.count > 1 else { return }
-        
+
         if currentIndex == imageURLs.count - 1 {
             Logger.shared.log("At last image, showing wrap-around message")
             showStatusMessage("Last image, wrapping to first")
         }
-        
+
         currentIndex = (currentIndex + 1) % imageURLs.count
         loadImage(at: currentIndex)
+        // Manual jump during playback: keep playing with a fresh interval.
+        if slideshow.isPlaying {
+            slideshow.restartCountdown()
+        }
     }
     
     /// Show a status message at the bottom center of the window.

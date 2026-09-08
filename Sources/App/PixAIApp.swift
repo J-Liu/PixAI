@@ -56,7 +56,18 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
-    
+
+    /// The app stays alive after all windows close; clicking its Dock icon then
+    /// reopens a new blank window (per Apple docs, this delegate method fires
+    /// when the Finder/Dock reactivates an already running app).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            Logger.shared.log("Dock icon clicked with no visible windows, opening a new window")
+            makeNewWindow(paths: [])
+        }
+        return true
+    }
+
     /// The key viewer window, or the most recently created one.
     private func activeWindow() -> ImageWindow? {
         for win in imageWindows where win.window.isKeyWindow {

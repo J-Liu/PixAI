@@ -10,6 +10,11 @@ class KeyboardHandlerView: NSView {
     private let onSave: () -> Void
     private let onToggleFullscreen: () -> Void
     private let onExitFullscreen: () -> Void
+    private let onPlayPause: () -> Void
+    private let onStartOrStopSlideshow: () -> Void
+    /// Live query so Esc/Enter can exit the slideshow before falling back to
+    /// exiting plain full screen.
+    private let isSlideshowActive: () -> Bool
     
     init(onPrevious: @escaping () -> Void,
          onNext: @escaping () -> Void,
@@ -17,7 +22,10 @@ class KeyboardHandlerView: NSView {
          onRotateCounterclockwise: @escaping () -> Void,
          onSave: @escaping () -> Void,
          onToggleFullscreen: @escaping () -> Void,
-         onExitFullscreen: @escaping () -> Void) {
+         onExitFullscreen: @escaping () -> Void,
+         onPlayPause: @escaping () -> Void,
+         onStartOrStopSlideshow: @escaping () -> Void,
+         isSlideshowActive: @escaping () -> Bool) {
         self.onPrevious = onPrevious
         self.onNext = onNext
         self.onRotateClockwise = onRotateClockwise
@@ -25,6 +33,9 @@ class KeyboardHandlerView: NSView {
         self.onSave = onSave
         self.onToggleFullscreen = onToggleFullscreen
         self.onExitFullscreen = onExitFullscreen
+        self.onPlayPause = onPlayPause
+        self.onStartOrStopSlideshow = onStartOrStopSlideshow
+        self.isSlideshowActive = isSlideshowActive
         super.init(frame: .zero)
         
         wantsLayer = true
@@ -130,9 +141,20 @@ class KeyboardHandlerView: NSView {
         case ("f", _), (_, 3):
             onToggleFullscreen()
             return
-        // Esc / Enter: exit full screen (only while in full screen)
+        // Space: toggle play/pause of the slideshow (starts it when stopped).
+        case (" ", _), (_, 49):
+            onPlayPause()
+            return
+        // P: start the slideshow (auto full screen) or exit it to window mode.
+        case ("p", _), (_, 35):
+            onStartOrStopSlideshow()
+            return
+        // Esc / Enter: exit the slideshow if active, otherwise exit full screen
+        // (only while in full screen).
         case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
-            if isWindowInFullScreen {
+            if isSlideshowActive() {
+                onStartOrStopSlideshow()
+            } else if isWindowInFullScreen {
                 onExitFullscreen()
             } else {
                 super.keyDown(with: event)

@@ -2,20 +2,22 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
-/// Layout: [◀] | [+] [−] [fit/100%] | [↻] [↺] [save] | [▶] — the zoom group and
-/// the rotate/save group are separated from each other and from the navigation
-/// arrows by thin vertical dividers.
+/// Layout: [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] [save] | [▶] — the
+/// play/pause button sits in the middle, separated by thin vertical dividers:
+/// the zoom group on its left, the rotate/save group on its right.
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
     let zoomInButton: NSButton
     let zoomOutButton: NSButton
     let fitToggleButton: NSButton
+    let playPauseButton: NSButton
     let rotateClockwiseButton: NSButton
     let rotateCounterclockwiseButton: NSButton
     let saveButton: NSButton
     private let leftDivider: NSView
-    private let rotationDivider: NSView
+    private let playDividerLeft: NSView
+    private let playDividerRight: NSView
     private let rightDivider: NSView
 
     private var isHovered = false
@@ -24,6 +26,7 @@ class AutoHideToolbar: NSView {
     private let onZoomInTap: () -> Void
     private let onZoomOutTap: () -> Void
     private let onFitToggleTap: () -> Void
+    private let onPlayPauseTap: () -> Void
     private let onRotateClockwiseTap: () -> Void
     private let onRotateCounterclockwiseTap: () -> Void
     private let onSaveTap: () -> Void
@@ -41,12 +44,17 @@ class AutoHideToolbar: NSView {
     static let fitIconName = "arrow.down.left.and.arrow.up.right"
     /// SF Symbol shown while the next click will switch to 100% (1:1) size.
     static let hundredPercentIconName = "1.square"
+    /// SF Symbol shown while the slideshow is playing (next click pauses).
+    static let pauseIconName = "pause.fill"
+    /// SF Symbol shown while stopped or paused (next click plays/resumes).
+    static let playIconName = "play.fill"
 
     init(onLeftTap: @escaping () -> Void,
          onRightTap: @escaping () -> Void,
          onZoomInTap: @escaping () -> Void,
          onZoomOutTap: @escaping () -> Void,
          onFitToggleTap: @escaping () -> Void,
+         onPlayPauseTap: @escaping () -> Void,
          onRotateClockwiseTap: @escaping () -> Void,
          onRotateCounterclockwiseTap: @escaping () -> Void,
          onSaveTap: @escaping () -> Void) {
@@ -55,6 +63,7 @@ class AutoHideToolbar: NSView {
         self.onZoomInTap = onZoomInTap
         self.onZoomOutTap = onZoomOutTap
         self.onFitToggleTap = onFitToggleTap
+        self.onPlayPauseTap = onPlayPauseTap
         self.onRotateClockwiseTap = onRotateClockwiseTap
         self.onRotateCounterclockwiseTap = onRotateCounterclockwiseTap
         self.onSaveTap = onSaveTap
@@ -63,13 +72,15 @@ class AutoHideToolbar: NSView {
         zoomInButton = NSButton()
         zoomOutButton = NSButton()
         fitToggleButton = NSButton()
+        playPauseButton = NSButton()
         rotateClockwiseButton = NSButton()
         rotateCounterclockwiseButton = NSButton()
         saveButton = NSButton()
         // Thin vertical dividers (must be set before super.init, as they are
         // stored `let` properties).
         leftDivider = Self.makeDivider()
-        rotationDivider = Self.makeDivider()
+        playDividerLeft = Self.makeDivider()
+        playDividerRight = Self.makeDivider()
         rightDivider = Self.makeDivider()
         super.init(frame: .zero)
 
@@ -83,6 +94,7 @@ class AutoHideToolbar: NSView {
         configureButton(zoomInButton, symbolName: "plus.magnifyingglass")
         configureButton(zoomOutButton, symbolName: "minus.magnifyingglass")
         configureButton(fitToggleButton, symbolName: Self.fitIconName)
+        configureButton(playPauseButton, symbolName: Self.playIconName)
         configureButton(rotateClockwiseButton, symbolName: "arrow.clockwise")
         configureButton(rotateCounterclockwiseButton, symbolName: "arrow.counterclockwise")
         configureButton(saveButton, symbolName: "square.and.arrow.down")
@@ -92,7 +104,9 @@ class AutoHideToolbar: NSView {
         addSubview(zoomInButton)
         addSubview(zoomOutButton)
         addSubview(fitToggleButton)
-        addSubview(rotationDivider)
+        addSubview(playDividerLeft)
+        addSubview(playPauseButton)
+        addSubview(playDividerRight)
         addSubview(rotateClockwiseButton)
         addSubview(rotateCounterclockwiseButton)
         addSubview(saveButton)
@@ -126,6 +140,18 @@ class AutoHideToolbar: NSView {
         }
     }
 
+    /// Switch the play/pause button's icon. `showsPause` == true means the
+    /// slideshow is playing (the icon depicts pause, the next click pauses);
+    /// false means it is stopped or paused (the icon depicts play).
+    func setPlayPauseShowsPauseIcon(_ showsPause: Bool) {
+        let name = showsPause ? Self.pauseIconName : Self.playIconName
+        let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            image.isTemplate = true
+            playPauseButton.image = image
+        }
+    }
+
     private func configureButton(_ button: NSButton, symbolName: String) {
         button.isBordered = false
         button.bezelStyle = .regularSquare
@@ -145,7 +171,8 @@ class AutoHideToolbar: NSView {
         button.action = #selector(buttonTapped(_:))
     }
 
-    /// Position all controls in a centered row: [◀] | [+] [−] [fit/100%] | [↻] [↺] [save] | [▶].
+    /// Position all controls in a centered row:
+    /// [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] [save] | [▶].
     override func layout() {
         super.layout()
 
@@ -157,6 +184,7 @@ class AutoHideToolbar: NSView {
         let groupWidth = buttonSize * 3 + gap * 2
         let totalWidth = buttonSize
             + dividerPad + dividerW + dividerPad + groupWidth
+            + dividerPad + dividerW + dividerPad + buttonSize
             + dividerPad + dividerW + dividerPad + groupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
 
@@ -173,7 +201,11 @@ class AutoHideToolbar: NSView {
         x += buttonSize + gap
         fitToggleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
-        rotationDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
+        playDividerLeft.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
+        x += dividerW + dividerPad
+        playPauseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + dividerPad
+        playDividerRight.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
         rotateClockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
@@ -202,6 +234,8 @@ class AutoHideToolbar: NSView {
             onZoomOutTap()
         } else if sender == fitToggleButton {
             onFitToggleTap()
+        } else if sender == playPauseButton {
+            onPlayPauseTap()
         } else if sender == rotateClockwiseButton {
             onRotateClockwiseTap()
         } else if sender == rotateCounterclockwiseButton {
