@@ -111,6 +111,11 @@ class ZoomableImageView: NSView {
         return zoomScale > fitScale() * 1.001
     }
 
+    /// True while in "fit to window" mode (initial state / after double-click).
+    var isInFitMode: Bool {
+        return isFitMode
+    }
+
     // MARK: - Zoom / pan actions
 
     /// Return to "fit to window" mode: proportional fit, centered.
@@ -126,19 +131,41 @@ class ZoomableImageView: NSView {
     /// Zoom by a multiplicative factor, keeping the image point under `cursor` fixed.
     func zoom(by factor: CGFloat, centeredOn cursor: NSPoint) {
         guard image != nil, factor > 0 else { return }
-        let newScale = min(Self.maxZoom, max(Self.minZoom, zoomScale * factor))
-        guard abs(newScale - zoomScale) > .ulpOfOne else { return }
+        setZoom(to: zoomScale * factor, centeredOn: cursor)
+    }
+
+    /// Set an absolute scale (clamped to 10%~1000%), keeping the image point under
+    /// `cursor` fixed. Used by the toolbar buttons (centered on the view midpoint).
+    func setZoom(to newScale: CGFloat, centeredOn cursor: NSPoint) {
+        guard image != nil else { return }
+        let clamped = min(Self.maxZoom, max(Self.minZoom, newScale))
+        guard abs(clamped - zoomScale) > .ulpOfOne else { return }
 
         // Image-space point under the cursor — it must stay under the cursor.
         let qx = (cursor.x - imageOrigin.x) / zoomScale
         let qy = (cursor.y - imageOrigin.y) / zoomScale
 
-        zoomScale = newScale
+        zoomScale = clamped
         isFitMode = false
         imageOrigin = NSPoint(x: cursor.x - qx * zoomScale, y: cursor.y - qy * zoomScale)
         clampOrigin()
         needsDisplay = true
         onZoomChange?()
+    }
+
+    /// Zoom in by one 10% step (same factor as the wheel), centered on the view.
+    func zoomIn() {
+        setZoom(to: zoomScale * Self.zoomStepFactor, centeredOn: NSPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    /// Zoom out by one 10% step (same factor as the wheel), centered on the view.
+    func zoomOut() {
+        setZoom(to: zoomScale / Self.zoomStepFactor, centeredOn: NSPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    /// Switch to exactly 100% (1:1 pixels), keeping the view center fixed.
+    func zoomTo100Percent() {
+        setZoom(to: 1.0, centeredOn: NSPoint(x: bounds.midX, y: bounds.midY))
     }
 
     private func centerImage() {

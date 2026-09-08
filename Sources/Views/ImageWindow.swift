@@ -13,6 +13,10 @@ class ImageWindow {
     
     private var container: ViewerContainerView?
     private var statusBarLabel: NSTextField?
+    private var toolbar: AutoHideToolbar?
+    /// Whether the fit/100% toggle button currently shows the "fit to window" icon
+    /// (true) or the "100%" icon (false). Starts as true, so the first click fits.
+    private var fitToggleShowsFitIcon = true
     
     /// List of loaded image URLs.
     private var imageURLs: [URL] = []
@@ -51,7 +55,13 @@ class ImageWindow {
         // reset to "fit to window" mode.
         let imageView = ZoomableImageView()
         imageView.onZoomChange = { [weak self] in
-            self?.updateStatusBar()
+            guard let self = self else { return }
+            self.updateStatusBar()
+            // Any manual zoom (wheel / drag / double-click) leaves fit mode: the next
+            // toggle click should be "fit to window", so show the fit icon.
+            if !(self.container?.imageView?.isInFitMode ?? false) {
+                self.setFitToggleIcon(showsFit: true)
+            }
         }
         container.imageView = imageView
         container.addSubview(imageView)
@@ -82,9 +92,22 @@ class ImageWindow {
             onRightTap: { [weak self] in
                 Logger.shared.log("Toolbar right button tapped")
                 self?.goNext()
+            },
+            onZoomInTap: { [weak self] in
+                Logger.shared.log("Toolbar zoom-in button tapped")
+                self?.container?.imageView?.zoomIn()
+            },
+            onZoomOutTap: { [weak self] in
+                Logger.shared.log("Toolbar zoom-out button tapped")
+                self?.container?.imageView?.zoomOut()
+            },
+            onFitToggleTap: { [weak self] in
+                Logger.shared.log("Toolbar fit/100% toggle tapped")
+                self?.toggleFitOr100Percent()
             }
         )
         container.toolbar = toolbar
+        self.toolbar = toolbar
         container.addSubview(toolbar)
         
         // Empty-state placeholder (big icon + hint), centered in the image area.
@@ -380,6 +403,26 @@ class ImageWindow {
         
         parts.append("\(currentIndex + 1) / \(imageURLs.count)")
         label.attributedStringValue = Self.statusString(parts.joined(separator: "\t"))
+    }
+    
+    /// Fit/100% toggle button: first click fits to window (icon then shows 100%),
+    /// next click switches to 100% (icon then shows fit). The icon always depicts
+    /// what the NEXT click will do.
+    private func toggleFitOr100Percent() {
+        guard let imageView = container?.imageView, imageView.image != nil else { return }
+        if fitToggleShowsFitIcon {
+            imageView.resetToFit()
+            setFitToggleIcon(showsFit: false)
+        } else {
+            imageView.zoomTo100Percent()
+            setFitToggleIcon(showsFit: true)
+        }
+    }
+    
+    /// Update the toolbar's fit toggle icon and remember which mode it depicts.
+    private func setFitToggleIcon(showsFit: Bool) {
+        fitToggleShowsFitIcon = showsFit
+        toolbar?.setFitToggleShowsFitIcon(showsFit)
     }
     
     /// Go to previous image with loop.
