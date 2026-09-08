@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 /// AppKit's default coordinate system is NON-flipped: origin at the bottom-left
 /// corner, y increases upward (see NSView.isFlipped).
 class ViewerContainerView: NSView {
-    var imageView: NSImageView?
+    var imageView: ZoomableImageView?
     var statusBar: NSView?
     var statusLabel: NSTextField?
     var toolbar: AutoHideToolbar?

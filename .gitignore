@@ -61,5 +61,10 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-.vscode/
+# IDE/Editor files
 .idea/
+.vscode/
+
+# AI files
+AGENTS.md
+CLAUDE.md

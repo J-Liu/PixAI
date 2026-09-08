@@ -45,15 +45,14 @@ class ImageWindow {
         container.frame = windowRect
         self.container = container
         
-        // Image view: fills the area above the status bar.
-        // .scaleProportionallyUpOrDown (Apple's documented behavior): the image is
-        // scaled proportionally to fit inside the view — large images are scaled
-        // down so the ENTIRE image is visible, small images are scaled up to fill —
-        // and .alignCenter keeps it centered. NSImageView re-renders on resize.
-        let imageView = NSImageView()
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.imageAlignment = .alignCenter
-        imageView.animates = false
+        // Image view: fills the area above the status bar. A custom NSView (NSImageView
+        // has no zoom API) that draws the image itself, providing cursor-centered wheel
+        // zoom (10% step, 10%~1000%), drag panning when zoomed in, and double-click
+        // reset to "fit to window" mode.
+        let imageView = ZoomableImageView()
+        imageView.onZoomChange = { [weak self] in
+            self?.updateStatusBar()
+        }
         container.imageView = imageView
         container.addSubview(imageView)
         
@@ -313,7 +312,8 @@ class ImageWindow {
                     return
                 }
                 
-                // The image view fills the window area; NSImageView scales + centers it.
+                // The image view fills the window area; setting the image resets it to
+                // "fit to window" mode (proportional fit, centered).
                 self.container?.imageView?.image = nsImage
                 
                 // Window title shows the current file name.
@@ -347,13 +347,11 @@ class ImageWindow {
         return nil
     }
     
-    /// The actual on-screen scale of the current image relative to its original size.
+    /// The actual on-screen scale of the current image relative to its original size
+    /// (1.0 == 100% == 1:1 pixels). Read live from the zoomable view so the status
+    /// bar reflects wheel zoom / pan state in real time.
     private func currentZoomRatio() -> CGFloat {
-        guard let imageView = container?.imageView, let size = currentPixelSize() else { return 1 }
-        let b = imageView.bounds.size
-        guard size.width > 0, size.height > 0, b.width > 0, b.height > 0 else { return 1 }
-        // .scaleProportionallyUpOrDown fits the image inside the view preserving aspect ratio.
-        return min(b.width / size.width, b.height / size.height)
+        return container?.imageView?.zoomScale ?? 1
     }
     
     /// Build a tab-separated attributed string (fixed tab interval for aligned columns).
