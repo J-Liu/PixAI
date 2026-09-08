@@ -24,14 +24,20 @@ class KeyboardHandlerView: NSView {
         return true
     }
     
+    /// Pass mouse events through to the views below (toolbar buttons, placeholder).
+    /// Key events are still delivered because this view is the first responder.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
+    }
+    
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags
         let key = event.characters?.lowercased() ?? ""
         let keyCode = event.keyCode
         
-        // Handle Cmd+W specifically to close the window (use close() instead of performClose())
+        // Handle Cmd+W specifically: close THIS window only (the app keeps running).
         if mods.contains(.command) && (key == "w" || keyCode == 13) {
-            NSApplication.shared.mainWindow?.close()
+            self.window?.close()
             return
         }
         

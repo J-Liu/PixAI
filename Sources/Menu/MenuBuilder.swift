@@ -5,6 +5,9 @@ class MenuBuilder {
     /// Optional callback for the Open File action (set by PixAIApp).
     static var openFileCallback: (() -> Void)?
     
+    /// Optional callback for the New Window action (set by PixAIApp).
+    static var newWindowCallback: (() -> Void)?
+    
     static func build() -> NSMenu {
         let mainMenu = NSMenu(title: "PixAI")
 
@@ -45,8 +48,13 @@ class MenuBuilder {
         openItem.target = self
         fileMenu.addItem(openItem)
 
-        let closeWindowItem = NSMenuItem(title: "Close Window", action: #selector(closeWindow(_:)), keyEquivalent: "w")
-        closeWindowItem.target = self
+        let newItem = NSMenuItem(title: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
+        newItem.target = self
+        fileMenu.addItem(newItem)
+
+        // Standard close: goes through the responder chain to the key window.
+        let closeWindowItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeWindowItem.target = nil
         fileMenu.addItem(closeWindowItem)
 
         let fileMenuItem = NSMenuItem()
@@ -84,8 +92,9 @@ class MenuBuilder {
         zoomItem.target = self
         windowMenu.addItem(zoomItem)
 
-        let closeItem = NSMenuItem(title: "Close Window", action: #selector(closeWindow(_:)), keyEquivalent: "w")
-        closeItem.target = self
+        // Standard close: goes through the responder chain to the key window.
+        let closeItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeItem.target = nil
         windowMenu.addItem(closeItem)
 
         let windowMenuItem = NSMenuItem()
@@ -119,8 +128,13 @@ class MenuBuilder {
         window.toggleFullScreen(nil)
     }
 
-    @objc class func closeWindow(_ sender: Any?) {
-        NSApplication.shared.mainWindow?.close()
+    @objc class func newWindow(_ sender: Any?) {
+        Logger.shared.log("MenuBuilder.newWindow called")
+        if let callback = newWindowCallback {
+            callback()
+        } else {
+            Logger.shared.log("No newWindowCallback set")
+        }
     }
 
     @objc class func minimize(_ sender: Any?) {
