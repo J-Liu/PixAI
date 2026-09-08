@@ -10,7 +10,11 @@ import AppKit
 ///     `hasPreciseScrollingDeltas` is false the value is a coarse line count
 ///     (one notch = one 10% step). Precise trackpad deltas are accumulated in
 ///     points and converted to whole 10% steps.
-///   - Double-click: reset to "fit to window" mode (proportional fit, centered).
+///   - Trackpad pinch: zoom centered on the pinch location. Per Apple's docs,
+///     `NSEvent.magnification` is the fractional delta since the previous event,
+///     so `1 + magnification` is the multiplicative factor for this event.
+///   - Double-click: toggle between "fit to window" and 100% — the first use
+///     fits, the next switches to 100%, the next fits again, and so on.
 ///   - Drag: pan the view while zoomed in; clamped so the image always covers
 ///     the visible area (or stays centered when smaller than the view).
 ///   - Zoom range: 10% ~ 1000% of the original pixel size.
@@ -28,6 +32,7 @@ class ZoomableImageView: NSView {
         didSet {
             guard oldValue !== image else { return }
             isFitMode = true
+            nextToggleIsFit = true
             pendingPreciseDelta = 0
             resetToFit()
         }
@@ -39,9 +44,15 @@ class ZoomableImageView: NSView {
     /// Bottom-left corner of the drawn image rect in view coordinates.
     private var imageOrigin: NSPoint = .zero
 
-    /// True while in "fit to window" mode (initial state / after double-click);
+    /// True while in "fit to window" mode (initial state / after a fit toggle);
     /// the image re-fits automatically on every resize.
     private var isFitMode: Bool = true
+
+    /// True while the next fit/100% toggle (double-click or toolbar button)
+    /// will "fit to window"; false means it will switch to 100%. Starts true so
+    /// the first double-click after loading fits, per spec. Any manual zoom
+    /// (wheel / pinch / drag / zoom buttons) resets this back to true.
+    private(set) var nextToggleIsFit: Bool = true
 
     /// Called after any zoom change so the status bar can refresh in real time.
     var onZoomChange: (() -> Void)?

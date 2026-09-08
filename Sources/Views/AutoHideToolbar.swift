@@ -2,15 +2,20 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
-/// Layout: [◀] | [+] [−] [fit/100%] | [▶] — the three center zoom buttons are
-/// separated from the navigation arrows by thin vertical dividers.
+/// Layout: [◀] | [+] [−] [fit/100%] | [↻] [↺] [save] | [▶] — the zoom group and
+/// the rotate/save group are separated from each other and from the navigation
+/// arrows by thin vertical dividers.
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
     let zoomInButton: NSButton
     let zoomOutButton: NSButton
     let fitToggleButton: NSButton
+    let rotateClockwiseButton: NSButton
+    let rotateCounterclockwiseButton: NSButton
+    let saveButton: NSButton
     private let leftDivider: NSView
+    private let rotationDivider: NSView
     private let rightDivider: NSView
 
     private var isHovered = false
@@ -19,6 +24,9 @@ class AutoHideToolbar: NSView {
     private let onZoomInTap: () -> Void
     private let onZoomOutTap: () -> Void
     private let onFitToggleTap: () -> Void
+    private let onRotateClockwiseTap: () -> Void
+    private let onRotateCounterclockwiseTap: () -> Void
+    private let onSaveTap: () -> Void
 
     /// The color for the toolbar buttons (bright orange).
     static let buttonColor = NSColor(red: 1.0, green: 0.55, blue: 0.0, alpha: 1.0) // Bright orange
@@ -38,20 +46,30 @@ class AutoHideToolbar: NSView {
          onRightTap: @escaping () -> Void,
          onZoomInTap: @escaping () -> Void,
          onZoomOutTap: @escaping () -> Void,
-         onFitToggleTap: @escaping () -> Void) {
+         onFitToggleTap: @escaping () -> Void,
+         onRotateClockwiseTap: @escaping () -> Void,
+         onRotateCounterclockwiseTap: @escaping () -> Void,
+         onSaveTap: @escaping () -> Void) {
         self.onLeftTap = onLeftTap
         self.onRightTap = onRightTap
         self.onZoomInTap = onZoomInTap
         self.onZoomOutTap = onZoomOutTap
         self.onFitToggleTap = onFitToggleTap
+        self.onRotateClockwiseTap = onRotateClockwiseTap
+        self.onRotateCounterclockwiseTap = onRotateCounterclockwiseTap
+        self.onSaveTap = onSaveTap
         leftButton = NSButton()
         rightButton = NSButton()
         zoomInButton = NSButton()
         zoomOutButton = NSButton()
         fitToggleButton = NSButton()
-        // Thin vertical dividers flanking the center zoom group (must be set
-        // before super.init, as they are stored `let` properties).
+        rotateClockwiseButton = NSButton()
+        rotateCounterclockwiseButton = NSButton()
+        saveButton = NSButton()
+        // Thin vertical dividers (must be set before super.init, as they are
+        // stored `let` properties).
         leftDivider = Self.makeDivider()
+        rotationDivider = Self.makeDivider()
         rightDivider = Self.makeDivider()
         super.init(frame: .zero)
 
@@ -65,12 +83,19 @@ class AutoHideToolbar: NSView {
         configureButton(zoomInButton, symbolName: "plus.magnifyingglass")
         configureButton(zoomOutButton, symbolName: "minus.magnifyingglass")
         configureButton(fitToggleButton, symbolName: Self.fitIconName)
+        configureButton(rotateClockwiseButton, symbolName: "arrow.clockwise")
+        configureButton(rotateCounterclockwiseButton, symbolName: "arrow.counterclockwise")
+        configureButton(saveButton, symbolName: "square.and.arrow.down")
 
         addSubview(leftButton)
         addSubview(leftDivider)
         addSubview(zoomInButton)
         addSubview(zoomOutButton)
         addSubview(fitToggleButton)
+        addSubview(rotationDivider)
+        addSubview(rotateClockwiseButton)
+        addSubview(rotateCounterclockwiseButton)
+        addSubview(saveButton)
         addSubview(rightDivider)
         addSubview(rightButton)
 
@@ -120,7 +145,7 @@ class AutoHideToolbar: NSView {
         button.action = #selector(buttonTapped(_:))
     }
 
-    /// Position all controls in a centered row: [◀] | [+] [−] [fit/100%] | [▶].
+    /// Position all controls in a centered row: [◀] | [+] [−] [fit/100%] | [↻] [↺] [save] | [▶].
     override func layout() {
         super.layout()
 
@@ -131,6 +156,7 @@ class AutoHideToolbar: NSView {
         let dividerPad: CGFloat = 14
         let groupWidth = buttonSize * 3 + gap * 2
         let totalWidth = buttonSize
+            + dividerPad + dividerW + dividerPad + groupWidth
             + dividerPad + dividerW + dividerPad + groupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
 
@@ -146,6 +172,14 @@ class AutoHideToolbar: NSView {
         zoomOutButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
         fitToggleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + dividerPad
+        rotationDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
+        x += dividerW + dividerPad
+        rotateClockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        rotateCounterclockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        saveButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         rightDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
@@ -168,6 +202,12 @@ class AutoHideToolbar: NSView {
             onZoomOutTap()
         } else if sender == fitToggleButton {
             onFitToggleTap()
+        } else if sender == rotateClockwiseButton {
+            onRotateClockwiseTap()
+        } else if sender == rotateCounterclockwiseButton {
+            onRotateCounterclockwiseTap()
+        } else if sender == saveButton {
+            onSaveTap()
         }
     }
 

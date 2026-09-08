@@ -5,10 +5,26 @@ import UniformTypeIdentifiers
 class KeyboardHandlerView: NSView {
     private let onPrevious: () -> Void
     private let onNext: () -> Void
+    private let onRotateClockwise: () -> Void
+    private let onRotateCounterclockwise: () -> Void
+    private let onSave: () -> Void
+    private let onToggleFullscreen: () -> Void
+    private let onExitFullscreen: () -> Void
     
-    init(onPrevious: @escaping () -> Void, onNext: @escaping () -> Void) {
+    init(onPrevious: @escaping () -> Void,
+         onNext: @escaping () -> Void,
+         onRotateClockwise: @escaping () -> Void,
+         onRotateCounterclockwise: @escaping () -> Void,
+         onSave: @escaping () -> Void,
+         onToggleFullscreen: @escaping () -> Void,
+         onExitFullscreen: @escaping () -> Void) {
         self.onPrevious = onPrevious
         self.onNext = onNext
+        self.onRotateClockwise = onRotateClockwise
+        self.onRotateCounterclockwise = onRotateCounterclockwise
+        self.onSave = onSave
+        self.onToggleFullscreen = onToggleFullscreen
+        self.onExitFullscreen = onExitFullscreen
         super.init(frame: .zero)
         
         wantsLayer = true
@@ -30,6 +46,11 @@ class KeyboardHandlerView: NSView {
         return nil
     }
     
+    /// True while the window is in native full-screen mode.
+    private var isWindowInFullScreen: Bool {
+        return self.window?.styleMask.contains(.fullScreen) ?? false
+    }
+    
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags
         let key = event.characters?.lowercased() ?? ""
@@ -38,6 +59,20 @@ class KeyboardHandlerView: NSView {
         // Handle Cmd+W specifically: close THIS window only (the app keeps running).
         if mods.contains(.command) && (key == "w" || keyCode == 13) {
             self.window?.close()
+            return
+        }
+        
+        // Cmd+R: rotate the current image 90° counterclockwise (temporary, not saved).
+        if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
+           (key == "r" || keyCode == 15) {
+            onRotateCounterclockwise()
+            return
+        }
+        
+        // Cmd+S: save the rotated image back to the file.
+        if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
+           (key == "s" || keyCode == 1) {
+            onSave()
             return
         }
         
@@ -86,6 +121,22 @@ class KeyboardHandlerView: NSView {
             return
         case ("l", _):
             onNext()
+            return
+        // R: rotate 90° clockwise (temporary, not saved)
+        case ("r", _), (_, 15):
+            onRotateClockwise()
+            return
+        // F: toggle full screen mode
+        case ("f", _), (_, 3):
+            onToggleFullscreen()
+            return
+        // Esc / Enter: exit full screen (only while in full screen)
+        case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
+            if isWindowInFullScreen {
+                onExitFullscreen()
+            } else {
+                super.keyDown(with: event)
+            }
             return
         default:
             super.keyDown(with: event)

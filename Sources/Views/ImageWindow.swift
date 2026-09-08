@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import ImageIO
 
 /// A single image viewer window: light-gray image area with centered proportional
 /// scaling, a bottom status bar (filename / size / zoom ratio / index-total),
@@ -24,6 +25,13 @@ class ImageWindow {
     private var currentIndex: Int = 0
     /// Monotonic counter used to discard stale async image loads.
     private var loadGeneration: Int = 0
+    /// The original (unrotated) image of the current file. Rotations are always
+    /// computed from this, so repeated rotations never degrade quality.
+    private var baseImage: NSImage?
+    /// Cumulative 90° steps applied to the current image (+1 = clockwise, -1 =
+    /// counterclockwise). Reset to 0 whenever a new image is loaded or a rotation
+    /// is saved; discarded entirely when the window closes.
+    private var rotationSteps: Int = 0
     
     private var closeObserver: NSObjectProtocol?
     
@@ -104,6 +112,18 @@ class ImageWindow {
             onFitToggleTap: { [weak self] in
                 Logger.shared.log("Toolbar fit/100% toggle tapped")
                 self?.toggleFitOr100Percent()
+            },
+            onRotateClockwiseTap: { [weak self] in
+                Logger.shared.log("Toolbar rotate-clockwise button tapped")
+                self?.rotateClockwise()
+            },
+            onRotateCounterclockwiseTap: { [weak self] in
+                Logger.shared.log("Toolbar rotate-counterclockwise button tapped")
+                self?.rotateCounterclockwise()
+            },
+            onSaveTap: { [weak self] in
+                Logger.shared.log("Toolbar save button tapped")
+                self?.saveCurrentRotation()
             }
         )
         container.toolbar = toolbar
@@ -133,6 +153,26 @@ class ImageWindow {
             onNext: { [weak self] in
                 Logger.shared.log("Keyboard handler: next")
                 self?.goNext()
+            },
+            onRotateClockwise: { [weak self] in
+                Logger.shared.log("Keyboard handler: rotate clockwise (R)")
+                self?.rotateClockwise()
+            },
+            onRotateCounterclockwise: { [weak self] in
+                Logger.shared.log("Keyboard handler: rotate counterclockwise (Cmd+R)")
+                self?.rotateCounterclockwise()
+            },
+            onSave: { [weak self] in
+                Logger.shared.log("Keyboard handler: save rotation (Cmd+S)")
+                self?.saveCurrentRotation()
+            },
+            onToggleFullscreen: { [weak self] in
+                Logger.shared.log("Keyboard handler: toggle full screen (F)")
+                self?.toggleFullScreen()
+            },
+            onExitFullscreen: { [weak self] in
+                Logger.shared.log("Keyboard handler: exit full screen (Esc/Enter)")
+                self?.exitFullScreen()
             }
         )
         container.keyboardHandler = keyboardHandler
@@ -335,6 +375,11 @@ class ImageWindow {
                     return
                 }
                 
+                // A newly loaded image is always shown unrotated: any unsaved
+                // rotation of the previous image is discarded here (per spec).
+                self.baseImage = nsImage
+                self.rotationSteps = 0
+
                 // The image view fills the window area; setting the image resets it to
                 // "fit to window" mode (proportional fit, centered).
                 self.container?.imageView?.image = nsImage
@@ -423,6 +468,122 @@ class ImageWindow {
     private func setFitToggleIcon(showsFit: Bool) {
         fitToggleShowsFitIcon = showsFit
         toolbar?.setFitToggleShowsFitIcon(showsFit)
+    }
+
+    // MARK: - Rotation & save
+
+    /// Rotate the current image 90° clockwise (temporary; not written to disk).
+    func rotateClockwise() {
+        guard baseImage != nil else { return }
+        rotationSteps += 1
+        applyRotation()
+    }
+
+    /// Rotate the current image 90° counterclockwise (temporary; not written to disk).
+    func rotateCounterclockwise() {
+        guard baseImage != nil else { return }
+        rotationSteps -= 1
+        applyRotation()
+    }
+
+    /// Redraw the displayed image from the ORIGINAL image at the accumulated
+    /// angle, so quality never degrades no matter how many times it is rotated.
+    private func applyRotation() {
+        guard let base = baseImage else { return }
+        let displayed = base.rotatedClockwise(by: rotationSteps * 90) ?? base
+        container?.imageView?.image = displayed
+        updateStatusBar()
+    }
+
+    /// Save the rotated image over the original file (overwrite). If the
+    /// accumulated rotation is a multiple of 360° (in either direction), the
+    /// image is back to its original orientation: the save is ignored so the
+    /// original file data is never re-encoded.
+    func saveCurrentRotation() {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let base = baseImage else { return }
+        let url = imageURLs[currentIndex]
+
+        let netDegrees = rotationSteps * 90
+        if netDegrees % 360 == 0 {
+            Logger.shared.log("Save ignored: rotation (\(netDegrees)°) is a multiple of 360°")
+            showStatusMessage("Rotation is a multiple of 360°, nothing to save")
+            return
+        }
+
+        guard let rotated = base.rotatedClockwise(by: netDegrees),
+              let cgImage = rotated.sourceCGImage else {
+            Logger.shared.log("Save failed: could not produce rotated image for \(url)")
+            showStatusMessage("Save failed")
+            return
+        }
+
+        let ext = url.pathExtension.lowercased()
+        guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
+            Logger.shared.log("Save failed: unsupported format '\(ext)' for \(url)")
+            showStatusMessage("Save failed: unsupported format")
+            return
+        }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            // The file now matches the displayed image: adopt it as the new base.
+            baseImage = rotated
+            rotationSteps = 0
+            Logger.shared.log("Saved \(netDegrees)°-rotated image to \(url)")
+            showStatusMessage("Saved")
+        } catch {
+            Logger.shared.log("Save failed for \(url): \(error)")
+            showStatusMessage("Save failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Encode a CGImage to file data in the format suggested by the extension.
+    /// Lossy formats are written at 95% quality to preserve image fidelity.
+    private static func encodeImage(_ cgImage: CGImage, fileExtension ext: String) -> Data? {
+        let lossyQuality: CGFloat = 0.95
+
+        switch ext {
+        case "jpg", "jpeg", "png", "gif", "bmp", "tiff":
+            let fileType: NSBitmapImageRep.FileType
+            switch ext {
+            case "jpg", "jpeg": fileType = .jpeg
+            case "png": fileType = .png
+            case "gif": fileType = .gif
+            case "bmp": fileType = .bmp
+            default: fileType = .tiff
+            }
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            var properties: [NSBitmapImageRep.PropertyKey: Any] = [:]
+            if fileType == .jpeg {
+                properties[.compressionFactor] = lossyQuality
+            }
+            return rep.representation(using: fileType, properties: properties)
+        default:
+            // HEIC/HEIF/WebP/anything else: go through ImageIO with the UTI.
+            let type = UTType(filenameExtension: ext) ?? .png
+            let mutableData = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(mutableData, type.identifier as CFString, 1, nil) else {
+                return nil
+            }
+            let properties = [kCGImageDestinationLossyCompressionQuality: lossyQuality]
+            CGImageDestinationAddImage(dest, cgImage, properties as CFDictionary)
+            guard CGImageDestinationFinalize(dest) else { return nil }
+            return mutableData as Data
+        }
+    }
+
+    // MARK: - Full screen
+
+    /// Enter or exit native full-screen mode (F key). Native full screen
+    /// remembers the previous window frame and restores it on exit.
+    func toggleFullScreen() {
+        window.toggleFullScreen(nil)
+    }
+
+    /// Exit full screen and restore the previous window frame (Esc / Enter keys).
+    func exitFullScreen() {
+        guard window.styleMask.contains(.fullScreen) else { return }
+        window.toggleFullScreen(nil)
     }
     
     /// Go to previous image with loop.
