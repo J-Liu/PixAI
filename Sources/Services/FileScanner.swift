@@ -1,7 +1,10 @@
 import Foundation
 import AppKit
 
-/// Supported image file extensions (covers all formats handled by ImageLoaderRegistry).
+/// Extensions that are treated as photo/image files for automatic scanning.
+let photoExtensions = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif", "webp"]
+
+/// All supported extensions (including document formats like SVG/PDF).
 let supportedExtensions = [
     "png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif",
     "svg", "pdf", "webp"
@@ -33,7 +36,7 @@ class FileScanner {
                         } else {
                             // File: check extension
                             let ext = item.pathExtension.lowercased()
-                            if !ext.isEmpty && supportedExtensions.contains(ext) {
+                            if !ext.isEmpty && photoExtensions.contains(ext) {
                                 results.append(item)
                             } else if ext.isEmpty {
                                 // No extension - try to detect if it's an image using ImageLoaderRegistry

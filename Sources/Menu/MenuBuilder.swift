@@ -45,6 +45,10 @@ class MenuBuilder {
         openItem.target = self
         fileMenu.addItem(openItem)
 
+        let closeWindowItem = NSMenuItem(title: "Close Window", action: #selector(closeWindow(_:)), keyEquivalent: "w")
+        closeWindowItem.target = self
+        fileMenu.addItem(closeWindowItem)
+
         let fileMenuItem = NSMenuItem()
         fileMenuItem.title = "File"
         fileMenuItem.submenu = fileMenu
@@ -52,7 +56,16 @@ class MenuBuilder {
 
         // ─── View Menu ───────────────────────────────────────────────
         let viewMenu = NSMenu(title: "View")
-        viewMenu.addItem(withTitle: "Full Screen", action: #selector(toggleFullScreen(_:)), keyEquivalent: "f")
+        
+        let fullScreenItem = NSMenuItem(title: "Enter Full Screen", action: #selector(toggleFullScreen(_:)), keyEquivalent: "")
+        fullScreenItem.target = self
+        viewMenu.addItem(fullScreenItem)
+
+        // Add Cmd+Ctrl+F shortcut for full screen (macOS standard)
+        let fullScreenShortcut = NSMenuItem(title: "Toggle Full Screen", action: #selector(toggleFullScreen(_:)), keyEquivalent:"f")
+        fullScreenShortcut.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(fullScreenShortcut)
+
         viewMenu.addItem(NSMenuItem.separator())
 
         let viewMenuItem = NSMenuItem()
@@ -62,7 +75,18 @@ class MenuBuilder {
 
         // ─── Window Menu ─────────────────────────────────────────────
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(minimize(_:)), keyEquivalent: "m")
+        
+        let minimizeItem = NSMenuItem(title: "Minimize", action: #selector(minimize(_:)), keyEquivalent: "m")
+        minimizeItem.target = self
+        windowMenu.addItem(minimizeItem)
+
+        let zoomItem = NSMenuItem(title: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+        zoomItem.target = self
+        windowMenu.addItem(zoomItem)
+
+        let closeItem = NSMenuItem(title: "Close Window", action: #selector(closeWindow(_:)), keyEquivalent: "w")
+        closeItem.target = self
+        windowMenu.addItem(closeItem)
 
         let windowMenuItem = NSMenuItem()
         windowMenuItem.title = "Window"
@@ -93,6 +117,10 @@ class MenuBuilder {
     @objc class func toggleFullScreen(_ sender: Any?) {
         guard let window = NSApplication.shared.mainWindow else { return }
         window.toggleFullScreen(nil)
+    }
+
+    @objc class func closeWindow(_ sender: Any?) {
+        NSApplication.shared.mainWindow?.close()
     }
 
     @objc class func minimize(_ sender: Any?) {
