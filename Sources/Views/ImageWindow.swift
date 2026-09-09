@@ -29,6 +29,10 @@ class ImageWindow {
     /// counterclockwise). Reset to 0 whenever a new image is loaded or a rotation
     /// is saved; discarded entirely when the window closes.
     private var rotationSteps: Int = 0
+    /// Files already shown the >50 MB warning for (once per file per window).
+    private var largeFileWarned: Set<URL> = []
+    /// True while the displayed image is a downscaled thumbnail of a huge file.
+    private var currentImageIsScaled = false
     
     /// Drives slideshow playback (P / Space keys, toolbar play-pause button).
     /// The slide interval defaults to 3 s and will later be configurable via
@@ -394,15 +398,21 @@ class ImageWindow {
         let url = imageURLs[index]
         
         Logger.shared.log("Loading image at index \(index): \(url)")
-        
+
+        // Large-file warning (spec: 大图警告): a single image over 50 MB shows
+        // a warning, once per file per window session.
+        warnIfLargeFile(url)
+
         // Bump the generation so stale loads from rapid navigation are discarded.
         let generation = loadGeneration + 1
         loadGeneration = generation
-        
+
         // Cache hit: show the decoded image immediately, no re-decode.
         if let cached = ImageCache.shared.image(for: url) {
             self.baseImage = cached
             self.rotationSteps = 0
+            // The cache remembers whether this entry is a huge-image thumbnail.
+            self.currentImageIsScaled = ImageCache.shared.isScaled(url)
             self.displayImage(cached, at: url)
             self.window.title = url.lastPathComponent
             self.container?.placeholder?.isHidden = true
@@ -410,16 +420,19 @@ class ImageWindow {
             self.updateStatusBar()
             return
         }
-        
+
         // Delegate to the decode abstraction layer: magic-number format
         // detection (Live Photo before HEIC) + auto-selected decoder. The
         // nonisolated async decode runs off the main actor, so heavy files
         // (RAW, large TIFFs) don't block the UI; the SVG WebKit fallback hops
         // back to the main actor internally only for its render pass.
+        // The huge-image memory policy (spec: 超大图缩略) is applied here:
+        // files ≥ 10 000 px on any side are decoded only as a downscaled
+        // thumbnail so the full bitmap never enters memory.
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             do {
-                let decoded = try await DecoderManager.shared.decode(url: url)
+                let (decoded, scaled) = try await self.decodeWithHugeImagePolicy(url: url)
                 // Discard out-of-order loads so the newest press always wins.
                 guard generation == self.loadGeneration else {
                     Logger.shared.log("Discarding stale image load for index \(index)")
@@ -430,10 +443,11 @@ class ImageWindow {
                 // rotation of the previous image is discarded here (per spec).
                 self.baseImage = decoded.image
                 self.rotationSteps = 0
+                self.currentImageIsScaled = scaled
 
-                // Keep the decoded image in the LRU cache (size follows the
+                // Keep the decoded image in the NSCache (size follows the
                 // "Cached images" setting, 1–20, read live on insert).
-                ImageCache.shared.insert(decoded.image, for: url)
+                ImageCache.shared.insert(decoded.image, for: url, scaled: scaled)
 
                 // The image view fills the window area; setting the image resets it to
                 // "fit to window" mode (proportional fit, centered). Live Photo
@@ -446,7 +460,12 @@ class ImageWindow {
                 // Hide the empty-state placeholder once an image is shown.
                 self.container?.placeholder?.isHidden = true
 
-                Logger.shared.log("Image loaded successfully (\(decoded.format.displayName)): \(decoded.image.size)")
+                if scaled {
+                    Logger.shared.log("Huge image shown as scaled thumbnail: \(url)")
+                    self.showStatusBarHint("已缩放显示（超大图缩略）", for: 3.0)
+                } else {
+                    Logger.shared.log("Image loaded successfully (\(decoded.format.displayName)): \(decoded.image.size)")
+                }
 
                 // Refresh status bar (filename / size / zoom / index).
                 self.updateStatusBar()
@@ -454,6 +473,94 @@ class ImageWindow {
                 Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Memory management (large-file warning + huge-image thumbnails)
+
+    /// Show a warning for image files over 50 MB (spec: 大图警告), once per
+    /// file per window session. A non-blocking sheet is used so slideshow
+    /// playback and rapid navigation are never frozen by a modal dialog.
+    private func warnIfLargeFile(_ url: URL) {
+        guard largeFileWarned.insert(url).inserted else { return }
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64,
+              size > ImageLimits.largeFileWarningBytes else { return }
+
+        Logger.shared.log("Large file warning: \(url.lastPathComponent) is \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) (> 50 MB)")
+
+        let alert = NSAlert()
+        alert.messageText = "Large image warning"
+        alert.informativeText = "“\(url.lastPathComponent)” is \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)), larger than 50 MB. Displaying it may use a lot of memory."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window) { _ in }
+    }
+
+    /// Decode `url` applying the huge-image memory policy (spec: 超大图缩略):
+    /// if ImageIO can read the pixel dimensions and any side is ≥ 10 000 px,
+    /// only a downscaled thumbnail is decoded (the full bitmap never enters
+    /// memory); otherwise the normal decode runs and — if its result turns out
+    /// huge anyway (formats the dimension probe cannot read) — it is downscaled
+    /// after the fact as a fallback.
+    private func decodeWithHugeImagePolicy(url: URL) async throws -> (image: DecodedImage, scaled: Bool) {
+        // 1) Cheap dimension probe (file header only, no full decode).
+        if let probed = Self.probePixelSize(url),
+           max(probed.width, probed.height) >= ImageLimits.hugeImagePixelThreshold {
+            if let thumb = try? await DecoderManager.shared.decodeThumbnail(
+                url: url, maxPixelSize: ImageLimits.thumbnailMaxPixels) {
+                return (thumb, true)
+            }
+            // Thumbnail generation failed — fall through to the full decode.
+        }
+
+        // 2) Normal decode via the decoder registry.
+        let decoded = try await DecoderManager.shared.decode(url: url)
+
+        // 3) Fallback for formats the probe could not read: downscale in place.
+        if Self.isHugePixelSize(decoded.pixelSize),
+           let small = Self.downscale(decoded.image, toMaxPixels: ImageLimits.thumbnailMaxPixels) {
+            return (DecodedImage(image: small, format: decoded.format,
+                                 pixelSize: small.decodedPixelSize,
+                                 companionVideoURL: decoded.companionVideoURL), true)
+        }
+        return (decoded, false)
+    }
+
+    /// Pixel dimensions read from the file header only (no full decode).
+    private static func probePixelSize(_ url: URL) -> NSSize? {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              w > 0, h > 0 else { return nil }
+        return NSSize(width: w, height: h)
+    }
+
+    /// Whether any side of `size` reaches the huge-image threshold (10 000 px).
+    private static func isHugePixelSize(_ size: NSSize?) -> Bool {
+        guard let size = size else { return false }
+        return max(size.width, size.height) >= ImageLimits.hugeImagePixelThreshold
+    }
+
+    /// Downscale an already-decoded image so its longest side is ≤ `maxPixels`.
+    private static func downscale(_ image: NSImage, toMaxPixels maxPixels: Int) -> NSImage? {
+        guard let src = image.sourceCGImage else { return nil }
+        let longest = CGFloat(max(src.width, src.height))
+        guard longest > 0 else { return nil }
+        let factor = CGFloat(maxPixels) / longest
+        let w = max(1, Int((CGFloat(src.width) * factor).rounded()))
+        let h = max(1, Int((CGFloat(src.height) * factor).rounded()))
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(src, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let cg = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: w, height: h))
     }
 
     /// Swap in a new displayed image and (re)configure Live Photo support for it:
@@ -522,7 +629,12 @@ class ImageWindow {
         var parts: [String] = [url.lastPathComponent]
         
         if let size = currentPixelSize() {
-            parts.append("\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px")
+            var sizeText = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
+            if currentImageIsScaled {
+                // Huge-image thumbnail: mark that the display is scaled down.
+                sizeText += " (已缩放)"
+            }
+            parts.append(sizeText)
             parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
         }
         

@@ -1,52 +1,74 @@
 import AppKit
 
-/// A small LRU cache of decoded NSImages keyed by file URL, shared by all
+/// A thread-safe NSCache of decoded NSImages keyed by file URL, shared by all
 /// viewer windows. The maximum entry count is read live from AppConfig
-/// (`imageCacheCount`, 1...20), so a change in Preferences takes effect at
-/// the next insert/eviction without restarting anything.
+/// (`imageCacheCount`, 1...20, default 3), so a change in Preferences takes
+/// effect immediately without restarting anything.
+///
+/// Per Apple's documentation NSCache is thread-safe and evicts entries beyond
+/// `countLimit` automatically; the cache is cleared on system memory warnings
+/// (see MemoryPressureMonitor) and when all viewer windows close.
 final class ImageCache {
     static let shared = ImageCache()
 
-    private var storage: [URL: NSImage] = [:]
-    /// LRU order, oldest first.
-    private var order: [URL] = []
+    /// NSCache caps the number of stored images via `countLimit`.
+    private let cache = NSCache<NSURL, NSImage>()
+    /// URLs whose cached entry is a downscaled thumbnail of a huge image.
+    private var scaledKeys: Set<NSURL> = []
+    /// Guards `scaledKeys` (NSCache manages its own locking).
     private let lock = NSLock()
+    private var configObserver: NSObjectProtocol?
 
-    /// Returns the cached image for `url` (marking it most-recently-used), or nil.
-    func image(for url: URL) -> NSImage? {
-        lock.lock(); defer { lock.unlock() }
-        guard let image = storage[url] else { return nil }
-        touchLocked(url)
-        return image
+    private init() {
+        cache.countLimit = AppConfig.shared.imageCacheCount
+        // Keep countLimit in sync with the "Cached images" setting (1–20).
+        configObserver = NotificationCenter.default.addObserver(
+            forName: AppConfig.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cache.countLimit = AppConfig.shared.imageCacheCount
+        }
     }
 
-    /// Insert (or refresh) a decoded image, evicting the least-recently-used
-    /// entries beyond the configured cache count.
-    func insert(_ image: NSImage, for url: URL) {
-        lock.lock(); defer { lock.unlock() }
-        if storage[url] == nil {
-            order.append(url)
+    /// Returns the cached image for `url`, or nil.
+    func image(for url: URL) -> NSImage? {
+        return cache.object(forKey: url as NSURL)
+    }
+
+    /// Insert (or refresh) a decoded image; NSCache evicts entries beyond
+    /// `countLimit` automatically.
+    func insert(_ image: NSImage, for url: URL, scaled: Bool = false) {
+        let key = url as NSURL
+        cache.setObject(image, forKey: key)
+        lock.lock()
+        if scaled {
+            scaledKeys.insert(key)
         } else {
-            touchLocked(url)
+            scaledKeys.remove(key)
         }
-        storage[url] = image
-        let limit = AppConfig.shared.imageCacheCount
-        while order.count > limit, let oldest = order.first {
-            order.removeFirst()
-            storage[oldest] = nil
-        }
+        lock.unlock()
     }
 
     /// Whether a decoded image for `url` is already cached.
     func contains(_ url: URL) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return storage[url] != nil
+        return cache.object(forKey: url as NSURL) != nil
     }
 
-    private func touchLocked(_ url: URL) {
-        if let i = order.firstIndex(of: url) {
-            order.remove(at: i)
-            order.append(url)
-        }
+    /// Whether the cached entry for `url` (if any) is a huge-image thumbnail.
+    func isScaled(_ url: URL) -> Bool {
+        let key = url as NSURL
+        lock.lock()
+        let scaled = scaledKeys.contains(key)
+        lock.unlock()
+        return scaled && cache.object(forKey: key) != nil
+    }
+
+    /// Release every cached image (memory warning / all windows closed).
+    func removeAll() {
+        cache.removeAllObjects()
+        lock.lock()
+        scaledKeys.removeAll()
+        lock.unlock()
     }
 }

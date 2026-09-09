@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import ImageIO
 
 /// Decoder manager: registry + dispatcher for the decode abstraction layer.
 ///
@@ -78,6 +80,27 @@ final class DecoderManager {
             throw DecodeError.fileReadFailed(url, error.localizedDescription)
         }
         return try await decode(data: data, url: url)
+    }
+
+    /// Decode `url` as a downscaled thumbnail WITHOUT ever bringing the
+    /// full-size bitmap into memory: per Apple's documented down-sampling
+    /// path, `CGImageSourceCreateThumbnailAtIndex` renders only the requested
+    /// size (`kCGImageSourceThumbnailMaxPixelSize` limits the longest side).
+    func decodeThumbnail(url: URL, maxPixelSize: Int) async throws -> DecodedImage {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw DecodeError.decodeFailed("thumbnail generation failed for \(url.lastPathComponent)")
+        }
+        let size = NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        let image = NSImage(cgImage: cgImage, size: size)
+        return DecodedImage(image: image, format: detectFormat(of: url),
+                            pixelSize: size, companionVideoURL: nil)
     }
 
     /// Detect the format of `data` (using `url` for the extension fallback and

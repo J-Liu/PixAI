@@ -22,6 +22,11 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         // Log the loaded config state (no-op while logging is disabled).
         AppConfig.shared.logLoadedState()
         Logger.shared.log("applicationDidFinishLaunching")
+
+        // Clear the image cache when the system signals a memory warning
+        // (Dispatch memory-pressure source — macOS has no AppKit equivalent
+        // of UIApplication.didReceiveMemoryWarningNotification).
+        MemoryPressureMonitor.shared.start()
         
         // Build and set the menu bar.
         NSApplication.shared.mainMenu = MenuBuilder.build()
@@ -105,6 +110,12 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     
     private func removeWindow(_ win: ImageWindow) {
         imageWindows.removeAll { $0 === win }
+        // All windows closed: release every cached image. The app keeps
+        // running (default setting); the cache refills as new images load.
+        if imageWindows.isEmpty {
+            Logger.shared.log("All windows closed — releasing all image cache")
+            ImageCache.shared.removeAll()
+        }
         Logger.shared.log("Window closed, \(imageWindows.count) window(s) remain")
     }
 }
