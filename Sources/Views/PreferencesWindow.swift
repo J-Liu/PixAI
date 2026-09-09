@@ -14,6 +14,8 @@ final class PreferencesWindow {
     // Controls (kept as references so values can be refreshed).
     private var quitCheckbox: NSButton!
     private var deleteConfirmCheckbox: NSButton!
+    private var liveAutoPlayCheckbox: NSButton!
+    private var liveMutedCheckbox: NSButton!
     private var intervalField: NSTextField!
     private var intervalStepper: NSStepper!
     private var cacheField: NSTextField!
@@ -40,7 +42,7 @@ final class PreferencesWindow {
     // MARK: - Building
 
     private func buildWindow() {
-        let contentSize = NSSize(width: 520, height: 460)
+        let contentSize = NSSize(width: 520, height: 564)
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
@@ -71,6 +73,20 @@ final class PreferencesWindow {
         deleteConfirmCheckbox.target = self
         deleteConfirmCheckbox.action = #selector(toggleDeleteConfirm(_:))
         y += generalBox.frame.height + 14
+
+        // ─── Live Photo ─────────────────────────────────────────────
+        let liveContentH: CGFloat = 64
+        let liveBox = makeSection(root, title: "Live Photo", x: margin, y: y, width: sectionWidth, contentHeight: liveContentH)
+        liveAutoPlayCheckbox = makeCheck(liveBox.contentView!, title: "Auto-play Live Photos when displayed", x: 14, y: 10)
+        liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
+        liveAutoPlayCheckbox.target = self
+        liveAutoPlayCheckbox.action = #selector(toggleLiveAutoPlay(_:))
+
+        liveMutedCheckbox = makeCheck(liveBox.contentView!, title: "Mute Live Photo playback", x: 14, y: 38)
+        liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
+        liveMutedCheckbox.target = self
+        liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
+        y += liveBox.frame.height + 14
 
         // ─── Slideshow ──────────────────────────────────────────────
         let slideContentH: CGFloat = 36
@@ -208,6 +224,8 @@ final class PreferencesWindow {
             guard let self = self else { return }
             self.quitCheckbox.state = AppConfig.shared.quitOnLastWindowClosed ? .on : .off
             self.deleteConfirmCheckbox.state = AppConfig.shared.deleteConfirmationEnabled ? .on : .off
+            self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
+            self.liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
             let interval = Int(AppConfig.shared.slideshowInterval)
             if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
             if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
@@ -228,6 +246,14 @@ final class PreferencesWindow {
 
     @objc private func toggleDeleteConfirm(_ sender: NSButton) {
         AppConfig.shared.deleteConfirmationEnabled = (sender.state == .on)
+    }
+
+    @objc private func toggleLiveAutoPlay(_ sender: NSButton) {
+        AppConfig.shared.livePhotoAutoPlay = (sender.state == .on)
+    }
+
+    @objc private func toggleLiveMuted(_ sender: NSButton) {
+        AppConfig.shared.livePhotoMuted = (sender.state == .on)
     }
 
     @objc private func intervalStepperChanged(_ sender: NSStepper) {

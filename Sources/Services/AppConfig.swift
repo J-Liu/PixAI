@@ -22,6 +22,10 @@ final class AppConfig {
         static let slideshowInterval: Double = 3.0
         static let quitOnLastWindowClosed = false
         static let logEnabled = false
+        /// Live Photo companion videos play automatically when the still loads.
+        static let livePhotoAutoPlay = true
+        /// Live Photo playback is muted (the MOV carries an audio track).
+        static let livePhotoMuted = true
         /// `~/.pixai/PixAI.log`, expanded to an absolute path at use time.
         static func logPath() -> String {
             return FileManager.default.homeDirectoryForCurrentUser
@@ -41,6 +45,8 @@ final class AppConfig {
         var quitOnLastWindowClosed: Bool?
         var logEnabled: Bool?
         var logPath: String?
+        var livePhotoAutoPlay: Bool?
+        var livePhotoMuted: Bool?
     }
 
     private let fileURL: URL
@@ -54,6 +60,8 @@ final class AppConfig {
     private var _quitOnLastWindowClosed: Bool = Defaults.quitOnLastWindowClosed
     private var _logEnabled: Bool = Defaults.logEnabled
     private var _logPath: String = Defaults.logPath()
+    private var _livePhotoAutoPlay: Bool = Defaults.livePhotoAutoPlay
+    private var _livePhotoMuted: Bool = Defaults.livePhotoMuted
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -64,7 +72,7 @@ final class AppConfig {
     /// Log the loaded settings once at startup (call after Logger is up).
     func logLoadedState() {
         lock.lock()
-        let msg = "Config state: deleteConfirm=\(_deleteConfirmationEnabled), cacheCount=\(_imageCacheCount), interval=\(_slideshowInterval)s, quitOnLastClose=\(_quitOnLastWindowClosed), logEnabled=\(_logEnabled), logPath=\(_logPath)"
+        let msg = "Config state: deleteConfirm=\(_deleteConfirmationEnabled), cacheCount=\(_imageCacheCount), interval=\(_slideshowInterval)s, quitOnLastClose=\(_quitOnLastWindowClosed), logEnabled=\(_logEnabled), logPath=\(_logPath), liveAutoPlay=\(_livePhotoAutoPlay), liveMuted=\(_livePhotoMuted)"
         lock.unlock()
         Logger.shared.log(msg)
     }
@@ -165,6 +173,38 @@ final class AppConfig {
         }
     }
 
+    /// Whether Live Photo companion videos play automatically when the still
+    /// image loads (default: true).
+    var livePhotoAutoPlay: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _livePhotoAutoPlay
+        }
+        set {
+            lock.lock()
+            let changed = _livePhotoAutoPlay != newValue
+            if changed { _livePhotoAutoPlay = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether Live Photo playback is muted (default: true). Read live each
+    /// time a Live Photo starts playing.
+    var livePhotoMuted: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _livePhotoMuted
+        }
+        set {
+            lock.lock()
+            let changed = _livePhotoMuted != newValue
+            if changed { _livePhotoMuted = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
     /// Reset every setting to its default value (and persist).
     func resetToDefaults() {
         lock.lock()
@@ -192,6 +232,14 @@ final class AppConfig {
         let defaultLogPath = Defaults.logPath()
         if _logPath != defaultLogPath {
             _logPath = defaultLogPath
+            changed = true
+        }
+        if _livePhotoAutoPlay != Defaults.livePhotoAutoPlay {
+            _livePhotoAutoPlay = Defaults.livePhotoAutoPlay
+            changed = true
+        }
+        if _livePhotoMuted != Defaults.livePhotoMuted {
+            _livePhotoMuted = Defaults.livePhotoMuted
             changed = true
         }
         lock.unlock()
@@ -222,6 +270,8 @@ final class AppConfig {
         if let v = payload.quitOnLastWindowClosed { _quitOnLastWindowClosed = v }
         if let v = payload.logEnabled { _logEnabled = v }
         if let v = payload.logPath, !v.isEmpty { _logPath = (v as NSString).expandingTildeInPath }
+        if let v = payload.livePhotoAutoPlay { _livePhotoAutoPlay = v }
+        if let v = payload.livePhotoMuted { _livePhotoMuted = v }
         lock.unlock()
     }
 
@@ -233,7 +283,9 @@ final class AppConfig {
             slideshowInterval: _slideshowInterval,
             quitOnLastWindowClosed: _quitOnLastWindowClosed,
             logEnabled: _logEnabled,
-            logPath: _logPath
+            logPath: _logPath,
+            livePhotoAutoPlay: _livePhotoAutoPlay,
+            livePhotoMuted: _livePhotoMuted
         )
         lock.unlock()
         do {

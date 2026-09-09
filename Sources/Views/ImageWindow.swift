@@ -223,8 +223,9 @@ class ImageWindow {
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            // Never leave a running slideshow timer behind.
+            // Never leave a running slideshow timer or Live Photo playback behind.
             self.slideshow.stop()
+            self.container?.imageView?.stopLivePlayback()
             if let token = self.closeObserver {
                 NotificationCenter.default.removeObserver(token)
                 self.closeObserver = nil
@@ -409,7 +410,7 @@ class ImageWindow {
         if let cached = ImageCache.shared.image(for: url) {
             self.baseImage = cached
             self.rotationSteps = 0
-            self.container?.imageView?.image = cached
+            self.displayImage(cached, at: url)
             self.window.title = url.lastPathComponent
             self.container?.placeholder?.isHidden = true
             Logger.shared.log("Image cache hit for index \(index)")
@@ -437,8 +438,9 @@ class ImageWindow {
                 ImageCache.shared.insert(nsImage, for: url)
 
                 // The image view fills the window area; setting the image resets it to
-                // "fit to window" mode (proportional fit, centered).
-                self.container?.imageView?.image = nsImage
+                // "fit to window" mode (proportional fit, centered). Live Photo
+                // support is configured alongside the new still.
+                self.displayImage(nsImage, at: url)
                 
                 // Window title shows the current file name.
                 self.window.title = url.lastPathComponent
@@ -455,7 +457,31 @@ class ImageWindow {
             }
         }
     }
-    
+
+    /// Swap in a new displayed image and (re)configure Live Photo support for it:
+    /// stop any running playback, show the still, then attach the companion video
+    /// (if any) — which auto-plays per the "Auto-play Live Photos" setting.
+    private func displayImage(_ nsImage: NSImage, at url: URL) {
+        guard let imageView = container?.imageView else { return }
+        imageView.livePhotoURL = nil   // stop playback of the previous image first
+        imageView.image = nsImage
+        attachLivePhoto(for: url)
+    }
+
+    /// Detect the companion .MOV for `url` (async, cached per URL) and attach it
+    /// to the image view — but only if this image is still current when the
+    /// detection completes (rapid navigation discards stale results).
+    private func attachLivePhoto(for url: URL) {
+        let generation = loadGeneration
+        Task { @MainActor [weak self] in
+            guard let self = self, self.loadGeneration == generation,
+                  self.imageURLs.indices.contains(self.currentIndex),
+                  self.imageURLs[self.currentIndex] == url else { return }
+            self.container?.imageView?.livePhotoURL =
+                await LivePhotoDetector.shared.companionVideoURL(for: url)
+        }
+    }
+
     /// Pixel dimensions of the current image, if determinable.
     private func currentPixelSize() -> NSSize? {
         guard let image = container?.imageView?.image else { return nil }
@@ -533,7 +559,19 @@ class ImageWindow {
     private func applyRotation() {
         guard let base = baseImage else { return }
         let displayed = base.rotatedClockwise(by: rotationSteps * 90) ?? base
+
+        // A temporary rotation desynchronizes the still from its companion video,
+        // so suppress Live Photo playback until the rotation is undone or saved.
+        if (rotationSteps * 90) % 360 != 0 {
+            container?.imageView?.livePhotoURL = nil
+        }
+
         container?.imageView?.image = displayed
+
+        if (rotationSteps * 90) % 360 == 0, imageURLs.indices.contains(currentIndex) {
+            // Back to the original orientation: restore Live Photo support.
+            attachLivePhoto(for: imageURLs[currentIndex])
+        }
         updateStatusBar()
     }
 
@@ -571,6 +609,8 @@ class ImageWindow {
             // The file now matches the displayed image: adopt it as the new base.
             baseImage = rotated
             rotationSteps = 0
+            // Restore Live Photo support (suppressed while rotated).
+            attachLivePhoto(for: url)
             Logger.shared.log("Saved \(netDegrees)°-rotated image to \(url)")
             showStatusMessage("Saved")
         } catch {
@@ -665,6 +705,7 @@ class ImageWindow {
             }
             currentIndex = 0
             window.title = "PixAI"
+            container?.imageView?.livePhotoURL = nil
             container?.imageView?.image = nil
             container?.placeholder?.isHidden = false
             updateStatusBar()

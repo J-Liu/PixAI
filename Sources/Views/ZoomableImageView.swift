@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 
 /// A custom image view with full zoom/pan control (NSImageView has no built-in
 /// zoom API — `imageScaling` only offers fixed scaling modes, so the image is
@@ -57,6 +58,32 @@ class ZoomableImageView: NSView {
     /// Called after any zoom change so the status bar can refresh in real time.
     var onZoomChange: (() -> Void)?
 
+    // MARK: - Live Photo state
+
+    /// The companion .MOV for the current image when it is a Live Photo pair
+    /// (nil = plain still image). Setting it configures the badge and starts
+    /// auto-playback when the "Auto-play Live Photos" setting is enabled.
+    var livePhotoURL: URL? {
+        didSet {
+            guard oldValue != livePhotoURL else { return }
+            configureLivePhoto()
+        }
+    }
+
+    private var livePlayer: AVPlayer?
+    /// The URL currently loaded into `livePlayer` (the player is recreated when
+    /// the companion video changes).
+    private var liveLoadedURL: URL?
+    private let liveOverlay = LivePhotoOverlayView(frame: .zero)
+    private let liveBadge = LivePhotoBadgeView(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+    /// Tokens for the end/failure observers of the current AVPlayerItem.
+    private var liveEventObservers: [NSObjectProtocol] = []
+    private var configObserver: NSObjectProtocol?
+
+    /// Fixed on-screen badge size and its inset from the drawn image corner.
+    private static let liveBadgeSize: CGFloat = 28
+    private static let liveBadgeInset: CGFloat = 10
+
     // MARK: - Limits (spec: 10% ~ 1000%, wheel step 10%)
 
     static let minZoom: CGFloat = 0.10
@@ -78,6 +105,35 @@ class ZoomableImageView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+
+        // Live Photo chrome: the video overlay sits directly above the drawn
+        // image, and the badge (bottom-left corner of the image) above that.
+        liveOverlay.isHidden = true
+        addSubview(liveOverlay)
+        liveBadge.isHidden = true
+        liveBadge.onTap = { [weak self] in
+            self?.toggleLivePlayback()
+        }
+        addSubview(liveBadge)
+
+        // Keep a running Live Photo's mute state in sync with the setting.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: AppConfig.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, let player = self.livePlayer else { return }
+            player.isMuted = AppConfig.shared.livePhotoMuted
+        }
+    }
+
+    deinit {
+        for observer in liveEventObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = configObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -136,6 +192,7 @@ class ZoomableImageView: NSView {
         zoomScale = fitScale()
         centerImage()
         needsDisplay = true
+        layoutLivePhotoChrome()
         onZoomChange?()
     }
 
@@ -164,6 +221,7 @@ class ZoomableImageView: NSView {
         imageOrigin = NSPoint(x: cursor.x - qx * zoomScale, y: cursor.y - qy * zoomScale)
         clampOrigin()
         needsDisplay = true
+        layoutLivePhotoChrome()
         onZoomChange?()
     }
 
@@ -240,6 +298,7 @@ class ZoomableImageView: NSView {
             clampOrigin()
         }
         needsDisplay = true
+        layoutLivePhotoChrome()
         onZoomChange?()
     }
 
@@ -303,6 +362,7 @@ class ZoomableImageView: NSView {
         )
         clampOrigin()
         needsDisplay = true
+        layoutLivePhotoChrome()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -354,6 +414,108 @@ class ZoomableImageView: NSView {
         } else {
             NSCursor.arrow.set()
         }
+    }
+
+    // MARK: - Live Photo playback
+
+    /// The drawn image rect in this view's coordinates (what `draw(_:)` paints).
+    private func drawnImageRect() -> NSRect? {
+        guard let size = drawnSize() else { return nil }
+        return NSRect(origin: imageOrigin, size: size)
+    }
+
+    /// Called when `livePhotoURL` changes: stop any running playback, show or
+    /// hide the badge, and auto-play when the setting is enabled.
+    private func configureLivePhoto() {
+        stopLivePlayback()
+        guard livePhotoURL != nil else {
+            liveBadge.isHidden = true
+            return
+        }
+        liveBadge.isHidden = false
+        layoutLivePhotoChrome()
+        if AppConfig.shared.livePhotoAutoPlay {
+            startLivePlayback()
+        }
+    }
+
+    /// Start (or restart) playback of the companion video: muted per the
+    /// current setting, playing once over the still image.
+    private func startLivePlayback() {
+        guard let url = livePhotoURL, image != nil else { return }
+        if livePlayer == nil || liveLoadedURL != url {
+            let player = AVPlayer(url: url)
+            player.isMuted = AppConfig.shared.livePhotoMuted
+            player.volume = 1.0
+            player.actionAtItemEnd = .none
+            observeLivePlaybackEvents(for: player.currentItem)
+            livePlayer = player
+            liveLoadedURL = url
+            liveOverlay.player = player
+        }
+        // Seek to zero first; AVFoundation delays `play()` until the seek finishes.
+        livePlayer?.seek(to: .zero)
+        livePlayer?.play()
+        layoutLivePhotoChrome()
+        liveOverlay.isHidden = false
+    }
+
+    /// Stop playback and fall back to the still image (navigation, rotation
+    /// changes, window close, and the end of a play-through all call this).
+    func stopLivePlayback() {
+        livePlayer?.pause()
+        liveOverlay.isHidden = true
+    }
+
+    /// Badge click: play when idle, stop while playing. Mute follows the
+    /// current setting at playback time.
+    private func toggleLivePlayback() {
+        guard livePhotoURL != nil else { return }
+        if livePlayer?.timeControlStatus == .playing {
+            stopLivePlayback()
+        } else {
+            startLivePlayback()
+        }
+    }
+
+    /// Reposition the video overlay (exactly over the drawn image) and the badge
+    /// (bottom-left corner of the drawn image). Called on every zoom/pan/resize.
+    private func layoutLivePhotoChrome() {
+        guard livePhotoURL != nil, let rect = drawnImageRect() else { return }
+        liveOverlay.frame = rect
+        let side = Self.liveBadgeSize
+        let inset = Self.liveBadgeInset
+        liveBadge.frame = NSRect(
+            x: rect.minX + inset,
+            y: rect.maxY - side - inset,
+            width: side,
+            height: side
+        )
+    }
+
+    /// Observe the end (and failure) of the current item so playback falls back
+    /// to the still image when it finishes or cannot play.
+    private func observeLivePlaybackEvents(for item: AVPlayerItem?) {
+        for old in liveEventObservers {
+            NotificationCenter.default.removeObserver(old)
+        }
+        liveEventObservers.removeAll()
+        guard let item else { return }
+        liveEventObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopLivePlayback()
+        })
+        liveEventObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Logger.shared.log("Live Photo playback failed")
+            self?.stopLivePlayback()
+        })
     }
 
     // MARK: - Drawing
