@@ -2,9 +2,10 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
-/// Layout: [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] [save] | [▶] — the
-/// play/pause button sits in the middle, separated by thin vertical dividers:
-/// the zoom group on its left, the rotate/save group on its right.
+/// Layout: [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶] —
+/// the play/pause button sits in the middle, separated by thin vertical dividers:
+/// the zoom group on its left, the rotate group and the save/delete group on
+/// its right (the save+delete pair is one group with a divider to its left).
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
@@ -15,9 +16,11 @@ class AutoHideToolbar: NSView {
     let rotateClockwiseButton: NSButton
     let rotateCounterclockwiseButton: NSButton
     let saveButton: NSButton
+    let deleteButton: NSButton
     private let leftDivider: NSView
     private let playDividerLeft: NSView
     private let playDividerRight: NSView
+    private let saveGroupDivider: NSView
     private let rightDivider: NSView
 
     private var isHovered = false
@@ -30,6 +33,7 @@ class AutoHideToolbar: NSView {
     private let onRotateClockwiseTap: () -> Void
     private let onRotateCounterclockwiseTap: () -> Void
     private let onSaveTap: () -> Void
+    private let onDeleteTap: () -> Void
 
     /// The color for the toolbar buttons (bright orange).
     static let buttonColor = NSColor(red: 1.0, green: 0.55, blue: 0.0, alpha: 1.0) // Bright orange
@@ -57,7 +61,8 @@ class AutoHideToolbar: NSView {
          onPlayPauseTap: @escaping () -> Void,
          onRotateClockwiseTap: @escaping () -> Void,
          onRotateCounterclockwiseTap: @escaping () -> Void,
-         onSaveTap: @escaping () -> Void) {
+         onSaveTap: @escaping () -> Void,
+         onDeleteTap: @escaping () -> Void) {
         self.onLeftTap = onLeftTap
         self.onRightTap = onRightTap
         self.onZoomInTap = onZoomInTap
@@ -67,6 +72,7 @@ class AutoHideToolbar: NSView {
         self.onRotateClockwiseTap = onRotateClockwiseTap
         self.onRotateCounterclockwiseTap = onRotateCounterclockwiseTap
         self.onSaveTap = onSaveTap
+        self.onDeleteTap = onDeleteTap
         leftButton = NSButton()
         rightButton = NSButton()
         zoomInButton = NSButton()
@@ -76,11 +82,13 @@ class AutoHideToolbar: NSView {
         rotateClockwiseButton = NSButton()
         rotateCounterclockwiseButton = NSButton()
         saveButton = NSButton()
+        deleteButton = NSButton()
         // Thin vertical dividers (must be set before super.init, as they are
         // stored `let` properties).
         leftDivider = Self.makeDivider()
         playDividerLeft = Self.makeDivider()
         playDividerRight = Self.makeDivider()
+        saveGroupDivider = Self.makeDivider()
         rightDivider = Self.makeDivider()
         super.init(frame: .zero)
 
@@ -98,6 +106,7 @@ class AutoHideToolbar: NSView {
         configureButton(rotateClockwiseButton, symbolName: "arrow.clockwise")
         configureButton(rotateCounterclockwiseButton, symbolName: "arrow.counterclockwise")
         configureButton(saveButton, symbolName: "square.and.arrow.down")
+        configureButton(deleteButton, symbolName: "trash")
 
         addSubview(leftButton)
         addSubview(leftDivider)
@@ -109,7 +118,9 @@ class AutoHideToolbar: NSView {
         addSubview(playDividerRight)
         addSubview(rotateClockwiseButton)
         addSubview(rotateCounterclockwiseButton)
+        addSubview(saveGroupDivider)
         addSubview(saveButton)
+        addSubview(deleteButton)
         addSubview(rightDivider)
         addSubview(rightButton)
 
@@ -172,7 +183,7 @@ class AutoHideToolbar: NSView {
     }
 
     /// Position all controls in a centered row:
-    /// [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] [save] | [▶].
+    /// [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶].
     override func layout() {
         super.layout()
 
@@ -181,11 +192,14 @@ class AutoHideToolbar: NSView {
         let dividerW: CGFloat = 1
         let dividerH: CGFloat = 28
         let dividerPad: CGFloat = 14
-        let groupWidth = buttonSize * 3 + gap * 2
+        let zoomGroupWidth = buttonSize * 3 + gap * 2
+        let rotateGroupWidth = buttonSize * 2 + gap
+        let saveGroupWidth = buttonSize * 2 + gap
         let totalWidth = buttonSize
-            + dividerPad + dividerW + dividerPad + groupWidth
+            + dividerPad + dividerW + dividerPad + zoomGroupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
-            + dividerPad + dividerW + dividerPad + groupWidth
+            + dividerPad + dividerW + dividerPad + rotateGroupWidth
+            + dividerPad + dividerW + dividerPad + saveGroupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
 
         var x = (bounds.width - totalWidth) / 2
@@ -210,8 +224,12 @@ class AutoHideToolbar: NSView {
         rotateClockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
         rotateCounterclockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
+        x += buttonSize + dividerPad
+        saveGroupDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
+        x += dividerW + dividerPad
         saveButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        deleteButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         rightDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
@@ -242,6 +260,8 @@ class AutoHideToolbar: NSView {
             onRotateCounterclockwiseTap()
         } else if sender == saveButton {
             onSaveTap()
+        } else if sender == deleteButton {
+            onDeleteTap()
         }
     }
 

@@ -19,6 +19,8 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Log the loaded config state (no-op while logging is disabled).
+        AppConfig.shared.logLoadedState()
         Logger.shared.log("applicationDidFinishLaunching")
         
         // Build and set the menu bar.
@@ -40,6 +42,11 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             self?.makeNewWindow(paths: [])
         }
         
+        // Preferences (Cmd+,): show the shared Preferences window.
+        MenuBuilder.preferencesCallback = {
+            PreferencesWindow.shared.show()
+        }
+        
         // Create the first window with command-line paths (if any).
         let urlPaths = paths.compactMap { URL(fileURLWithPath: $0) }
         let first = makeNewWindow(paths: urlPaths)
@@ -52,9 +59,10 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         Logger.shared.log("PixAIApp initialized with \(imageWindows.count) window(s)")
     }
     
-    /// Closing the last window does not quit the app.
+    /// Whether closing the last window quits the app (configurable in
+    /// Preferences; default: keep running).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return false
+        return AppConfig.shared.quitOnLastWindowClosed
     }
 
     /// The app stays alive after all windows close; clicking its Dock icon then

@@ -1,83 +1,44 @@
 import Foundation
 
 /// Simple file-based logger for the application.
-/// All log messages are written to a file in the project root directory.
+///
+/// Logging is OFF by default (`AppConfig.logEnabled == false`); while disabled,
+/// `log(_:)` is a no-op. When enabled, entries are appended to the configured
+/// log file (`AppConfig.logPath`, default `~/.pixai/PixAI.log`). Both values
+/// are read on every call, so toggling them in Preferences takes effect at once.
 class Logger {
     static let shared = Logger()
-    
-    private var logFileURL: URL
-    
-    init() {
-        // Log file location: project root / PixAI.log (always try this first)
-        let possiblePaths = [
-            "/Users/jia/Desktop/PixAI/PixAI.log",
-            FileManager.default.currentDirectoryPath + "/PixAI.log",
-        ]
-        
-        var foundURL: URL? = nil
-        for path in possiblePaths {
-            let url = URL(fileURLWithPath: path)
-            do {
-                try "".write(to: url, atomically: true, encoding: .utf8)
-                foundURL = url
-                break
-            } catch {
-                // Try next path
-                continue
-            }
-        }
-        
-        if let url = foundURL {
-            logFileURL = url
-        } else {
-            // Ultimate fallback: write to home directory
-            logFileURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("PixAI.log")
-            do {
-                try "".write(to: logFileURL, atomically: true, encoding: .utf8)
-            } catch {
-                print("Failed to create log file in any location: \(error)")
-                // Last resort: use /tmp (may not work in sandbox but worth trying)
-                logFileURL = URL(fileURLWithPath: "/tmp/PixAI.log")
-                do {
-                    try "".write(to: logFileURL, atomically: true, encoding: .utf8)
-                } catch {
-                    print("Failed to create log file in /tmp either")
-                }
-            }
-        }
-        
-        // Ensure the log file exists
-        if !FileManager.default.fileExists(atPath: logFileURL.path) {
-            do {
-                try "".write(to: logFileURL, atomically: true, encoding: .utf8)
-            } catch {
-                print("Failed to create log file: \(error)")
-            }
-        }
-    }
-    
-    /// Log a message with timestamp.
+
+    /// Intentionally empty: the first access to `Logger.shared` may be triggered
+    /// from inside `AppConfig.init`, so this init must not touch AppConfig.
+    private init() {}
+
+    /// Append a timestamped message when logging is enabled.
     func log(_ message: String) {
+        guard AppConfig.shared.logEnabled else { return }
+
+        let url = URL(fileURLWithPath: AppConfig.shared.logPath, isDirectory: false)
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let logEntry = "[\(timestamp)] \(message)\n"
-        
-        // Append to file
-        if let handle = try? FileHandle(forWritingTo: logFileURL) {
+
+        // Make sure the parent directory exists (the path may have just changed).
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             if let data = logEntry.data(using: .utf8) {
                 handle.write(data)
             }
             handle.closeFile()
         } else {
-            // Fallback: read existing content and write the whole file
+            // File missing or unreadable: (re)create it, then retry once.
             do {
-                var existingContent = ""
-                if let content = try? String(contentsOf: logFileURL, encoding: .utf8) {
-                    existingContent = content
-                }
-                try (existingContent + logEntry).write(to: logFileURL, atomically: true, encoding: .utf8)
+                try logEntry.write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                print("Failed to write log: \(error)")
+                FileHandle.standardError.write(Data("PixAI: failed to write log to \(url.path): \(error)\n".utf8))
             }
         }
     }

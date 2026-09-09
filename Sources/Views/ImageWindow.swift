@@ -132,6 +132,10 @@ class ImageWindow {
             onSaveTap: { [weak self] in
                 Logger.shared.log("Toolbar save button tapped")
                 self?.saveCurrentRotation()
+            },
+            onDeleteTap: { [weak self] in
+                Logger.shared.log("Toolbar delete button tapped")
+                self?.deleteCurrentImage()
             }
         )
         container.toolbar = toolbar
@@ -173,6 +177,10 @@ class ImageWindow {
             onSave: { [weak self] in
                 Logger.shared.log("Keyboard handler: save rotation (Cmd+S)")
                 self?.saveCurrentRotation()
+            },
+            onDelete: { [weak self] in
+                Logger.shared.log("Keyboard handler: delete current image (Cmd+Delete)")
+                self?.deleteCurrentImage()
             },
             onToggleFullscreen: { [weak self] in
                 Logger.shared.log("Keyboard handler: toggle full screen (F)")
@@ -397,6 +405,18 @@ class ImageWindow {
         let generation = loadGeneration + 1
         loadGeneration = generation
         
+        // Cache hit: show the decoded image immediately, no re-decode.
+        if let cached = ImageCache.shared.image(for: url) {
+            self.baseImage = cached
+            self.rotationSteps = 0
+            self.container?.imageView?.image = cached
+            self.window.title = url.lastPathComponent
+            self.container?.placeholder?.isHidden = true
+            Logger.shared.log("Image cache hit for index \(index)")
+            self.updateStatusBar()
+            return
+        }
+        
         // Delegate to the ImageLoaderRegistry for format-agnostic loading.
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -411,6 +431,10 @@ class ImageWindow {
                 // rotation of the previous image is discarded here (per spec).
                 self.baseImage = nsImage
                 self.rotationSteps = 0
+
+                // Keep the decoded image in the LRU cache (size follows the
+                // "Cached images" setting, 1–20, read live on insert).
+                ImageCache.shared.insert(nsImage, for: url)
 
                 // The image view fills the window area; setting the image resets it to
                 // "fit to window" mode (proportional fit, centered).
@@ -590,6 +614,80 @@ class ImageWindow {
         }
     }
 
+    // MARK: - Delete (move to Trash)
+
+    /// Delete the current image: move it to the Trash (per Apple's
+    /// `FileManager.trashItem(at:resultingItemURL:)`), optionally after a
+    /// confirmation dialog, then switch to the next / previous image or the
+    /// empty state when the last one is removed.
+    func deleteCurrentImage() {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+
+        // Confirmation dialog (skipped when the user disabled it via the
+        // "don't ask again" checkbox or the Preferences window).
+        if AppConfig.shared.deleteConfirmationEnabled {
+            let alert = NSAlert()
+            alert.messageText = "Delete “\(url.lastPathComponent)”?"
+            alert.informativeText = "The file will be moved to the Trash.\nSize: \(Self.fileSizeString(for: url))"
+            alert.alertStyle = .warning
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Don't ask again"
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+
+            let response = alert.runModal()
+            if alert.suppressionButton?.state == .on {
+                // Persist "don't ask again" to ~/.pixai/config.json.
+                AppConfig.shared.deleteConfirmationEnabled = false
+            }
+            guard response == .alertFirstButtonReturn else { return }
+        }
+
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            Logger.shared.log("Move to Trash failed for \(url): \(error)")
+            showStatusMessage("Delete failed: \(error.localizedDescription)")
+            return
+        }
+
+        // Remove from the list; drop any unsaved rotation of this image.
+        let wasIndex = currentIndex
+        imageURLs.remove(at: wasIndex)
+        baseImage = nil
+        rotationSteps = 0
+
+        if imageURLs.isEmpty {
+            // All files deleted → empty state.
+            if slideshow.isActive {
+                endSlideshow(finished: false)
+            }
+            currentIndex = 0
+            window.title = "PixAI"
+            container?.imageView?.image = nil
+            container?.placeholder?.isHidden = false
+            updateStatusBar()
+        } else {
+            // Switch to the image that shifted into this slot (the next one),
+            // or the previous one when the last image was deleted.
+            let newIndex = min(wasIndex, imageURLs.count - 1)
+            loadImage(at: newIndex)
+        }
+
+        Logger.shared.log("Deleted \(url) (moved to Trash)")
+        showStatusMessage("Moved to Trash")
+    }
+
+    /// Human-readable file size for the delete confirmation dialog.
+    private static func fileSizeString(for url: URL) -> String {
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int64 {
+            return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        }
+        return "unknown"
+    }
+
     // MARK: - Full screen
 
     /// Enter or exit native full-screen mode (F key). Native full screen
@@ -609,6 +707,8 @@ class ImageWindow {
     /// Start the slideshow: auto full screen, then advance every `interval` seconds.
     private func startSlideshow() {
         guard !imageURLs.isEmpty else { return }
+        // Read the configured interval (Preferences ▸ Slideshow) at start time.
+        slideshow.interval = AppConfig.shared.slideshowInterval
         Logger.shared.log("Slideshow started: \(imageURLs.count) images, \(slideshow.interval)s each")
         slideshow.start()
         updatePlayPauseIcon()

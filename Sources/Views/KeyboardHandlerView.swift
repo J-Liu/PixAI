@@ -12,6 +12,7 @@ class KeyboardHandlerView: NSView {
     private let onExitFullscreen: () -> Void
     private let onPlayPause: () -> Void
     private let onStartOrStopSlideshow: () -> Void
+    private let onDelete: () -> Void
     /// Live query so Esc/Enter can exit the slideshow before falling back to
     /// exiting plain full screen.
     private let isSlideshowActive: () -> Bool
@@ -21,6 +22,7 @@ class KeyboardHandlerView: NSView {
          onRotateClockwise: @escaping () -> Void,
          onRotateCounterclockwise: @escaping () -> Void,
          onSave: @escaping () -> Void,
+         onDelete: @escaping () -> Void,
          onToggleFullscreen: @escaping () -> Void,
          onExitFullscreen: @escaping () -> Void,
          onPlayPause: @escaping () -> Void,
@@ -31,6 +33,7 @@ class KeyboardHandlerView: NSView {
         self.onRotateClockwise = onRotateClockwise
         self.onRotateCounterclockwise = onRotateCounterclockwise
         self.onSave = onSave
+        self.onDelete = onDelete
         self.onToggleFullscreen = onToggleFullscreen
         self.onExitFullscreen = onExitFullscreen
         self.onPlayPause = onPlayPause
@@ -84,6 +87,14 @@ class KeyboardHandlerView: NSView {
         if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
            (key == "s" || keyCode == 1) {
             onSave()
+            return
+        }
+        
+        // Cmd+Delete: move the current image to the Trash (keyCode 51 = Delete,
+        // 117 = Forward Delete; both carry the 0x7F character).
+        if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
+           (keyCode == 51 || keyCode == 117) {
+            onDelete()
             return
         }
         

@@ -8,6 +8,9 @@ class MenuBuilder {
     /// Optional callback for the New Window action (set by PixAIApp).
     static var newWindowCallback: (() -> Void)?
     
+    /// Optional callback for the Preferences action (set by PixAIApp).
+    static var preferencesCallback: (() -> Void)?
+    
     static func build() -> NSMenu {
         let mainMenu = NSMenu(title: "PixAI")
 
@@ -16,9 +19,9 @@ class MenuBuilder {
         pixaiMenu.addItem(withTitle: "About PixAI", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         pixaiMenu.addItem(NSMenuItem.separator())
 
-        // Preferences (Cmd+,) — placeholder, disabled until implemented
-        let prefsItem = NSMenuItem(title: "Preferences...", action: nil, keyEquivalent: ",")
-        prefsItem.isEnabled = false
+        // Preferences (Cmd+,): opens the Preferences window.
+        let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(showPreferences(_:)), keyEquivalent: ",")
+        prefsItem.target = self
         pixaiMenu.addItem(prefsItem)
 
         pixaiMenu.addItem(NSMenuItem.separator())
@@ -134,6 +137,15 @@ class MenuBuilder {
             callback()
         } else {
             Logger.shared.log("No newWindowCallback set")
+        }
+    }
+
+    @objc class func showPreferences(_ sender: Any?) {
+        Logger.shared.log("MenuBuilder.showPreferences called")
+        if let callback = preferencesCallback {
+            callback()
+        } else {
+            Logger.shared.log("No preferencesCallback set")
         }
     }
 

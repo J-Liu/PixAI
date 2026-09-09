@@ -23,8 +23,8 @@ class ViewerContainerView: NSView {
     
     /// Height of the bottom status bar.
     static let statusBarHeight: CGFloat = 28
-    /// Width of the floating toolbar (9 buttons + 4 dividers).
-    static let toolbarWidth: CGFloat = 560
+    /// Width of the floating toolbar (10 buttons + 5 dividers).
+    static let toolbarWidth: CGFloat = 640
     /// Distance of the toolbar above the status bar.
     static let toolbarBottomInset: CGFloat = 16
     
