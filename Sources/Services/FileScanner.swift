@@ -2,13 +2,14 @@ import Foundation
 import AppKit
 
 /// Extensions that are treated as photo/image files for automatic scanning.
-let photoExtensions = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif", "webp"]
+let photoExtensions = [
+    "png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif", "webp",
+    // Camera RAW (decoded via Core Image)
+    "cr2", "cr3", "nef", "nrw", "arw", "sr2", "dng", "rw2", "srw", "orf", "raf", "x3f"
+]
 
 /// All supported extensions (including document formats like SVG/PDF).
-let supportedExtensions = [
-    "png", "jpg", "jpeg", "gif", "bmp", "tiff", "heic", "heif",
-    "svg", "pdf", "webp"
-]
+let supportedExtensions = photoExtensions + ["svg", "pdf"]
 
 /// Scans files and directories to find supported image files.
 class FileScanner {
@@ -34,30 +35,24 @@ class FileScanner {
                             let nested = scan(urls: [item])
                             results.append(contentsOf: nested)
                         } else {
-                            // File: check extension
+                            // File: known photo extensions match directly; files
+                            // without an extension are identified by magic numbers.
                             let ext = item.pathExtension.lowercased()
                             if !ext.isEmpty && photoExtensions.contains(ext) {
                                 results.append(item)
-                            } else if ext.isEmpty {
-                                // No extension - try to detect if it's an image using ImageLoaderRegistry
-                                if let _ = ImageLoaderRegistry.shared.loadImage(from: item) {
-                                    results.append(item)
-                                }
+                            } else if ext.isEmpty, DecoderManager.shared.isSupportedImage(at: item) {
+                                results.append(item)
                             }
                         }
                     }
                 } else {
-                    // File: check extension
+                    // File: known extensions match directly; anything else is
+                    // identified by magic-number detection on the header bytes.
                     let ext = url.pathExtension.lowercased()
-                    if supportedExtensions.contains(ext) || ext.isEmpty {
-                        // If no extension, try to detect using ImageLoaderRegistry
-                        if ext.isEmpty {
-                            if let _ = ImageLoaderRegistry.shared.loadImage(from: url) {
-                                results.append(url)
-                            }
-                        } else {
-                            results.append(url)
-                        }
+                    if !ext.isEmpty && supportedExtensions.contains(ext) {
+                        results.append(url)
+                    } else if DecoderManager.shared.isSupportedImage(at: url) {
+                        results.append(url)
                     }
                 }
             } catch {

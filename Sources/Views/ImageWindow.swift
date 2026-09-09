@@ -376,16 +376,9 @@ class ImageWindow {
                 let ext = item.pathExtension.lowercased()
                 if !ext.isEmpty && photoExtensions.contains(ext) {
                     results.append(item)
-                } else if ext.isEmpty {
-                    // No extension - try to detect
-                    do {
-                        _ = try Data(contentsOf: item)
-                        if ImageLoaderRegistry.shared.loadImage(from: item) != nil {
-                            results.append(item)
-                        }
-                    } catch {
-                        // Not an image, skip
-                    }
+                } else if ext.isEmpty, DecoderManager.shared.isSupportedImage(at: item) {
+                    // No extension - identify by magic numbers (header only).
+                    results.append(item)
                 }
             }
         } catch {
@@ -418,42 +411,47 @@ class ImageWindow {
             return
         }
         
-        // Delegate to the ImageLoaderRegistry for format-agnostic loading.
+        // Delegate to the decode abstraction layer: magic-number format
+        // detection (Live Photo before HEIC) + auto-selected decoder. The
+        // nonisolated async decode runs off the main actor, so heavy files
+        // (RAW, large TIFFs) don't block the UI; the SVG WebKit fallback hops
+        // back to the main actor internally only for its render pass.
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            if let nsImage = ImageLoaderRegistry.shared.loadImage(from: url) {
+            do {
+                let decoded = try await DecoderManager.shared.decode(url: url)
                 // Discard out-of-order loads so the newest press always wins.
                 guard generation == self.loadGeneration else {
                     Logger.shared.log("Discarding stale image load for index \(index)")
                     return
                 }
-                
+
                 // A newly loaded image is always shown unrotated: any unsaved
                 // rotation of the previous image is discarded here (per spec).
-                self.baseImage = nsImage
+                self.baseImage = decoded.image
                 self.rotationSteps = 0
 
                 // Keep the decoded image in the LRU cache (size follows the
                 // "Cached images" setting, 1–20, read live on insert).
-                ImageCache.shared.insert(nsImage, for: url)
+                ImageCache.shared.insert(decoded.image, for: url)
 
                 // The image view fills the window area; setting the image resets it to
                 // "fit to window" mode (proportional fit, centered). Live Photo
                 // support is configured alongside the new still.
-                self.displayImage(nsImage, at: url)
-                
+                self.displayImage(decoded.image, at: url)
+
                 // Window title shows the current file name.
                 self.window.title = url.lastPathComponent
-                
+
                 // Hide the empty-state placeholder once an image is shown.
                 self.container?.placeholder?.isHidden = true
-                
-                Logger.shared.log("Image loaded successfully: \(nsImage.size)")
-                
+
+                Logger.shared.log("Image loaded successfully (\(decoded.format.displayName)): \(decoded.image.size)")
+
                 // Refresh status bar (filename / size / zoom / index).
                 self.updateStatusBar()
-            } else {
-                Logger.shared.log("Failed to load image (unsupported format or decode error): \(url)")
+            } catch {
+                Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
             }
         }
     }
