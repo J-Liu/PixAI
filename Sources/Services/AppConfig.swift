@@ -31,6 +31,19 @@ final class AppConfig {
             return FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".pixai/PixAI.log").path
         }
+        // ── AI defaults ──────────────────────────────────────────────
+        static let aiAutoUpscaleEnabled = false
+        static let aiAutoDewatermarkEnabled = false
+        /// "both" | "dedupOnly" | "watermarkOnly"
+        static let aiEnhanceMode = "both"
+        static let dedupAskContinue = true
+        static let proxyEnabled = false
+        /// "http" | "socks" (socks is accepted but downloads fall back to http).
+        static let proxyType = "http"
+        static let proxyHost = "127.0.0.1"
+        static let proxyPort = 7890
+        /// Images with longest side ≤ this are considered "small" for auto-upscaling.
+        static let smallImageMaxSide = 1024
     }
 
     /// Allowed range for the image cache count.
@@ -47,6 +60,16 @@ final class AppConfig {
         var logPath: String?
         var livePhotoAutoPlay: Bool?
         var livePhotoMuted: Bool?
+        // AI
+        var aiAutoUpscaleEnabled: Bool?
+        var aiAutoDewatermarkEnabled: Bool?
+        var aiEnhanceMode: String?
+        var dedupAskContinue: Bool?
+        var proxyEnabled: Bool?
+        var proxyType: String?
+        var proxyHost: String?
+        var proxyPort: Int?
+        var smallImageMaxSide: Int?
     }
 
     private let fileURL: URL
@@ -62,6 +85,16 @@ final class AppConfig {
     private var _logPath: String = Defaults.logPath()
     private var _livePhotoAutoPlay: Bool = Defaults.livePhotoAutoPlay
     private var _livePhotoMuted: Bool = Defaults.livePhotoMuted
+    // AI backing storage
+    private var _aiAutoUpscaleEnabled: Bool = Defaults.aiAutoUpscaleEnabled
+    private var _aiAutoDewatermarkEnabled: Bool = Defaults.aiAutoDewatermarkEnabled
+    private var _aiEnhanceMode: String = Defaults.aiEnhanceMode
+    private var _dedupAskContinue: Bool = Defaults.dedupAskContinue
+    private var _proxyEnabled: Bool = Defaults.proxyEnabled
+    private var _proxyType: String = Defaults.proxyType
+    private var _proxyHost: String = Defaults.proxyHost
+    private var _proxyPort: Int = Defaults.proxyPort
+    private var _smallImageMaxSide: Int = Defaults.smallImageMaxSide
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -205,6 +238,163 @@ final class AppConfig {
         }
     }
 
+    // MARK: - AI settings
+
+    /// Whether small images are automatically upscaled with Real-ESRGAN 4x
+    /// when loaded (default: false).
+    var aiAutoUpscaleEnabled: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _aiAutoUpscaleEnabled
+        }
+        set {
+            lock.lock()
+            let changed = _aiAutoUpscaleEnabled != newValue
+            if changed { _aiAutoUpscaleEnabled = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether images are automatically de-watermarked with U2Net when loaded
+    /// (default: false).
+    var aiAutoDewatermarkEnabled: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _aiAutoDewatermarkEnabled
+        }
+        set {
+            lock.lock()
+            let changed = _aiAutoDewatermarkEnabled != newValue
+            if changed { _aiAutoDewatermarkEnabled = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Which operations the "AI one-click enhance" batch runs:
+    /// "both" | "dedupOnly" | "watermarkOnly" (default: "both").
+    var aiEnhanceMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _aiEnhanceMode
+        }
+        set {
+            let normalized = Self.normalizeEnhanceMode(newValue)
+            lock.lock()
+            let changed = _aiEnhanceMode != normalized
+            if changed { _aiEnhanceMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether the duplicate-removal UI asks "continue?" between groups
+    /// (default: true).
+    var dedupAskContinue: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _dedupAskContinue
+        }
+        set {
+            lock.lock()
+            let changed = _dedupAskContinue != newValue
+            if changed { _dedupAskContinue = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether downloads route through the configured proxy (default: false).
+    var proxyEnabled: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _proxyEnabled
+        }
+        set {
+            lock.lock()
+            let changed = _proxyEnabled != newValue
+            if changed { _proxyEnabled = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Proxy type: "http" or "socks" (default: "http"). URLSession only
+    /// supports http/https proxies; "socks" values are accepted for storage
+    /// but downloads fall back to direct/http.
+    var proxyType: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _proxyType
+        }
+        set {
+            let normalized = (newValue == "socks") ? "socks" : "http"
+            lock.lock()
+            let changed = _proxyType != normalized
+            if changed { _proxyType = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Proxy host (default: "127.0.0.1").
+    var proxyHost: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _proxyHost
+        }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            lock.lock()
+            let changed = _proxyHost != trimmed
+            if changed { _proxyHost = trimmed }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Proxy port (default: 7890, range 1...65535).
+    var proxyPort: Int {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _proxyPort
+        }
+        set {
+            let clamped = min(max(newValue, 1), 65535)
+            lock.lock()
+            let changed = _proxyPort != clamped
+            if changed { _proxyPort = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Longest-side threshold (px) below which an image counts as "small"
+    /// for the auto-upscale feature (default: 1024).
+    var smallImageMaxSide: Int {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _smallImageMaxSide
+        }
+        set {
+            let clamped = min(max(newValue, 64), 8192)
+            lock.lock()
+            let changed = _smallImageMaxSide != clamped
+            if changed { _smallImageMaxSide = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeEnhanceMode(_ value: String) -> String {
+        switch value {
+        case "dedupOnly": return "dedupOnly"
+        case "watermarkOnly": return "watermarkOnly"
+        default: return "both"
+        }
+    }
+
     /// Reset every setting to its default value (and persist).
     func resetToDefaults() {
         lock.lock()
@@ -242,6 +432,42 @@ final class AppConfig {
             _livePhotoMuted = Defaults.livePhotoMuted
             changed = true
         }
+        if _aiAutoUpscaleEnabled != Defaults.aiAutoUpscaleEnabled {
+            _aiAutoUpscaleEnabled = Defaults.aiAutoUpscaleEnabled
+            changed = true
+        }
+        if _aiAutoDewatermarkEnabled != Defaults.aiAutoDewatermarkEnabled {
+            _aiAutoDewatermarkEnabled = Defaults.aiAutoDewatermarkEnabled
+            changed = true
+        }
+        if _aiEnhanceMode != Defaults.aiEnhanceMode {
+            _aiEnhanceMode = Defaults.aiEnhanceMode
+            changed = true
+        }
+        if _dedupAskContinue != Defaults.dedupAskContinue {
+            _dedupAskContinue = Defaults.dedupAskContinue
+            changed = true
+        }
+        if _proxyEnabled != Defaults.proxyEnabled {
+            _proxyEnabled = Defaults.proxyEnabled
+            changed = true
+        }
+        if _proxyType != Defaults.proxyType {
+            _proxyType = Defaults.proxyType
+            changed = true
+        }
+        if _proxyHost != Defaults.proxyHost {
+            _proxyHost = Defaults.proxyHost
+            changed = true
+        }
+        if _proxyPort != Defaults.proxyPort {
+            _proxyPort = Defaults.proxyPort
+            changed = true
+        }
+        if _smallImageMaxSide != Defaults.smallImageMaxSide {
+            _smallImageMaxSide = Defaults.smallImageMaxSide
+            changed = true
+        }
         lock.unlock()
         if changed { save(); notifyChange() }
     }
@@ -272,6 +498,16 @@ final class AppConfig {
         if let v = payload.logPath, !v.isEmpty { _logPath = (v as NSString).expandingTildeInPath }
         if let v = payload.livePhotoAutoPlay { _livePhotoAutoPlay = v }
         if let v = payload.livePhotoMuted { _livePhotoMuted = v }
+        // AI
+        if let v = payload.aiAutoUpscaleEnabled { _aiAutoUpscaleEnabled = v }
+        if let v = payload.aiAutoDewatermarkEnabled { _aiAutoDewatermarkEnabled = v }
+        if let v = payload.aiEnhanceMode { _aiEnhanceMode = Self.normalizeEnhanceMode(v) }
+        if let v = payload.dedupAskContinue { _dedupAskContinue = v }
+        if let v = payload.proxyEnabled { _proxyEnabled = v }
+        if let v = payload.proxyType { _proxyType = (v == "socks") ? "socks" : "http" }
+        if let v = payload.proxyHost, !v.isEmpty { _proxyHost = v }
+        if let v = payload.proxyPort { _proxyPort = min(max(v, 1), 65535) }
+        if let v = payload.smallImageMaxSide { _smallImageMaxSide = min(max(v, 64), 8192) }
         lock.unlock()
     }
 
@@ -285,7 +521,16 @@ final class AppConfig {
             logEnabled: _logEnabled,
             logPath: _logPath,
             livePhotoAutoPlay: _livePhotoAutoPlay,
-            livePhotoMuted: _livePhotoMuted
+            livePhotoMuted: _livePhotoMuted,
+            aiAutoUpscaleEnabled: _aiAutoUpscaleEnabled,
+            aiAutoDewatermarkEnabled: _aiAutoDewatermarkEnabled,
+            aiEnhanceMode: _aiEnhanceMode,
+            dedupAskContinue: _dedupAskContinue,
+            proxyEnabled: _proxyEnabled,
+            proxyType: _proxyType,
+            proxyHost: _proxyHost,
+            proxyPort: _proxyPort,
+            smallImageMaxSide: _smallImageMaxSide
         )
         lock.unlock()
         do {

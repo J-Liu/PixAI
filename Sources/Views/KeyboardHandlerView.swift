@@ -8,6 +8,7 @@ class KeyboardHandlerView: NSView {
     private let onRotateClockwise: () -> Void
     private let onRotateCounterclockwise: () -> Void
     private let onSave: () -> Void
+    private let onSaveAs: () -> Void
     private let onToggleFullscreen: () -> Void
     private let onExitFullscreen: () -> Void
     private let onPlayPause: () -> Void
@@ -22,6 +23,7 @@ class KeyboardHandlerView: NSView {
          onRotateClockwise: @escaping () -> Void,
          onRotateCounterclockwise: @escaping () -> Void,
          onSave: @escaping () -> Void,
+         onSaveAs: @escaping () -> Void,
          onDelete: @escaping () -> Void,
          onToggleFullscreen: @escaping () -> Void,
          onExitFullscreen: @escaping () -> Void,
@@ -33,6 +35,7 @@ class KeyboardHandlerView: NSView {
         self.onRotateClockwise = onRotateClockwise
         self.onRotateCounterclockwise = onRotateCounterclockwise
         self.onSave = onSave
+        self.onSaveAs = onSaveAs
         self.onDelete = onDelete
         self.onToggleFullscreen = onToggleFullscreen
         self.onExitFullscreen = onExitFullscreen
@@ -83,8 +86,15 @@ class KeyboardHandlerView: NSView {
             return
         }
         
+        // Cmd+Shift+S: Save As (new file).
+        if mods.contains(.command), mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
+           (key == "s" || keyCode == 1) {
+            onSaveAs()
+            return
+        }
+        
         // Cmd+S: save the rotated image back to the file.
-        if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
+        if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
            (key == "s" || keyCode == 1) {
             onSave()
             return

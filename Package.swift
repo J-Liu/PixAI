@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "PixAI",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     targets: [
         .executableTarget(

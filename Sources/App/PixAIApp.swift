@@ -47,6 +47,11 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             self?.makeNewWindow(paths: [])
         }
         
+        // Save As (Cmd+Shift+S): save the current image (with any AI transform) to a new file.
+        MenuBuilder.saveAsCallback = { [weak self] in
+            self?.activeWindow()?.saveAsImage()
+        }
+        
         // Preferences (Cmd+,): show the shared Preferences window.
         MenuBuilder.preferencesCallback = {
             PreferencesWindow.shared.show()

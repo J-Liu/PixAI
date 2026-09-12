@@ -8,6 +8,9 @@ class MenuBuilder {
     /// Optional callback for the New Window action (set by PixAIApp).
     static var newWindowCallback: (() -> Void)?
     
+    /// Optional callback for the Save As action (set by PixAIApp).
+    static var saveAsCallback: (() -> Void)?
+    
     /// Optional callback for the Preferences action (set by PixAIApp).
     static var preferencesCallback: (() -> Void)?
     
@@ -54,6 +57,11 @@ class MenuBuilder {
         let newItem = NSMenuItem(title: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
         newItem.target = self
         fileMenu.addItem(newItem)
+
+        let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(saveAs(_:)), keyEquivalent: "s")
+        saveAsItem.keyEquivalentModifierMask = [.command, .shift]
+        saveAsItem.target = self
+        fileMenu.addItem(saveAsItem)
 
         // Standard close: goes through the responder chain to the key window.
         let closeWindowItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -137,6 +145,15 @@ class MenuBuilder {
             callback()
         } else {
             Logger.shared.log("No newWindowCallback set")
+        }
+    }
+
+    @objc class func saveAs(_ sender: Any?) {
+        Logger.shared.log("MenuBuilder.saveAs called")
+        if let callback = saveAsCallback {
+            callback()
+        } else {
+            Logger.shared.log("No saveAsCallback set")
         }
     }
 

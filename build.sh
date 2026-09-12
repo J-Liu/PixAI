@@ -14,6 +14,26 @@ echo "🔨 Building PixAI..."
 cd "$SCRIPT_DIR"
 rm -rf .build/module-cache
 mkdir -p .build/arm64-apple-macosx/release
+
+# ─── ExecuTorch (U2Net watermark model) binary targets ──────────────────────
+VENDOR="$SCRIPT_DIR/Vendor/ExecuTorch"
+for name in executorch backend_coreml kernels_optimized threadpool; do
+    if [ ! -d "$VENDOR/$name.xcframework" ] && [ -f "$VENDOR/$name.zip" ]; then
+        echo "   📦 Extracting $name.xcframework..."
+        unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
+    fi
+done
+
+ET_SLICE="$VENDOR/executorch.xcframework/macos-arm64"
+BC_SLICE="$VENDOR/backend_coreml.xcframework/macos-arm64"
+KO_SLICE="$VENDOR/kernels_optimized.xcframework/macos-arm64"
+TP_SLICE="$VENDOR/threadpool.xcframework/macos-arm64"
+
+if [ ! -f "$ET_SLICE/ExecuTorch.swiftinterface" ]; then
+    echo "❌ ExecuTorch xcframework missing (run the unzip step / check Vendor/ExecuTorch)"
+    exit 1
+fi
+
 SWIFT_PACKAGE_NO_SANDBOX=1 xcrun swiftc \
     -O \
     -whole-module-optimization \
@@ -24,6 +44,16 @@ SWIFT_PACKAGE_NO_SANDBOX=1 xcrun swiftc \
     -emit-executable \
     -o "$BUILD_OUTPUT" \
     -module-cache-path "$SCRIPT_DIR/.build/module-cache" \
+    -Xcc -fmodules-cache-path="$SCRIPT_DIR/.build/module-cache" \
+    -I "$ET_SLICE" \
+    -I "$ET_SLICE/Headers" \
+    -Xcc -I"$ET_SLICE/Headers" \
+    -L "$ET_SLICE" -lexecutorch_macos \
+    -Xlinker -force_load -Xlinker "$BC_SLICE/libbackend_coreml_macos.a" \
+    -Xlinker -force_load -Xlinker "$KO_SLICE/libkernels_optimized_macos.a" \
+    -L "$TP_SLICE" -lthreadpool_macos \
+    -framework CoreML -framework Accelerate -framework CoreImage -framework Vision \
+    -lsqlite3 -lc++ \
     $(find Sources -name "*.swift" | tr '\n' ' ')
 
 echo "✅ Build successful: $BUILD_OUTPUT"
@@ -58,7 +88,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundleIdentifier</key>
     <string>com.pixai.app</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>1</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
     <key>CFBundleExecutable</key>
@@ -72,7 +102,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>NSMainNibFile</key>
     <string></string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
 </dict>
 </plist>
 EOF

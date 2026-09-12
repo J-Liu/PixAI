@@ -2,22 +2,27 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
-/// Layout: [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶] —
-/// the play/pause button sits in the middle, separated by thin vertical dividers:
-/// the zoom group on its left, the rotate group and the save/delete group on
-/// its right (the save+delete pair is one group with a divider to its left).
+/// Layout (left → right):
+/// [◀] | [+] [−] [fit/100%] | [enhance] [dewatermark] [upscale] [one-click] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶]
+/// The four AI buttons sit immediately left of play/pause (from right to left:
+/// one-click enhance, upscale, dewatermark, quality enhance).
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
     let zoomInButton: NSButton
     let zoomOutButton: NSButton
     let fitToggleButton: NSButton
+    let aiEnhanceQualityButton: NSButton
+    let aiDewatermarkButton: NSButton
+    let aiUpscaleButton: NSButton
+    let aiOneClickButton: NSButton
     let playPauseButton: NSButton
     let rotateClockwiseButton: NSButton
     let rotateCounterclockwiseButton: NSButton
     let saveButton: NSButton
     let deleteButton: NSButton
     private let leftDivider: NSView
+    private let aiGroupLeftDivider: NSView
     private let playDividerLeft: NSView
     private let playDividerRight: NSView
     private let saveGroupDivider: NSView
@@ -29,6 +34,10 @@ class AutoHideToolbar: NSView {
     private let onZoomInTap: () -> Void
     private let onZoomOutTap: () -> Void
     private let onFitToggleTap: () -> Void
+    private let onAIEnhanceQualityTap: () -> Void
+    private let onAIDewatermarkTap: () -> Void
+    private let onAIUpscaleTap: () -> Void
+    private let onAIOneClickTap: () -> Void
     private let onPlayPauseTap: () -> Void
     private let onRotateClockwiseTap: () -> Void
     private let onRotateCounterclockwiseTap: () -> Void
@@ -53,11 +62,24 @@ class AutoHideToolbar: NSView {
     /// SF Symbol shown while stopped or paused (next click plays/resumes).
     static let playIconName = "play.fill"
 
+    // AI button icons: each pair is (action icon, restore icon); the icon always
+    // depicts what the NEXT click will do.
+    static let aiEnhanceQualityIconName = "sparkles"
+    static let aiRestoreIconName = "arrow.uturn.backward"
+    static let aiDewatermarkIconName = "eraser.fill"
+    static let aiUpscaleIconName = "arrow.up.left.and.arrow.down.right"
+    static let aiDeUpscaleIconName = "arrow.down.right.and.arrow.up.left"
+    static let aiOneClickIconName = "wand.and.stars"
+
     init(onLeftTap: @escaping () -> Void,
          onRightTap: @escaping () -> Void,
          onZoomInTap: @escaping () -> Void,
          onZoomOutTap: @escaping () -> Void,
          onFitToggleTap: @escaping () -> Void,
+         onAIEnhanceQualityTap: @escaping () -> Void,
+         onAIDewatermarkTap: @escaping () -> Void,
+         onAIUpscaleTap: @escaping () -> Void,
+         onAIOneClickTap: @escaping () -> Void,
          onPlayPauseTap: @escaping () -> Void,
          onRotateClockwiseTap: @escaping () -> Void,
          onRotateCounterclockwiseTap: @escaping () -> Void,
@@ -68,6 +90,10 @@ class AutoHideToolbar: NSView {
         self.onZoomInTap = onZoomInTap
         self.onZoomOutTap = onZoomOutTap
         self.onFitToggleTap = onFitToggleTap
+        self.onAIEnhanceQualityTap = onAIEnhanceQualityTap
+        self.onAIDewatermarkTap = onAIDewatermarkTap
+        self.onAIUpscaleTap = onAIUpscaleTap
+        self.onAIOneClickTap = onAIOneClickTap
         self.onPlayPauseTap = onPlayPauseTap
         self.onRotateClockwiseTap = onRotateClockwiseTap
         self.onRotateCounterclockwiseTap = onRotateCounterclockwiseTap
@@ -78,6 +104,10 @@ class AutoHideToolbar: NSView {
         zoomInButton = NSButton()
         zoomOutButton = NSButton()
         fitToggleButton = NSButton()
+        aiEnhanceQualityButton = NSButton()
+        aiDewatermarkButton = NSButton()
+        aiUpscaleButton = NSButton()
+        aiOneClickButton = NSButton()
         playPauseButton = NSButton()
         rotateClockwiseButton = NSButton()
         rotateCounterclockwiseButton = NSButton()
@@ -86,6 +116,7 @@ class AutoHideToolbar: NSView {
         // Thin vertical dividers (must be set before super.init, as they are
         // stored `let` properties).
         leftDivider = Self.makeDivider()
+        aiGroupLeftDivider = Self.makeDivider()
         playDividerLeft = Self.makeDivider()
         playDividerRight = Self.makeDivider()
         saveGroupDivider = Self.makeDivider()
@@ -102,6 +133,10 @@ class AutoHideToolbar: NSView {
         configureButton(zoomInButton, symbolName: "plus.magnifyingglass")
         configureButton(zoomOutButton, symbolName: "minus.magnifyingglass")
         configureButton(fitToggleButton, symbolName: Self.fitIconName)
+        configureButton(aiEnhanceQualityButton, symbolName: Self.aiEnhanceQualityIconName)
+        configureButton(aiDewatermarkButton, symbolName: Self.aiDewatermarkIconName)
+        configureButton(aiUpscaleButton, symbolName: Self.aiUpscaleIconName)
+        configureButton(aiOneClickButton, symbolName: Self.aiOneClickIconName)
         configureButton(playPauseButton, symbolName: Self.playIconName)
         configureButton(rotateClockwiseButton, symbolName: "arrow.clockwise")
         configureButton(rotateCounterclockwiseButton, symbolName: "arrow.counterclockwise")
@@ -113,6 +148,11 @@ class AutoHideToolbar: NSView {
         addSubview(zoomInButton)
         addSubview(zoomOutButton)
         addSubview(fitToggleButton)
+        addSubview(aiGroupLeftDivider)
+        addSubview(aiEnhanceQualityButton)
+        addSubview(aiDewatermarkButton)
+        addSubview(aiUpscaleButton)
+        addSubview(aiOneClickButton)
         addSubview(playDividerLeft)
         addSubview(playPauseButton)
         addSubview(playDividerRight)
@@ -144,11 +184,7 @@ class AutoHideToolbar: NSView {
     /// represents 100% (the next click will switch to 1:1).
     func setFitToggleShowsFitIcon(_ showsFit: Bool) {
         let name = showsFit ? Self.fitIconName : Self.hundredPercentIconName
-        let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
-        if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
-            image.isTemplate = true
-            fitToggleButton.image = image
-        }
+        applySymbol(name, to: fitToggleButton)
     }
 
     /// Switch the play/pause button's icon. `showsPause` == true means the
@@ -156,10 +192,38 @@ class AutoHideToolbar: NSView {
     /// false means it is stopped or paused (the icon depicts play).
     func setPlayPauseShowsPauseIcon(_ showsPause: Bool) {
         let name = showsPause ? Self.pauseIconName : Self.playIconName
+        applySymbol(name, to: playPauseButton)
+    }
+
+    // MARK: - AI button state
+
+    /// `applied` == true → the transform is on; show the "restore" icon (what
+    /// the next click will do). false → show the action icon.
+    func setAIEnhanceQualityApplied(_ applied: Bool) {
+        applySymbol(applied ? Self.aiRestoreIconName : Self.aiEnhanceQualityIconName, to: aiEnhanceQualityButton)
+    }
+
+    func setAIDewatermarkApplied(_ applied: Bool) {
+        applySymbol(applied ? Self.aiRestoreIconName : Self.aiDewatermarkIconName, to: aiDewatermarkButton)
+    }
+
+    func setAIUpscaleApplied(_ applied: Bool) {
+        applySymbol(applied ? Self.aiDeUpscaleIconName : Self.aiUpscaleIconName, to: aiUpscaleButton)
+    }
+
+    /// Enable/disable the model-backed AI buttons (disabled when the model
+    /// plugin is not downloaded/enabled). The one-click button stays enabled;
+    /// it reports missing models itself.
+    func setAIModelButtonsEnabled(upscaleAvailable: Bool, dewatermarkAvailable: Bool) {
+        aiUpscaleButton.isEnabled = upscaleAvailable
+        aiDewatermarkButton.isEnabled = dewatermarkAvailable
+    }
+
+    private func applySymbol(_ name: String, to button: NSButton) {
         let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
         if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
             image.isTemplate = true
-            playPauseButton.image = image
+            button.image = image
         }
     }
 
@@ -183,7 +247,7 @@ class AutoHideToolbar: NSView {
     }
 
     /// Position all controls in a centered row:
-    /// [◀] | [+] [−] [fit/100%] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶].
+    /// [◀] | [+] [−] [fit] | [enhance] [dewatermark] [upscale] [one-click] | [▶/⏸] | [↻] [↺] | [save] [delete] | [▶].
     override func layout() {
         super.layout()
 
@@ -193,10 +257,12 @@ class AutoHideToolbar: NSView {
         let dividerH: CGFloat = 28
         let dividerPad: CGFloat = 14
         let zoomGroupWidth = buttonSize * 3 + gap * 2
+        let aiGroupWidth = buttonSize * 4 + gap * 3
         let rotateGroupWidth = buttonSize * 2 + gap
         let saveGroupWidth = buttonSize * 2 + gap
         let totalWidth = buttonSize
             + dividerPad + dividerW + dividerPad + zoomGroupWidth
+            + dividerPad + dividerW + dividerPad + aiGroupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
             + dividerPad + dividerW + dividerPad + rotateGroupWidth
             + dividerPad + dividerW + dividerPad + saveGroupWidth
@@ -214,6 +280,16 @@ class AutoHideToolbar: NSView {
         zoomOutButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
         fitToggleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + dividerPad
+        aiGroupLeftDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
+        x += dividerW + dividerPad
+        aiEnhanceQualityButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        aiDewatermarkButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        aiUpscaleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        aiOneClickButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         playDividerLeft.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
@@ -252,6 +328,17 @@ class AutoHideToolbar: NSView {
             onZoomOutTap()
         } else if sender == fitToggleButton {
             onFitToggleTap()
+        } else if sender == aiEnhanceQualityButton {
+            guard sender.isEnabled else { return }
+            onAIEnhanceQualityTap()
+        } else if sender == aiDewatermarkButton {
+            guard sender.isEnabled else { return }
+            onAIDewatermarkTap()
+        } else if sender == aiUpscaleButton {
+            guard sender.isEnabled else { return }
+            onAIUpscaleTap()
+        } else if sender == aiOneClickButton {
+            onAIOneClickTap()
         } else if sender == playPauseButton {
             onPlayPauseTap()
         } else if sender == rotateClockwiseButton {

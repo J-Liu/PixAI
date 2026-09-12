@@ -33,7 +33,23 @@ class ImageWindow {
     private var largeFileWarned: Set<URL> = []
     /// True while the displayed image is a downscaled thumbnail of a huge file.
     private var currentImageIsScaled = false
-    
+
+    /// Per-image AI state (transform results + applied flags), keyed by URL.
+    private var aiStates: [URL: ImageAIState] = [:]
+    /// True while the AI one-click batch is running (UI locked).
+    private var batchRunning = false
+    /// Progress overlay shown during the AI one-click batch.
+    private var batchOverlay: NSView?
+    /// URLs with an in-flight async AI computation (toggle re-entry guard).
+    private var aiBusy: Set<URL> = []
+    /// URLs for which auto-AI has already been attempted this session.
+    private var autoAIDone: Set<URL> = []
+    /// Progress indicator + label inside the batch overlay.
+    private var batchProgressIndicator: NSProgressIndicator?
+    private var batchStatusLabel: NSTextField?
+
+    private var pluginObserver: NSObjectProtocol?
+
     /// Drives slideshow playback (P / Space keys, toolbar play-pause button).
     /// The slide interval defaults to 3 s and will later be configurable via
     /// a config file / settings UI.
@@ -121,6 +137,22 @@ class ImageWindow {
                 // and onZoomChange syncs the toolbar icon afterwards.
                 self?.container?.imageView?.toggleFitOr100Percent()
             },
+            onAIEnhanceQualityTap: { [weak self] in
+                Logger.shared.log("Toolbar AI quality-enhance button tapped")
+                self?.toggleAIEnhance()
+            },
+            onAIDewatermarkTap: { [weak self] in
+                Logger.shared.log("Toolbar AI dewatermark button tapped")
+                self?.toggleAIDewatermark()
+            },
+            onAIUpscaleTap: { [weak self] in
+                Logger.shared.log("Toolbar AI upscale button tapped")
+                self?.toggleAIUpscale()
+            },
+            onAIOneClickTap: { [weak self] in
+                Logger.shared.log("Toolbar AI one-click enhance button tapped")
+                self?.runAIOneClickEnhance()
+            },
             onPlayPauseTap: { [weak self] in
                 Logger.shared.log("Toolbar play/pause button tapped")
                 self?.togglePlayPause()
@@ -182,6 +214,10 @@ class ImageWindow {
                 Logger.shared.log("Keyboard handler: save rotation (Cmd+S)")
                 self?.saveCurrentRotation()
             },
+            onSaveAs: { [weak self] in
+                Logger.shared.log("Keyboard handler: save as (Cmd+Shift+S)")
+                self?.saveAsImage()
+            },
             onDelete: { [weak self] in
                 Logger.shared.log("Keyboard handler: delete current image (Cmd+Delete)")
                 self?.deleteCurrentImage()
@@ -214,12 +250,23 @@ class ImageWindow {
             self?.slideshowTick()
         }
 
+        // Refresh AI toolbar button states when model plugin states change
+        // (download finished, enabled/disabled, uninstalled).
+        self.pluginObserver = NotificationCenter.default.addObserver(
+            forName: PluginManager.stateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateAIToolbarState()
+        }
+
         // Set the container as content view (same size, so nothing jumps),
         // then lay out all children explicitly.
         window.contentView = container
         container.layoutChildren()
         window.makeFirstResponder(keyboardHandler)
-        
+        updateAIToolbarState()
+
         // Notify the app delegate when this window closes.
         self.closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -233,6 +280,10 @@ class ImageWindow {
             if let token = self.closeObserver {
                 NotificationCenter.default.removeObserver(token)
                 self.closeObserver = nil
+            }
+            if let token = self.pluginObserver {
+                NotificationCenter.default.removeObserver(token)
+                self.pluginObserver = nil
             }
             self.onClose?(self)
         }
@@ -414,10 +465,12 @@ class ImageWindow {
             // The cache remembers whether this entry is a huge-image thumbnail.
             self.currentImageIsScaled = ImageCache.shared.isScaled(url)
             self.displayImage(cached, at: url)
-            self.window.title = url.lastPathComponent
+            self.updateWindowTitle()
             self.container?.placeholder?.isHidden = true
             Logger.shared.log("Image cache hit for index \(index)")
             self.updateStatusBar()
+            self.updateAIToolbarState()
+            self.applyAutoAIIfNeeded(url: url)
             return
         }
 
@@ -454,8 +507,8 @@ class ImageWindow {
                 // support is configured alongside the new still.
                 self.displayImage(decoded.image, at: url)
 
-                // Window title shows the current file name.
-                self.window.title = url.lastPathComponent
+                // Window title shows the current file name (+ active AI mark).
+                self.updateWindowTitle()
 
                 // Hide the empty-state placeholder once an image is shown.
                 self.container?.placeholder?.isHidden = true
@@ -469,6 +522,8 @@ class ImageWindow {
 
                 // Refresh status bar (filename / size / zoom / index).
                 self.updateStatusBar()
+                self.updateAIToolbarState()
+                self.applyAutoAIIfNeeded(url: url)
             } catch {
                 Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
             }
@@ -569,8 +624,38 @@ class ImageWindow {
     private func displayImage(_ nsImage: NSImage, at url: URL) {
         guard let imageView = container?.imageView else { return }
         imageView.livePhotoURL = nil   // stop playback of the previous image first
-        imageView.image = nsImage
+        // Show the active AI transform (if any) instead of the base image.
+        var shown = nsImage
+        if let state = aiStates[url], let kind = state.activeKind, let aiImage = state.image(for: kind) {
+            shown = aiImage
+        }
+        imageView.image = shown
         attachLivePhoto(for: url)
+    }
+
+    /// The image the current rotation/save operates on: the active AI result
+    /// when a transform is applied, otherwise the original base image.
+    private var currentSourceImage: NSImage? {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return nil }
+        let url = imageURLs[currentIndex]
+        if let state = aiStates[url], let kind = state.activeKind {
+            return state.image(for: kind) ?? baseImage
+        }
+        return baseImage
+    }
+
+    /// Window title with the active AI mark (e.g. "photo.jpg — AI Super-Resolved").
+    private func updateWindowTitle() {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else {
+            window.title = "PixAI"
+            return
+        }
+        let name = imageURLs[currentIndex].lastPathComponent
+        if let mark = aiStates[imageURLs[currentIndex]]?.activeMark {
+            window.title = "\(name) — \(mark)"
+        } else {
+            window.title = name
+        }
     }
 
     /// Detect the companion .MOV for `url` (async, cached per URL) and attach it
@@ -638,6 +723,9 @@ class ImageWindow {
             parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
         }
         
+        if let mark = aiStates[url]?.activeMark {
+            parts.append(mark)
+        }
         parts.append("\(currentIndex + 1) / \(imageURLs.count)")
         label.attributedStringValue = Self.statusString(parts.joined(separator: "\t"))
     }
@@ -652,14 +740,14 @@ class ImageWindow {
 
     /// Rotate the current image 90° clockwise (temporary; not written to disk).
     func rotateClockwise() {
-        guard baseImage != nil else { return }
+        guard !batchRunning, baseImage != nil else { return }
         rotationSteps += 1
         applyRotation()
     }
 
     /// Rotate the current image 90° counterclockwise (temporary; not written to disk).
     func rotateCounterclockwise() {
-        guard baseImage != nil else { return }
+        guard !batchRunning, baseImage != nil else { return }
         rotationSteps -= 1
         applyRotation()
     }
@@ -667,7 +755,7 @@ class ImageWindow {
     /// Redraw the displayed image from the ORIGINAL image at the accumulated
     /// angle, so quality never degrades no matter how many times it is rotated.
     private func applyRotation() {
-        guard let base = baseImage else { return }
+        guard let base = currentSourceImage else { return }
         let displayed = base.rotatedClockwise(by: rotationSteps * 90) ?? base
 
         // A temporary rotation desynchronizes the still from its companion video,
@@ -690,19 +778,22 @@ class ImageWindow {
     /// image is back to its original orientation: the save is ignored so the
     /// original file data is never re-encoded.
     func saveCurrentRotation() {
-        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let base = baseImage else { return }
+        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let source = currentSourceImage else { return }
         let url = imageURLs[currentIndex]
 
         let netDegrees = rotationSteps * 90
-        if netDegrees % 360 == 0 {
-            Logger.shared.log("Save ignored: rotation (\(netDegrees)°) is a multiple of 360°")
-            showStatusMessage("Rotation is a multiple of 360°, nothing to save")
+        let hasRotation = (netDegrees % 360) != 0
+        let hasAITransform = aiStates[url]?.activeKind != nil
+
+        if !hasRotation && !hasAITransform {
+            Logger.shared.log("Save ignored: no rotation and no AI transform")
+            showStatusMessage("Nothing to save")
             return
         }
 
-        guard let rotated = base.rotatedClockwise(by: netDegrees),
-              let cgImage = rotated.sourceCGImage else {
-            Logger.shared.log("Save failed: could not produce rotated image for \(url)")
+        let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
+        guard let cgImage = toSave.sourceCGImage else {
+            Logger.shared.log("Save failed: could not produce image for \(url)")
             showStatusMessage("Save failed")
             return
         }
@@ -716,16 +807,53 @@ class ImageWindow {
 
         do {
             try data.write(to: url, options: .atomic)
-            // The file now matches the displayed image: adopt it as the new base.
-            baseImage = rotated
-            rotationSteps = 0
+            // The file now matches the displayed image.
+            if hasRotation {
+                baseImage = toSave
+                rotationSteps = 0
+            }
             // Restore Live Photo support (suppressed while rotated).
             attachLivePhoto(for: url)
-            Logger.shared.log("Saved \(netDegrees)°-rotated image to \(url)")
+            Logger.shared.log("Saved image to \(url)")
             showStatusMessage("Saved")
         } catch {
             Logger.shared.log("Save failed for \(url): \(error)")
             showStatusMessage("Save failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Save the current image (rotation + active AI transform) to a new file.
+    func saveAsImage() {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let source = currentSourceImage else { return }
+        let url = imageURLs[currentIndex]
+
+        let netDegrees = rotationSteps * 90
+        let hasRotation = (netDegrees % 360) != 0
+        let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
+        guard let cgImage = toSave.sourceCGImage else {
+            showStatusMessage("Save failed")
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = url.lastPathComponent
+        panel.canCreateDirectories = true
+        panel.message = "Save the current image (including any AI transform)"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self, response == .OK, let dest = panel.url else { return }
+            let ext = dest.pathExtension.lowercased()
+            guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
+                self.showStatusMessage("Save failed: unsupported format")
+                return
+            }
+            do {
+                try data.write(to: dest, options: .atomic)
+                Logger.shared.log("Saved As to \(dest.path)")
+                self.showStatusMessage("Saved as \(dest.lastPathComponent)")
+            } catch {
+                Logger.shared.log("Save As failed for \(dest.path): \(error)")
+                self.showStatusMessage("Save failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -764,6 +892,437 @@ class ImageWindow {
         }
     }
 
+    // MARK: - AI (toggles + one-click batch)
+
+    /// Get or create the per-image AI state for `url`.
+    private func aiState(for url: URL) -> ImageAIState {
+        if let existing = aiStates[url] { return existing }
+        let fresh = ImageAIState()
+        aiStates[url] = fresh
+        return fresh
+    }
+
+    /// Wrap a CGImage result into an NSImage sized in pixels.
+    private static func nsImage(from cg: CGImage) -> NSImage {
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+
+    /// Refresh the display + title + status bar + toolbar for the current image.
+    private func refreshCurrentDisplay() {
+        guard imageURLs.indices.contains(currentIndex), let base = baseImage else { return }
+        let url = imageURLs[currentIndex]
+        displayImage(base, at: url)
+        updateWindowTitle()
+        updateStatusBar()
+        updateAIToolbarState()
+    }
+
+    /// Sync the AI toolbar buttons with model availability + current image state.
+    private func updateAIToolbarState() {
+        let state: ImageAIState? = imageURLs.indices.contains(currentIndex) ? aiStates[imageURLs[currentIndex]] : nil
+        toolbar?.setAIModelButtonsEnabled(
+            upscaleAvailable: RealESRGANEngine.shared.isAvailable,
+            dewatermarkAvailable: U2NetEngine.shared.isAvailable
+        )
+        toolbar?.setAIEnhanceQualityApplied(state?.isEnhanced ?? false)
+        toolbar?.setAIDewatermarkApplied(state?.isDewatermarked ?? false)
+        toolbar?.setAIUpscaleApplied(state?.isUpscaled ?? false)
+    }
+
+    /// Auto-AI on load (config: auto upscale small images / auto dewatermark).
+    /// Runs at most once per URL per window session; results are memory-only.
+    private func applyAutoAIIfNeeded(url: URL) {
+        guard autoAIDone.insert(url).inserted else { return }
+        let cfg = AppConfig.shared
+        var wantUpscale = false
+        var wantDewatermark = false
+        if cfg.aiAutoUpscaleEnabled, RealESRGANEngine.shared.isAvailable,
+           let cg = baseImage?.sourceCGImage, max(cg.width, cg.height) <= cfg.smallImageMaxSide {
+            wantUpscale = true
+        }
+        if cfg.aiAutoDewatermarkEnabled, U2NetEngine.shared.isAvailable {
+            wantDewatermark = true
+        }
+        guard wantUpscale || wantDewatermark, let cg = baseImage?.sourceCGImage else { return }
+        aiBusy.insert(url)
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer { self.aiBusy.remove(url) }
+            if wantUpscale {
+                let out = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+                    guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
+                    return try? RealESRGANEngine.shared.upscale(cg, progress: nil)
+                }.value
+                if let out = out {
+                    let state = self.aiState(for: url)
+                    state.upscaledImage = Self.nsImage(from: out)
+                    state.isUpscaled = true
+                    state.lastApplied = .upscale
+                    self.aiStates[url] = state
+                } else {
+                    Logger.shared.log("Auto upscale failed for \(url.lastPathComponent)")
+                }
+            }
+            if wantDewatermark {
+                let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
+                    guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
+                    return try? U2NetEngine.shared.removeWatermark(from: cg)
+                }.value
+                if let (out, fraction) = result, fraction > 0 {
+                    let state = self.aiState(for: url)
+                    state.dewatermarkedImage = Self.nsImage(from: out)
+                    state.isDewatermarked = true
+                    state.lastApplied = .dewatermark
+                    self.aiStates[url] = state
+                }
+            }
+            if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
+                self.refreshCurrentDisplay()
+            }
+        }
+    }
+
+    /// Toggle CIAutoEnhance quality enhancement on the current image.
+    func toggleAIEnhance() {
+        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+        let state = aiState(for: url)
+        if state.isEnhanced {
+            // Already on → turn off instantly (no recompute).
+            state.isEnhanced = false
+            if state.lastApplied == .enhance {
+                state.lastApplied = state.isUpscaled ? .upscale : (state.isDewatermarked ? .dewatermark : nil)
+            }
+            aiStates[url] = state
+            refreshCurrentDisplay()
+            return
+        }
+        guard let cg = baseImage?.sourceCGImage else { return }
+        aiBusy.insert(url)
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer { self.aiBusy.remove(url) }
+            // Fast, but still kept off the main thread.
+            let out = await Task.detached(priority: .userInitiated) {
+                AutoEnhance.enhance(cg)
+            }.value
+            if let out = out {
+                let state = self.aiState(for: url)
+                state.enhancedImage = Self.nsImage(from: out)
+                state.isEnhanced = true
+                state.lastApplied = .enhance
+                self.aiStates[url] = state
+            } else {
+                self.showStatusMessage("AI enhance failed")
+            }
+            if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
+                self.refreshCurrentDisplay()
+            }
+        }
+    }
+
+    /// Toggle Real-ESRGAN 4x super-resolution on the current image.
+    func toggleAIUpscale() {
+        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+        let state = aiState(for: url)
+        if state.isUpscaled {
+            // Already on → restore the original instantly.
+            state.isUpscaled = false
+            if state.lastApplied == .upscale {
+                state.lastApplied = state.isDewatermarked ? .dewatermark : (state.isEnhanced ? .enhance : nil)
+            }
+            aiStates[url] = state
+            refreshCurrentDisplay()
+            return
+        }
+        guard RealESRGANEngine.shared.isAvailable else {
+            showStatusMessage("Real-ESRGAN model not downloaded — see Preferences ▸ AI Models")
+            return
+        }
+        guard let cg = baseImage?.sourceCGImage else { return }
+        aiBusy.insert(url)
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer { self.aiBusy.remove(url) }
+            self.showStatusBarHint("AI upscaling…", for: 2.0)
+            // Synchronous heavy work: run off the main thread.
+            let out = await Task.detached(priority: .userInitiated) { [weak self] () -> CGImage? in
+                guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
+                return try? RealESRGANEngine.shared.upscale(cg) { p in
+                    DispatchQueue.main.async {
+                        self?.showStatusBarHint(String(format: "AI upscaling… %.0f%%", p * 100), for: 1.0)
+                    }
+                }
+            }.value
+            if let out = out {
+                let state = self.aiState(for: url)
+                state.upscaledImage = Self.nsImage(from: out)
+                state.isUpscaled = true
+                state.lastApplied = .upscale
+                self.aiStates[url] = state
+            } else {
+                self.showStatusMessage("AI upscale failed")
+            }
+            if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
+                self.refreshCurrentDisplay()
+            }
+        }
+    }
+
+    /// Toggle U2Net watermark removal on the current image.
+    func toggleAIDewatermark() {
+        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+        let state = aiState(for: url)
+        if state.isDewatermarked {
+            // Already on → restore the original instantly.
+            state.isDewatermarked = false
+            if state.lastApplied == .dewatermark {
+                state.lastApplied = state.isUpscaled ? .upscale : (state.isEnhanced ? .enhance : nil)
+            }
+            aiStates[url] = state
+            refreshCurrentDisplay()
+            return
+        }
+        guard U2NetEngine.shared.isAvailable else {
+            showStatusMessage("U2Net model not downloaded — see Preferences ▸ AI Models")
+            return
+        }
+        guard let cg = baseImage?.sourceCGImage else { return }
+        aiBusy.insert(url)
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer { self.aiBusy.remove(url) }
+            self.showStatusBarHint("AI dewatermarking…", for: 2.0)
+            // Synchronous heavy work: run off the main thread.
+            let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
+                guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
+                return try? U2NetEngine.shared.removeWatermark(from: cg)
+            }.value
+            if let (out, fraction) = result {
+                if fraction <= 0 {
+                    self.showStatusMessage("No watermark detected")
+                } else {
+                    let state = self.aiState(for: url)
+                    state.dewatermarkedImage = Self.nsImage(from: out)
+                    state.isDewatermarked = true
+                    state.lastApplied = .dewatermark
+                    self.aiStates[url] = state
+                }
+            } else {
+                self.showStatusMessage("AI dewatermark failed")
+            }
+            if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
+                self.refreshCurrentDisplay()
+            }
+        }
+    }
+
+    /// AI one-click enhance: confirm, then run the batch (dedup + dewatermark)
+    /// over the whole queue with the UI locked behind a progress overlay.
+    func runAIOneClickEnhance() {
+        guard !batchRunning, !imageURLs.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "AI One-Click Enhance"
+        alert.informativeText = "Run AI dedup and dewatermark on the current image queue? Duplicate files will be moved to the Trash."
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        batchRunning = true
+        showBatchOverlay()
+        let urls = imageURLs
+        let mode = AppConfig.shared.aiEnhanceMode
+        Task { @MainActor [weak self] in
+            await self?.runAIBatch(urls: urls, mode: mode)
+        }
+    }
+
+    /// The batch itself (main actor; heavy work hops to detached tasks).
+    @MainActor
+    private func runAIBatch(urls: [URL], mode: String) async {
+        var trashed: Set<URL> = []
+
+        // ── Phase 1: dedup (skipped when mode == "watermarkOnly") ─────────
+        if mode != "watermarkOnly" {
+            setBatchProgress(0, indeterminate: true)
+            let observations = await DuplicateDetector.featurePrints(for: urls) { p in
+                DispatchQueue.main.async { [weak self] in
+                    self?.setBatchProgress(p * 0.4, indeterminate: false)
+                }
+            }
+            let groups = DuplicateDetector.findGroups(urls: urls, observations: observations, threshold: DuplicateDetector.defaultThreshold)
+            for (gi, group) in groups.enumerated() {
+                setBatchProgress(0.4, indeterminate: true)
+                // Resolve the group to live URLs (groups are disjoint, so all
+                // members of an unprocessed group still exist).
+                let live = group.indices.compactMap { i in urls.indices.contains(i) ? urls[i] : nil }
+                guard live.count >= 2 else { continue }
+
+                var toTrash: [URL] = []
+                if live.count == 2 {
+                    // Side-by-side comparison; default selection = best image.
+                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
+                    let defaultSide: Int = (group.indices[1] == best) ? 1 : 0
+                    let keepURL: URL? = await withCheckedContinuation { cont in
+                        DedupComparisonWindow.present(
+                            over: self.window,
+                            leftURL: live[0],
+                            rightURL: live[1],
+                            initialSelection: defaultSide,
+                            onConfirm: { side in
+                                cont.resume(returning: side == 0 ? live[0] : live[1])
+                            },
+                            onCancel: {
+                                cont.resume(returning: nil)   // keep both
+                            }
+                        )
+                    }
+                    if let keep = keepURL {
+                        toTrash = live.filter { $0 != keep }
+                    }
+                } else {
+                    // >2 members: keep the best, trash the rest.
+                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
+                    toTrash = live.filter { $0 != urls[best] }
+                }
+
+                for u in toTrash {
+                    do {
+                        try FileManager.default.trashItem(at: u, resultingItemURL: nil)
+                        trashed.insert(u)
+                        Logger.shared.log("AI batch dedup: moved \(u.lastPathComponent) to Trash")
+                    } catch {
+                        Logger.shared.log("AI batch dedup: trash failed for \(u.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+
+                // Ask before the next group (config: ask to continue).
+                if gi < groups.count - 1, AppConfig.shared.dedupAskContinue {
+                    let cont = NSAlert()
+                    cont.messageText = "Continue?"
+                    cont.informativeText = "More duplicate groups remain. Continue deduplicating?"
+                    cont.addButton(withTitle: "Yes")
+                    cont.addButton(withTitle: "No")
+                    if cont.runModal() != .alertFirstButtonReturn { break }
+                }
+            }
+
+            // Apply the removals to the queue (keep the current image stable).
+            if !trashed.isEmpty {
+                let currentURL = imageURLs.indices.contains(currentIndex) ? imageURLs[currentIndex] : nil
+                imageURLs.removeAll { trashed.contains($0) }
+                for u in trashed { aiStates.removeValue(forKey: u) }
+                ImageCache.shared.removeAll()
+                if let cur = currentURL, let idx = imageURLs.firstIndex(of: cur) {
+                    currentIndex = idx
+                } else if !imageURLs.isEmpty {
+                    currentIndex = min(currentIndex, imageURLs.count - 1)
+                }
+            }
+        }
+
+        // ── Phase 2: dewatermark (skipped when mode == "dedupOnly") ───────
+        if mode != "dedupOnly" {
+            if U2NetEngine.shared.isAvailable {
+                let queue = imageURLs
+                for (i, u) in queue.enumerated() {
+                    setBatchProgress(0.4 + 0.6 * Double(i + 1) / Double(max(queue.count, 1)), indeterminate: false)
+                    guard let decoded = try? await DecoderManager.shared.decode(url: u),
+                          let cg = decoded.image.sourceCGImage else { continue }
+                    if let (out, fraction) = await Task.detached(priority: .userInitiated, operation: { () -> (CGImage, Double)? in
+                        guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
+                        return try? U2NetEngine.shared.removeWatermark(from: cg)
+                    }).value, fraction > 0 {
+                        let state = aiState(for: u)
+                        state.dewatermarkedImage = Self.nsImage(from: out)
+                        state.isDewatermarked = true
+                        state.lastApplied = .dewatermark
+                        aiStates[u] = state
+                    }
+                }
+            } else {
+                setBatchProgress(1, indeterminate: false)
+                Logger.shared.log("AI batch: U2Net not downloaded — dewatermark phase skipped")
+            }
+        }
+
+        // ── Finish: refresh display, unlock the UI ────────────────────────
+        if !imageURLs.isEmpty {
+            currentIndex = min(currentIndex, imageURLs.count - 1)
+            loadImage(at: currentIndex)
+        } else {
+            baseImage = nil
+            rotationSteps = 0
+            window.title = "PixAI"
+            container?.imageView?.image = nil
+            container?.imageView?.livePhotoURL = nil
+            container?.placeholder?.isHidden = false
+            updateStatusBar()
+        }
+        window.makeKeyAndOrderFront(nil)
+        hideBatchOverlay()
+        batchRunning = false
+        showStatusMessage("AI one-click enhance complete")
+        updateAIToolbarState()
+    }
+
+    /// Full-window progress overlay shown while the AI batch runs.
+    private func showBatchOverlay() {
+        guard let contentView = window.contentView else { return }
+        let overlay = NSView(frame: contentView.bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
+
+        let barW = min(420, max(200, contentView.bounds.width - 80))
+        let bar = NSProgressIndicator(frame: NSRect(x: (contentView.bounds.width - barW) / 2,
+                                                    y: contentView.bounds.midY - 20,
+                                                    width: barW, height: 20))
+        bar.style = .bar
+        bar.minValue = 0
+        bar.maxValue = 1
+        bar.isIndeterminate = false
+
+        let label = NSTextField(labelWithString: "This operation takes time, please wait")
+        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.sizeToFit()
+        let labelW = max(label.frame.width, barW)
+        label.frame = NSRect(x: (contentView.bounds.width - labelW) / 2,
+                             y: contentView.bounds.midY + 16,
+                             width: labelW, height: label.frame.height)
+
+        overlay.addSubview(bar)
+        overlay.addSubview(label)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        batchOverlay = overlay
+        batchProgressIndicator = bar
+        batchStatusLabel = label
+    }
+
+    private func hideBatchOverlay() {
+        batchProgressIndicator?.stopAnimation(nil)
+        batchOverlay?.removeFromSuperview()
+        batchOverlay = nil
+        batchProgressIndicator = nil
+        batchStatusLabel = nil
+    }
+
+    private func setBatchProgress(_ value: Double, indeterminate: Bool) {
+        guard let bar = batchProgressIndicator else { return }
+        if indeterminate {
+            bar.isIndeterminate = true
+            bar.startAnimation(nil)
+        } else {
+            bar.isIndeterminate = false
+            bar.stopAnimation(nil)
+            bar.doubleValue = min(max(value, 0), 1)
+        }
+    }
+
     // MARK: - Delete (move to Trash)
 
     /// Delete the current image: move it to the Trash (per Apple's
@@ -771,7 +1330,7 @@ class ImageWindow {
     /// confirmation dialog, then switch to the next / previous image or the
     /// empty state when the last one is removed.
     func deleteCurrentImage() {
-        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
+        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
 
         // Confirmation dialog (skipped when the user disabled it via the
@@ -892,7 +1451,7 @@ class ImageWindow {
     /// Toggle play/pause (Space key, toolbar play-pause button).
     /// Starts the slideshow when it is not running yet.
     func togglePlayPause() {
-        guard !imageURLs.isEmpty else { return }
+        guard !batchRunning, !imageURLs.isEmpty else { return }
         switch slideshow.state {
         case .stopped: startSlideshow()
         case .playing: pauseSlideshow()
@@ -954,7 +1513,7 @@ class ImageWindow {
     /// Go to previous image with loop.
     /// One press at the first image shows the hint AND jumps to the last image immediately.
     private func goPrevious() {
-        guard imageURLs.count > 1 else { return }
+        guard !batchRunning, imageURLs.count > 1 else { return }
 
         if currentIndex == 0 {
             Logger.shared.log("At first image, showing wrap-around message")
@@ -972,7 +1531,7 @@ class ImageWindow {
     /// Go to next image with loop.
     /// One press at the last image shows the hint AND jumps to the first image immediately.
     private func goNext() {
-        guard imageURLs.count > 1 else { return }
+        guard !batchRunning, imageURLs.count > 1 else { return }
 
         if currentIndex == imageURLs.count - 1 {
             Logger.shared.log("At last image, showing wrap-around message")
