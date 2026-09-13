@@ -97,17 +97,57 @@ Change language in Preferences → General.
 
 ## Development
 
-Built with Swift and AppKit. The build script will automatically download required dependencies.
+Built with Swift and AppKit.
+
+### Prerequisites
+
+- CMake 3.20+
+- Python 3.8+
+- Xcode Command Line Tools
+
+Install with Homebrew:
+```bash
+brew install cmake python3
+xcode-select --install
+```
 
 ### Build from Source
 
+1. Clone the repository:
 ```bash
 git clone https://github.com/J-Liu/PixAI.git
 cd PixAI
+```
+
+2. Build (one command):
+```bash
 ./build.sh
 ```
 
-The build script will automatically download ExecuTorch xcframeworks if not present.
+The script will automatically download and build ExecuTorch xcframeworks from the **v0.6.0 release** if not present (15-30 min on first run).
+
+Subsequent builds are fast (seconds) — the xcframeworks are cached in `Vendor/ExecuTorch/`.
+
+### Build Prerequisites
+
+- CMake 3.20+
+- Python 3.8+
+- Xcode Command Line Tools
+
+Install with Homebrew:
+```bash
+brew install cmake python3
+xcode-select --install
+```
+
+### Clean Build Artifacts
+
+After building, you can remove the ExecuTorch build directory (~2GB):
+```bash
+rm -rf .executorch_build
+```
+
+The xcframeworks in `Vendor/ExecuTorch/` are required for future builds.
 
 ### Dependencies
 
@@ -120,13 +160,9 @@ The build script will automatically download ExecuTorch xcframeworks if not pres
 | `kernels_optimized.xcframework` | Optimized operators |
 | `threadpool.xcframework` | Thread pool for parallel execution |
 
-**Source**: [ExecuTorch](https://github.com/pytorch/executorch) by PyTorch
+**Source**: [ExecuTorch](https://github.com/pytorch/executorch) v0.6.0 release (Apache 2.0 License)
 
-To build these xcframeworks manually:
-1. Clone ExecuTorch: `git clone https://github.com/pytorch/executorch.git`
-2. Follow the [Apple platform integration guide](https://pytorch.org/executorch/stable/apple-runtime.html)
-3. Build the xcframeworks for macOS (arm64)
-4. Place them in `Vendor/ExecuTorch/`
+Built automatically by `./build.sh` on first run.
 
 ---
 

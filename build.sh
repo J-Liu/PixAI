@@ -10,8 +10,8 @@ APP_NAME="PixAI.app"
 APP_BUNDLE="$SCRIPT_DIR/$APP_NAME"
 BUILD_OUTPUT="$SCRIPT_DIR/.build/arm64-apple-macosx/release/PixAI"
 
-# ExecuTorch download URL (from PixAI releases)
-EXECUTORCH_DOWNLOAD_BASE="https://github.com/J-Liu/PixAI/releases/download/executorch"
+# ExecuTorch version for build script reference
+EXECUTORCH_VERSION="v0.6.0"
 
 echo "🔨 Building PixAI..."
 cd "$SCRIPT_DIR"
@@ -43,22 +43,32 @@ if [ "$ALL_EXIST" = false ]; then
                 echo "   📦 Extracting $name.xcframework from local zip..."
                 unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
             else
-                echo "   📥 Downloading $name.xcframework..."
-                if curl -fsSL "$EXECUTORCH_DOWNLOAD_BASE/$name.zip" -o "$VENDOR/$name.zip" 2>/dev/null; then
-                    unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
+                echo ""
+                echo "   ⚠️  ExecuTorch xcframeworks not found. Building from source..."
+                echo "   This will download and build ExecuTorch $EXECUTORCH_VERSION (15-30 min)."
+                echo ""
+                
+                # Check if build_executorch.sh exists
+                if [ -f "$SCRIPT_DIR/build_executorch.sh" ]; then
+                    # Run build_executorch.sh
+                    cd "$SCRIPT_DIR"
+                    bash build_executorch.sh
+                    
+                    # Verify build succeeded
+                    if [ ! -d "$VENDOR/$name.xcframework" ]; then
+                        echo ""
+                        echo "❌ Failed to build ExecuTorch xcframeworks"
+                        exit 1
+                    fi
                 else
+                    echo "❌ Missing ExecuTorch dependency: $name.xcframework"
+                    echo "   build_executorch.sh not found."
                     echo ""
-                    echo "   ⚠️  Download failed. ExecuTorch xcframeworks are required for AI features."
+                    echo "   ExecuTorch xcframeworks are required for AI features (watermark removal)."
+                    echo "   PyTorch does not provide pre-built macOS xcframeworks."
                     echo ""
-                    echo "   Options:"
-                    echo "   1. Upload the zip files to GitHub Releases:"
-                    echo "      Go to: https://github.com/J-Liu/PixAI/releases/new"
-                    echo "      Tag: executorch"
-                    echo "      Upload: executorch.zip, backend_coreml.zip, kernels_optimized.zip, threadpool.zip"
-                    echo ""
-                    echo "   2. Build ExecuTorch from source:"
-                    echo "      git clone https://github.com/pytorch/executorch.git"
-                    echo "      See: https://pytorch.org/executorch/stable/apple-runtime.html"
+                    echo "   To build from source, get build_executorch.sh and run:"
+                    echo "     ./build_executorch.sh"
                     echo ""
                     exit 1
                 fi
