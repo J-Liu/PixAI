@@ -10,6 +10,9 @@ APP_NAME="PixAI.app"
 APP_BUNDLE="$SCRIPT_DIR/$APP_NAME"
 BUILD_OUTPUT="$SCRIPT_DIR/.build/arm64-apple-macosx/release/PixAI"
 
+# ExecuTorch download URL (from PixAI releases)
+EXECUTORCH_DOWNLOAD_BASE="https://github.com/J-Liu/PixAI/releases/download/executorch"
+
 echo "🔨 Building PixAI..."
 cd "$SCRIPT_DIR"
 rm -rf .build/module-cache
@@ -17,8 +20,24 @@ mkdir -p .build/arm64-apple-macosx/release
 
 # ─── ExecuTorch (U2Net watermark model) binary targets ──────────────────────
 VENDOR="$SCRIPT_DIR/Vendor/ExecuTorch"
-for name in executorch backend_coreml kernels_optimized threadpool; do
-    if [ ! -d "$VENDOR/$name.xcframework" ] && [ -f "$VENDOR/$name.zip" ]; then
+mkdir -p "$VENDOR"
+
+# Define the xcframeworks needed
+FRAMEWORKS=("executorch" "backend_coreml" "kernels_optimized" "threadpool")
+
+# Check and download missing frameworks
+for name in "${FRAMEWORKS[@]}"; do
+    if [ ! -d "$VENDOR/$name.xcframework" ]; then
+        if [ ! -f "$VENDOR/$name.zip" ]; then
+            echo "   📥 Downloading $name.xcframework..."
+            curl -fsSL "$EXECUTORCH_DOWNLOAD_BASE/$name.zip" -o "$VENDOR/$name.zip" || {
+                echo "❌ Failed to download $name.zip"
+                echo "   Please download manually from:"
+                echo "   $EXECUTORCH_DOWNLOAD_BASE/$name.zip"
+                echo "   Or build ExecuTorch from source: https://github.com/pytorch/executorch"
+                exit 1
+            }
+        fi
         echo "   📦 Extracting $name.xcframework..."
         unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
     fi
@@ -30,7 +49,8 @@ KO_SLICE="$VENDOR/kernels_optimized.xcframework/macos-arm64"
 TP_SLICE="$VENDOR/threadpool.xcframework/macos-arm64"
 
 if [ ! -f "$ET_SLICE/ExecuTorch.swiftinterface" ]; then
-    echo "❌ ExecuTorch xcframework missing (run the unzip step / check Vendor/ExecuTorch)"
+    echo "❌ ExecuTorch xcframework missing or incomplete"
+    echo "   Please ensure all xcframeworks are present in Vendor/ExecuTorch/"
     exit 1
 fi
 

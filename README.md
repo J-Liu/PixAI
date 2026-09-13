@@ -97,11 +97,19 @@ Change language in Preferences → General.
 
 ## Development
 
-Built with Swift and AppKit. 
+Built with Swift and AppKit. The build script will automatically download required dependencies.
 
-### Prerequisites
+### Build from Source
 
-The `Vendor/` directory contains pre-built ExecuTorch xcframeworks required for AI inference:
+```bash
+git clone https://github.com/J-Liu/PixAI.git
+cd PixAI
+./build.sh
+```
+
+The build script will automatically download ExecuTorch xcframeworks if not present.
+
+### Dependencies
 
 **ExecuTorch xcframeworks** (for U2Net watermark detection model):
 
@@ -114,22 +122,11 @@ The `Vendor/` directory contains pre-built ExecuTorch xcframeworks required for 
 
 **Source**: [ExecuTorch](https://github.com/pytorch/executorch) by PyTorch
 
-To build these xcframeworks from source:
+To build these xcframeworks manually:
 1. Clone ExecuTorch: `git clone https://github.com/pytorch/executorch.git`
 2. Follow the [Apple platform integration guide](https://pytorch.org/executorch/stable/apple-runtime.html)
 3. Build the xcframeworks for macOS (arm64)
 4. Place them in `Vendor/ExecuTorch/`
-
-Alternatively, download pre-built xcframeworks from [ExecuTorch releases](https://github.com/pytorch/executorch/releases).
-
-### Build
-
-```bash
-# Build from source
-git clone https://github.com/J-Liu/PixAI.git
-cd PixAI
-./build.sh
-```
 
 ---
 
