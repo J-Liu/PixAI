@@ -97,7 +97,32 @@ Change language in Preferences → General.
 
 ## Development
 
-Built with Swift and AppKit. No external dependencies beyond system frameworks.
+Built with Swift and AppKit. 
+
+### Prerequisites
+
+The `Vendor/` directory contains pre-built ExecuTorch xcframeworks required for AI inference:
+
+**ExecuTorch xcframeworks** (for U2Net watermark detection model):
+
+| File | Description |
+|------|-------------|
+| `executorch.xcframework` | Core ExecuTorch runtime |
+| `backend_coreml.xcframework` | CoreML backend for Apple Silicon |
+| `kernels_optimized.xcframework` | Optimized operators |
+| `threadpool.xcframework` | Thread pool for parallel execution |
+
+**Source**: [ExecuTorch](https://github.com/pytorch/executorch) by PyTorch
+
+To build these xcframeworks from source:
+1. Clone ExecuTorch: `git clone https://github.com/pytorch/executorch.git`
+2. Follow the [Apple platform integration guide](https://pytorch.org/executorch/stable/apple-runtime.html)
+3. Build the xcframeworks for macOS (arm64)
+4. Place them in `Vendor/ExecuTorch/`
+
+Alternatively, download pre-built xcframeworks from [ExecuTorch releases](https://github.com/pytorch/executorch/releases).
+
+### Build
 
 ```bash
 # Build from source
