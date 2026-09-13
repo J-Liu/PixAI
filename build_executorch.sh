@@ -74,7 +74,13 @@ build_xcframeworks() {
     
     # Install Python dependencies
     echo "Installing Python dependencies..."
-    pip3 install --user -r requirements.txt
+    if [ -f "requirements.txt" ]; then
+        pip3 install --user -r requirements.txt
+    elif [ -f "requirements-dev.txt" ]; then
+        pip3 install --user -r requirements-dev.txt
+    else
+        echo "   Note: No requirements file found, continuing without Python deps"
+    fi
     
     # Set up build directories
     local CMAKE_BUILD_DIR="$BUILD_DIR/cmake_build"
