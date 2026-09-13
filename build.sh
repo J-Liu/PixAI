@@ -25,23 +25,47 @@ mkdir -p "$VENDOR"
 # Define the xcframeworks needed
 FRAMEWORKS=("executorch" "backend_coreml" "kernels_optimized" "threadpool")
 
-# Check and download missing frameworks
+# Check if all frameworks already exist
+ALL_EXIST=true
 for name in "${FRAMEWORKS[@]}"; do
     if [ ! -d "$VENDOR/$name.xcframework" ]; then
-        if [ ! -f "$VENDOR/$name.zip" ]; then
-            echo "   📥 Downloading $name.xcframework..."
-            curl -fsSL "$EXECUTORCH_DOWNLOAD_BASE/$name.zip" -o "$VENDOR/$name.zip" || {
-                echo "❌ Failed to download $name.zip"
-                echo "   Please download manually from:"
-                echo "   $EXECUTORCH_DOWNLOAD_BASE/$name.zip"
-                echo "   Or build ExecuTorch from source: https://github.com/pytorch/executorch"
-                exit 1
-            }
-        fi
-        echo "   📦 Extracting $name.xcframework..."
-        unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
+        ALL_EXIST=false
+        break
     fi
 done
+
+# Download missing frameworks
+if [ "$ALL_EXIST" = false ]; then
+    echo "   🔍 Checking ExecuTorch dependencies..."
+    for name in "${FRAMEWORKS[@]}"; do
+        if [ ! -d "$VENDOR/$name.xcframework" ]; then
+            if [ -f "$VENDOR/$name.zip" ]; then
+                echo "   📦 Extracting $name.xcframework from local zip..."
+                unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
+            else
+                echo "   📥 Downloading $name.xcframework..."
+                if curl -fsSL "$EXECUTORCH_DOWNLOAD_BASE/$name.zip" -o "$VENDOR/$name.zip" 2>/dev/null; then
+                    unzip -qo "$VENDOR/$name.zip" -d "$VENDOR"
+                else
+                    echo ""
+                    echo "   ⚠️  Download failed. ExecuTorch xcframeworks are required for AI features."
+                    echo ""
+                    echo "   Options:"
+                    echo "   1. Upload the zip files to GitHub Releases:"
+                    echo "      Go to: https://github.com/J-Liu/PixAI/releases/new"
+                    echo "      Tag: executorch"
+                    echo "      Upload: executorch.zip, backend_coreml.zip, kernels_optimized.zip, threadpool.zip"
+                    echo ""
+                    echo "   2. Build ExecuTorch from source:"
+                    echo "      git clone https://github.com/pytorch/executorch.git"
+                    echo "      See: https://pytorch.org/executorch/stable/apple-runtime.html"
+                    echo ""
+                    exit 1
+                fi
+            fi
+        fi
+    done
+fi
 
 ET_SLICE="$VENDOR/executorch.xcframework/macos-arm64"
 BC_SLICE="$VENDOR/backend_coreml.xcframework/macos-arm64"
