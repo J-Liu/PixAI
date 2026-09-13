@@ -36,6 +36,7 @@ class ZoomableImageView: NSView {
             nextToggleIsFit = true
             pendingPreciseDelta = 0
             resetToFit()
+            startFade(from: oldValue)
         }
     }
 
@@ -94,6 +95,67 @@ class ZoomableImageView: NSView {
     private static let preciseScrollStepPoints: CGFloat = 12
 
     private var pendingPreciseDelta: CGFloat = 0
+
+    // MARK: - Crossfade transition (config: imageTransitionDuration; 0 = off)
+
+    /// The previously displayed image while a fade-in of the new one runs.
+    private var fadePreviousImage: NSImage?
+    /// 0 → old image fully visible, 1 → new image fully visible (no fade).
+    private var fadeProgress: CGFloat = 1
+    private var fadeTimer: Timer?
+
+    /// Begin fading the old image out / the new one in over the configured
+    /// duration. No animation when the setting is 0 or there is nothing to
+    /// fade from (first load, cleared image).
+    private func startFade(from old: NSImage?) {
+        fadeTimer?.invalidate()
+        fadeTimer = nil
+        guard let old, image != nil else {
+            fadePreviousImage = nil
+            fadeProgress = 1
+            return
+        }
+        let duration = AppConfig.shared.imageTransitionDuration
+        guard duration > 0 else {
+            fadePreviousImage = nil
+            fadeProgress = 1
+            return
+        }
+        fadePreviousImage = old
+        fadeProgress = 0
+        let step = 1.0 / 60.0
+        fadeTimer = Timer.scheduledTimer(withTimeInterval: step, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            self.fadeProgress += CGFloat(step) / CGFloat(duration)
+            if self.fadeProgress >= 1 {
+                self.fadeProgress = 1
+                self.fadePreviousImage = nil
+                timer.invalidate()
+                self.fadeTimer = nil
+            }
+            self.needsDisplay = true
+        }
+    }
+
+    /// Draw `img` proportionally fitted (centered) inside `containerRect`
+    /// with the given alpha — used for the outgoing image of a crossfade.
+    private func drawFitted(_ img: NSImage, in containerRect: NSRect, fraction: CGFloat) {
+        guard fraction > 0 else { return }
+        var size = NSSize(width: 0, height: 0)
+        if let rep = img.representations.first, rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+        } else {
+            size = img.size
+        }
+        guard size.width > 0, size.height > 0 else { return }
+        let scale = min(containerRect.width / size.width, containerRect.height / size.height)
+        let w = size.width * scale
+        let h = size.height * scale
+        let r = NSRect(x: containerRect.midX - w / 2, y: containerRect.midY - h / 2, width: w, height: h)
+        img.draw(in: r, from: .zero, operation: .sourceOver, fraction: fraction,
+                 respectFlipped: false, hints: [.interpolation: NSImageInterpolation.high])
+    }
+
     private var isPanning = false
     private var panStartPoint: NSPoint = .zero
     private var panStartOrigin: NSPoint = .zero
@@ -131,6 +193,7 @@ class ZoomableImageView: NSView {
         for observer in liveEventObservers {
             NotificationCenter.default.removeObserver(observer)
         }
+        fadeTimer?.invalidate()
         if let observer = configObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -538,8 +601,53 @@ class ZoomableImageView: NSView {
         let hints: [NSImageRep.HintKey: Any] = [
             .interpolation: zoomScale >= 0.95 ? NSImageInterpolation.none : NSImageInterpolation.high
         ]
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: hints)
+
+        // Crossfade: the outgoing image fades out while the new one fades in.
+        if let previous = fadePreviousImage {
+            drawFitted(previous, in: rect, fraction: max(0, 1 - fadeProgress))
+            image.draw(in: rect, from: .zero, operation: .sourceOver,
+                       fraction: min(1, fadeProgress), respectFlipped: false, hints: hints)
+        } else {
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: hints)
+        }
 
         context.restoreGraphicsState()
+    }
+
+    // MARK: - Coordinate mapping (used by the crop overlay)
+
+    /// Pixel dimensions of the current image in CGImage conventions
+    /// (origin top-left, y down) — same space as `CGImage.cropping(to:)`.
+    var cgPixelSize: NSSize? {
+        return imagePixelSize()
+    }
+
+    /// Convert an image-pixel rect (CG coords, y from the TOP) to this view's
+    /// coordinates (non-flipped, y up).
+    func viewRect(forPixelRect r: CGRect) -> NSRect {
+        guard let psize = cgPixelSize else { return .zero }
+        let x = imageOrigin.x + r.minX * zoomScale
+        // r.maxY is the distance of the rect's BOTTOM edge from the image top;
+        // the view-space y of that edge is measured from the image bottom.
+        let yView = imageOrigin.y + (psize.height - r.maxY) * zoomScale
+        return NSRect(x: x, y: yView, width: r.width * zoomScale, height: r.height * zoomScale)
+    }
+
+    /// Convert a point in this view's coordinates to an image-pixel point
+    /// (CG coords, y from the TOP).
+    func pixelPoint(forViewPoint p: NSPoint) -> CGPoint {
+        guard let psize = cgPixelSize else { return .zero }
+        let x = (p.x - imageOrigin.x) / zoomScale
+        let yTop = psize.height - (p.y - imageOrigin.y) / zoomScale
+        return CGPoint(x: x, y: yTop)
+    }
+
+    // MARK: - Context menu (right-click)
+
+    /// Set by the host to supply the right-click context menu.
+    var contextMenuProvider: (() -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return contextMenuProvider?()
     }
 }

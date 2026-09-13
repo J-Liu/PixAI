@@ -12,6 +12,11 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     /// All open viewer windows (strong references; closing a window removes it).
     private var imageWindows: [ImageWindow] = []
     
+    /// Rebuilds the menu bar when the UI language changes.
+    private var l10nMenuObserver: NSObjectProtocol?
+    /// Guards the one-shot startup model check.
+    private var modelCheckDone = false
+    
     override init() {
         self.paths = commandPaths
         self.isFullscreen = isFullscreenMode
@@ -47,15 +52,21 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             self?.makeNewWindow(paths: [])
         }
         
-        // Save As (Cmd+Shift+S): save the current image (with any AI transform) to a new file.
-        MenuBuilder.saveAsCallback = { [weak self] in
-            self?.activeWindow()?.saveAsImage()
+        // Check for Updates: open the GitHub releases page (hardcoded URL, no
+        // real version check).
+        MenuBuilder.checkForUpdatesCallback = {
+            if let url = URL(string: "https://github.com/J-Liu/PixAI/releases") {
+                NSWorkspace.shared.open(url)
+            }
         }
         
         // Preferences (Cmd+,): show the shared Preferences window.
         MenuBuilder.preferencesCallback = {
             PreferencesWindow.shared.show()
         }
+        
+        // Menu validation + action routing use the active viewer window.
+        MenuBuilder.activeWindowProvider = { [weak self] in self?.activeWindow() }
         
         // Create the first window with command-line paths (if any).
         let urlPaths = paths.compactMap { URL(fileURLWithPath: $0) }
@@ -67,6 +78,21 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         }
         
         Logger.shared.log("PixAIApp initialized with \(imageWindows.count) window(s)")
+        
+        // Rebuild the menu bar when the UI language changes (all titles go
+        // through L10n).
+        self.l10nMenuObserver = NotificationCenter.default.addObserver(
+            forName: L10n.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            NSApplication.shared.mainMenu = MenuBuilder.build()
+        }
+        
+        // Startup AI-model check (config: ask to download when missing).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.checkAIModelsOnStartup()
+        }
     }
     
     /// Whether closing the last window quits the app (configurable in
@@ -122,5 +148,34 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             ImageCache.shared.removeAll()
         }
         Logger.shared.log("Window closed, \(imageWindows.count) window(s) remain")
+    }
+    
+    /// One-shot startup check: if "ask to download" is enabled and any model
+    /// plugin is missing (not downloaded / corrupted / deleted / moved), offer
+    /// to open Preferences ▸ AI Models on the first window.
+    private func checkAIModelsOnStartup() {
+        guard !modelCheckDone else { return }
+        modelCheckDone = true
+        guard AppConfig.shared.modelCheckPromptEnabled else { return }
+        let missing = ModelPlugin.all.filter { !PluginManager.shared.isReady($0) }
+        guard !missing.isEmpty, let win = activeWindow() else { return }
+        
+        let t = L10n.shared.t
+        let alert = NSAlert()
+        alert.messageText = t("AI models are missing")
+        alert.informativeText = t("The following AI models are not downloaded (or are corrupted / deleted / moved):")
+            + "\n" + missing.map { "• \($0.displayName)" }.joined(separator: "\n")
+        alert.addButton(withTitle: t("Download now?"))
+        alert.addButton(withTitle: t("Later"))
+        let check = NSButton(checkboxWithTitle: t("Don't ask again"), target: nil, action: nil)
+        alert.accessoryView = check
+        alert.beginSheetModal(for: win.window) { response in
+            if check.state == .on {
+                AppConfig.shared.modelCheckPromptEnabled = false
+            }
+            if response == .alertFirstButtonReturn {
+                PreferencesWindow.shared.show()
+            }
+        }
     }
 }

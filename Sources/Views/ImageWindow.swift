@@ -50,6 +50,38 @@ class ImageWindow {
 
     private var pluginObserver: NSObjectProtocol?
 
+    /// Format of the currently displayed file (set on decode; used to reject
+    /// cropping animated images such as GIFs).
+    private var currentFormat: ImageFormat?
+    /// Spinner shown while a (large/slow) image decodes off the main thread.
+    private var loadSpinner: NSProgressIndicator?
+    /// Centered icon + "Unsupported format" view for files that fail to decode.
+    private var unsupportedView: NSView?
+    /// Label inside the unsupported-format view (refreshed on language change).
+    private var unsupportedViewLabel: NSTextField?
+
+    // MARK: Crop state
+
+    /// True while the crop rectangle overlay is active.
+    private var cropMode = false
+    /// Crop rectangle in CG image-pixel coordinates (y from top).
+    private var cropRectPixels: CGRect = .zero
+    private var cropOverlay: CropOverlayView?
+    /// URLs whose Live Photo playback was intentionally disabled this session
+    /// (cropping a Live Photo turns it into a still image).
+    private var livePhotoSuppressed: Set<URL> = []
+
+    /// Set when the user presses Esc during the AI batch: the loop aborts and
+    /// the window returns to browse mode.
+    private var batchCancelled = false
+
+    /// Timer that drives the status-bar blink for wrap-around (loop) hints.
+    private var blinkTimer: Timer?
+    private var blinkRemainingTicks = 0
+    private var blinkMessage = ""
+
+    /// Refreshes localized chrome when the UI language changes.
+    private var l10nObserver: NSObjectProtocol?
     /// Drives slideshow playback (P / Space keys, toolbar play-pause button).
     /// The slide interval defaults to 3 s and will later be configurable via
     /// a config file / settings UI.
@@ -92,6 +124,9 @@ class ImageWindow {
             if let imageView = self.container?.imageView {
                 self.setFitToggleIcon(showsFit: imageView.nextToggleIsFit)
             }
+            // The crop overlay maps pixel→view through live closures; a zoom or
+            // pan change only needs a redraw to keep the rectangle in place.
+            self.cropOverlay?.needsDisplay = true
         }
         container.imageView = imageView
         container.addSubview(imageView)
@@ -101,11 +136,11 @@ class ImageWindow {
         statusBar.wantsLayer = true
         statusBar.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.9).cgColor
         
-        let statusLabel = NSTextField(labelWithString: "Open or drag images here")
+        let statusLabel = NSTextField(labelWithString: L10n.shared.t("Open or drag images here"))
         statusLabel.font = NSFont.systemFont(ofSize: 12)
         statusLabel.textColor = NSColor(white: 0.92, alpha: 1)
         statusLabel.lineBreakMode = .byTruncatingMiddle
-        statusLabel.attributedStringValue = Self.statusString("Open or drag images here")
+        statusLabel.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
         statusBar.addSubview(statusLabel)
         
         container.statusBar = statusBar
@@ -136,6 +171,10 @@ class ImageWindow {
                 // Same alternating toggle as double-click; the view owns the state
                 // and onZoomChange syncs the toolbar icon afterwards.
                 self?.container?.imageView?.toggleFitOr100Percent()
+            },
+            onCropTap: { [weak self] in
+                Logger.shared.log("Toolbar crop button tapped")
+                self?.toggleCropMode()
             },
             onAIEnhanceQualityTap: { [weak self] in
                 Logger.shared.log("Toolbar AI quality-enhance button tapped")
@@ -240,10 +279,33 @@ class ImageWindow {
             },
             isSlideshowActive: { [weak self] in
                 self?.slideshow.isActive ?? false
+            },
+            isBatchActive: { [weak self] in
+                self?.batchRunning ?? false
+            },
+            onCancelBatch: { [weak self] in
+                Logger.shared.log("Keyboard handler: cancel AI batch (Esc)")
+                self?.cancelAIBatch()
+            },
+            isCropModeActive: { [weak self] in
+                self?.cropMode ?? false
+            },
+            onCancelCrop: { [weak self] in
+                Logger.shared.log("Keyboard handler: cancel crop (Esc)")
+                self?.exitCropMode()
+            },
+            onShowShortcuts: {
+                Logger.shared.log("Keyboard handler: show shortcuts help (?)")
+                ShortcutsHelpWindow.shared.show()
             }
         )
         container.keyboardHandler = keyboardHandler
         container.addSubview(keyboardHandler)
+
+        // Right-click context menu on the image (same actions as the menus).
+        container.imageView?.contextMenuProvider = { [weak self] in
+            self?.buildContextMenu()
+        }
 
         // Slideshow controller: owns the countdown; this window reacts to ticks.
         slideshow.onTick = { [weak self] in
@@ -258,6 +320,15 @@ class ImageWindow {
             queue: .main
         ) { [weak self] _ in
             self?.updateAIToolbarState()
+        }
+
+        // Refresh localized chrome (status bar / title) on language change.
+        self.l10nObserver = NotificationCenter.default.addObserver(
+            forName: L10n.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshLocalizedUI()
         }
 
         // Set the container as content view (same size, so nothing jumps),
@@ -285,6 +356,12 @@ class ImageWindow {
                 NotificationCenter.default.removeObserver(token)
                 self.pluginObserver = nil
             }
+            if let token = self.l10nObserver {
+                NotificationCenter.default.removeObserver(token)
+                self.l10nObserver = nil
+            }
+            self.blinkTimer?.invalidate()
+            self.blinkTimer = nil
             self.onClose?(self)
         }
         
@@ -307,6 +384,7 @@ class ImageWindow {
     /// Refresh the status bar when the window is resized (zoom ratio changes).
     @objc private func windowDidResize() {
         updateStatusBar()
+        positionLoadSpinner()
     }
     
     /// Open a file selection panel and load the chosen items.
@@ -328,6 +406,9 @@ class ImageWindow {
     
     /// Load images from URLs (files and/or directories).
     func loadImages(from urls: [URL]) {
+        // A new image set invalidates the active crop rectangle (it belongs to
+        // the previous file's pixel space).
+        if cropMode { exitCropMode() }
         // A new image set invalidates any running slideshow.
         if slideshow.isActive {
             Logger.shared.log("Slideshow stopped (new images loaded)")
@@ -445,6 +526,8 @@ class ImageWindow {
     /// Load and display the image at the given index.
     private func loadImage(at index: Int) {
         guard index >= 0, index < imageURLs.count else { return }
+        // Navigating to a different image discards the active crop rectangle.
+        if cropMode { exitCropMode() }
         currentIndex = index
         let url = imageURLs[index]
         
@@ -464,6 +547,10 @@ class ImageWindow {
             self.rotationSteps = 0
             // The cache remembers whether this entry is a huge-image thumbnail.
             self.currentImageIsScaled = ImageCache.shared.isScaled(url)
+            // Cheap header probe so the crop-mode guards know the format here too.
+            self.currentFormat = MagicNumberDetector.detect(url: url)
+            self.hideLoadSpinner()
+            self.hideUnsupportedView()
             self.displayImage(cached, at: url)
             self.updateWindowTitle()
             self.container?.placeholder?.isHidden = true
@@ -482,6 +569,10 @@ class ImageWindow {
         // The huge-image memory policy (spec: 超大图缩略) is applied here:
         // files ≥ 10 000 px on any side are decoded only as a downscaled
         // thumbnail so the full bitmap never enters memory.
+        // The decode runs off the main thread; show a spinner meanwhile so
+        // large/slow files give visible feedback.
+        self.showLoadSpinner()
+
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             do {
@@ -497,6 +588,7 @@ class ImageWindow {
                 self.baseImage = decoded.image
                 self.rotationSteps = 0
                 self.currentImageIsScaled = scaled
+                self.currentFormat = decoded.format
 
                 // Keep the decoded image in the NSCache (size follows the
                 // "Cached images" setting, 1–20, read live on insert).
@@ -505,6 +597,8 @@ class ImageWindow {
                 // The image view fills the window area; setting the image resets it to
                 // "fit to window" mode (proportional fit, centered). Live Photo
                 // support is configured alongside the new still.
+                self.hideLoadSpinner()
+                self.hideUnsupportedView()
                 self.displayImage(decoded.image, at: url)
 
                 // Window title shows the current file name (+ active AI mark).
@@ -515,7 +609,7 @@ class ImageWindow {
 
                 if scaled {
                     Logger.shared.log("Huge image shown as scaled thumbnail: \(url)")
-                    self.showStatusBarHint("已缩放显示（超大图缩略）", for: 3.0)
+                    self.showStatusBarHint(L10n.shared.t("Shown scaled down (huge image thumbnail)"), for: 3.0)
                 } else {
                     Logger.shared.log("Image loaded successfully (\(decoded.format.displayName)): \(decoded.image.size)")
                 }
@@ -525,7 +619,11 @@ class ImageWindow {
                 self.updateAIToolbarState()
                 self.applyAutoAIIfNeeded(url: url)
             } catch {
+                guard generation == self.loadGeneration else { return }
                 Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
+                self.currentFormat = nil
+                self.hideLoadSpinner()
+                self.showUnsupportedView()
             }
         }
     }
@@ -544,10 +642,11 @@ class ImageWindow {
         Logger.shared.log("Large file warning: \(url.lastPathComponent) is \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) (> 50 MB)")
 
         let alert = NSAlert()
-        alert.messageText = "Large image warning"
-        alert.informativeText = "“\(url.lastPathComponent)” is \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)), larger than 50 MB. Displaying it may use a lot of memory."
+        let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        alert.messageText = L10n.shared.t("Large image warning")
+        alert.informativeText = L10n.shared.tf("“%@” is %@, larger than 50 MB. Displaying it may use a lot of memory.", url.lastPathComponent, sizeStr)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.shared.t("OK"))
         alert.beginSheetModal(for: window) { _ in }
     }
 
@@ -662,6 +761,9 @@ class ImageWindow {
     /// to the image view — but only if this image is still current when the
     /// detection completes (rapid navigation discards stale results).
     private func attachLivePhoto(for url: URL) {
+        // Cropping a Live Photo turns it into a still image; never re-attach
+        // the companion video for such URLs within this window session.
+        guard !livePhotoSuppressed.contains(url) else { return }
         let generation = loadGeneration
         Task { @MainActor [weak self] in
             guard let self = self, self.loadGeneration == generation,
@@ -706,7 +808,7 @@ class ImageWindow {
         guard let label = statusBarLabel else { return }
         
         if imageURLs.isEmpty || currentIndex < 0 || currentIndex >= imageURLs.count {
-            label.attributedStringValue = Self.statusString("Open or drag images here")
+            label.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
             return
         }
         
@@ -717,7 +819,7 @@ class ImageWindow {
             var sizeText = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
             if currentImageIsScaled {
                 // Huge-image thumbnail: mark that the display is scaled down.
-                sizeText += " (已缩放)"
+                sizeText += " (\(L10n.shared.t("scaled")))"
             }
             parts.append(sizeText)
             parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
@@ -740,14 +842,14 @@ class ImageWindow {
 
     /// Rotate the current image 90° clockwise (temporary; not written to disk).
     func rotateClockwise() {
-        guard !batchRunning, baseImage != nil else { return }
+        guard !batchRunning, !cropMode, baseImage != nil else { return }
         rotationSteps += 1
         applyRotation()
     }
 
     /// Rotate the current image 90° counterclockwise (temporary; not written to disk).
     func rotateCounterclockwise() {
-        guard !batchRunning, baseImage != nil else { return }
+        guard !batchRunning, !cropMode, baseImage != nil else { return }
         rotationSteps -= 1
         applyRotation()
     }
@@ -778,30 +880,36 @@ class ImageWindow {
     /// image is back to its original orientation: the save is ignored so the
     /// original file data is never re-encoded.
     func saveCurrentRotation() {
-        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let source = currentSourceImage else { return }
+        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
+
+        // Crop mode: apply the crop rectangle to the base image first so the
+        // file being saved contains the cropped result.
+        if cropMode { applyCropToBaseImage() }
+
+        guard let source = currentSourceImage else { return }
 
         let netDegrees = rotationSteps * 90
         let hasRotation = (netDegrees % 360) != 0
         let hasAITransform = aiStates[url]?.activeKind != nil
 
-        if !hasRotation && !hasAITransform {
+        if !hasRotation && !hasAITransform && !cropMode {
             Logger.shared.log("Save ignored: no rotation and no AI transform")
-            showStatusMessage("Nothing to save")
+            showStatusMessage(L10n.shared.t("Nothing to save"))
             return
         }
 
         let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
         guard let cgImage = toSave.sourceCGImage else {
             Logger.shared.log("Save failed: could not produce image for \(url)")
-            showStatusMessage("Save failed")
+            showStatusMessage(L10n.shared.t("Save failed"))
             return
         }
 
         let ext = url.pathExtension.lowercased()
         guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
             Logger.shared.log("Save failed: unsupported format '\(ext)' for \(url)")
-            showStatusMessage("Save failed: unsupported format")
+            showStatusMessage(L10n.shared.t("Save failed: unsupported format"))
             return
         }
 
@@ -812,10 +920,12 @@ class ImageWindow {
                 baseImage = toSave
                 rotationSteps = 0
             }
-            // Restore Live Photo support (suppressed while rotated).
+            // Restore Live Photo support (suppressed while rotated). Cropped
+            // Live Photos stay still (attachLivePhoto skips suppressed URLs).
             attachLivePhoto(for: url)
             Logger.shared.log("Saved image to \(url)")
-            showStatusMessage("Saved")
+            showStatusMessage(L10n.shared.t("Saved"))
+            if cropMode { exitCropMode() }
         } catch {
             Logger.shared.log("Save failed for \(url): \(error)")
             showStatusMessage("Save failed: \(error.localizedDescription)")
@@ -824,32 +934,38 @@ class ImageWindow {
 
     /// Save the current image (rotation + active AI transform) to a new file.
     func saveAsImage() {
-        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), let source = currentSourceImage else { return }
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
+
+        // Crop mode: apply the crop rectangle before encoding.
+        if cropMode { applyCropToBaseImage() }
+
+        guard let source = currentSourceImage else { return }
 
         let netDegrees = rotationSteps * 90
         let hasRotation = (netDegrees % 360) != 0
         let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
         guard let cgImage = toSave.sourceCGImage else {
-            showStatusMessage("Save failed")
+            showStatusMessage(L10n.shared.t("Save failed"))
             return
         }
 
         let panel = NSSavePanel()
         panel.nameFieldStringValue = url.lastPathComponent
         panel.canCreateDirectories = true
-        panel.message = "Save the current image (including any AI transform)"
+        panel.message = L10n.shared.t("Save the current image (including any AI transform)")
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self = self, response == .OK, let dest = panel.url else { return }
             let ext = dest.pathExtension.lowercased()
             guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
-                self.showStatusMessage("Save failed: unsupported format")
+                self.showStatusMessage(L10n.shared.t("Save failed: unsupported format"))
                 return
             }
             do {
                 try data.write(to: dest, options: .atomic)
                 Logger.shared.log("Saved As to \(dest.path)")
-                self.showStatusMessage("Saved as \(dest.lastPathComponent)")
+                self.showStatusMessage(L10n.shared.tf("Saved as %@", dest.lastPathComponent))
+                if self.cropMode { self.exitCropMode() }
             } catch {
                 Logger.shared.log("Save As failed for \(dest.path): \(error)")
                 self.showStatusMessage("Save failed: \(error.localizedDescription)")
@@ -1013,7 +1129,7 @@ class ImageWindow {
                 state.lastApplied = .enhance
                 self.aiStates[url] = state
             } else {
-                self.showStatusMessage("AI enhance failed")
+                self.showStatusMessage(L10n.shared.t("AI enhance failed"))
             }
             if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
                 self.refreshCurrentDisplay()
@@ -1037,7 +1153,7 @@ class ImageWindow {
             return
         }
         guard RealESRGANEngine.shared.isAvailable else {
-            showStatusMessage("Real-ESRGAN model not downloaded — see Preferences ▸ AI Models")
+            showStatusMessage(L10n.shared.t("Real-ESRGAN model not downloaded — see Preferences ▸ AI Models"))
             return
         }
         guard let cg = baseImage?.sourceCGImage else { return }
@@ -1045,13 +1161,13 @@ class ImageWindow {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             defer { self.aiBusy.remove(url) }
-            self.showStatusBarHint("AI upscaling…", for: 2.0)
+            self.showStatusBarHint(L10n.shared.t("AI upscaling…"), for: 2.0)
             // Synchronous heavy work: run off the main thread.
             let out = await Task.detached(priority: .userInitiated) { [weak self] () -> CGImage? in
                 guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
                 return try? RealESRGANEngine.shared.upscale(cg) { p in
                     DispatchQueue.main.async {
-                        self?.showStatusBarHint(String(format: "AI upscaling… %.0f%%", p * 100), for: 1.0)
+                        self?.showStatusBarHint(L10n.shared.tf("AI upscaling… %.0f%%", p * 100), for: 1.0)
                     }
                 }
             }.value
@@ -1062,7 +1178,7 @@ class ImageWindow {
                 state.lastApplied = .upscale
                 self.aiStates[url] = state
             } else {
-                self.showStatusMessage("AI upscale failed")
+                self.showStatusMessage(L10n.shared.t("AI upscale failed"))
             }
             if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
                 self.refreshCurrentDisplay()
@@ -1086,7 +1202,7 @@ class ImageWindow {
             return
         }
         guard U2NetEngine.shared.isAvailable else {
-            showStatusMessage("U2Net model not downloaded — see Preferences ▸ AI Models")
+            showStatusMessage(L10n.shared.t("U2Net model not downloaded — see Preferences ▸ AI Models"))
             return
         }
         guard let cg = baseImage?.sourceCGImage else { return }
@@ -1094,7 +1210,7 @@ class ImageWindow {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             defer { self.aiBusy.remove(url) }
-            self.showStatusBarHint("AI dewatermarking…", for: 2.0)
+            self.showStatusBarHint(L10n.shared.t("AI dewatermarking…"), for: 2.0)
             // Synchronous heavy work: run off the main thread.
             let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
                 guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
@@ -1102,7 +1218,7 @@ class ImageWindow {
             }.value
             if let (out, fraction) = result {
                 if fraction <= 0 {
-                    self.showStatusMessage("No watermark detected")
+                    self.showStatusMessage(L10n.shared.t("No watermark detected"))
                 } else {
                     let state = self.aiState(for: url)
                     state.dewatermarkedImage = Self.nsImage(from: out)
@@ -1111,7 +1227,7 @@ class ImageWindow {
                     self.aiStates[url] = state
                 }
             } else {
-                self.showStatusMessage("AI dewatermark failed")
+                self.showStatusMessage(L10n.shared.t("AI dewatermark failed"))
             }
             if self.imageURLs.indices.contains(self.currentIndex), self.imageURLs[self.currentIndex] == url {
                 self.refreshCurrentDisplay()
@@ -1124,13 +1240,14 @@ class ImageWindow {
     func runAIOneClickEnhance() {
         guard !batchRunning, !imageURLs.isEmpty else { return }
         let alert = NSAlert()
-        alert.messageText = "AI One-Click Enhance"
-        alert.informativeText = "Run AI dedup and dewatermark on the current image queue? Duplicate files will be moved to the Trash."
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.shared.t("AI One-Click Enhance")
+        alert.informativeText = L10n.shared.t("Run AI dedup and dewatermark on the current image queue? Duplicate files will be moved to the Trash.")
+        alert.addButton(withTitle: L10n.shared.t("Run"))
+        alert.addButton(withTitle: L10n.shared.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         batchRunning = true
+        batchCancelled = false
         showBatchOverlay()
         let urls = imageURLs
         let mode = AppConfig.shared.aiEnhanceMode
@@ -1154,6 +1271,9 @@ class ImageWindow {
             }
             let groups = DuplicateDetector.findGroups(urls: urls, observations: observations, threshold: DuplicateDetector.defaultThreshold)
             for (gi, group) in groups.enumerated() {
+                // Esc cancels the whole batch (flag set by cancelAIBatch or
+                // the comparison window's onCancelAll).
+                if batchCancelled { break }
                 setBatchProgress(0.4, indeterminate: true)
                 // Resolve the group to live URLs (groups are disjoint, so all
                 // members of an unprocessed group still exist).
@@ -1174,8 +1294,10 @@ class ImageWindow {
                             onConfirm: { side in
                                 cont.resume(returning: side == 0 ? live[0] : live[1])
                             },
-                            onCancel: {
-                                cont.resume(returning: nil)   // keep both
+                            onCancelAll: { [weak self] in
+                                // Esc = cancel the entire dedup batch and return to browse mode.
+                                self?.batchCancelled = true
+                                cont.resume(returning: nil)
                             }
                         )
                     }
@@ -1201,10 +1323,10 @@ class ImageWindow {
                 // Ask before the next group (config: ask to continue).
                 if gi < groups.count - 1, AppConfig.shared.dedupAskContinue {
                     let cont = NSAlert()
-                    cont.messageText = "Continue?"
-                    cont.informativeText = "More duplicate groups remain. Continue deduplicating?"
-                    cont.addButton(withTitle: "Yes")
-                    cont.addButton(withTitle: "No")
+                    cont.messageText = L10n.shared.t("Continue?")
+                    cont.informativeText = L10n.shared.t("More duplicate groups remain. Continue deduplicating?")
+                    cont.addButton(withTitle: L10n.shared.t("Yes"))
+                    cont.addButton(withTitle: L10n.shared.t("No"))
                     if cont.runModal() != .alertFirstButtonReturn { break }
                 }
             }
@@ -1228,6 +1350,7 @@ class ImageWindow {
             if U2NetEngine.shared.isAvailable {
                 let queue = imageURLs
                 for (i, u) in queue.enumerated() {
+                    if batchCancelled { break }
                     setBatchProgress(0.4 + 0.6 * Double(i + 1) / Double(max(queue.count, 1)), indeterminate: false)
                     guard let decoded = try? await DecoderManager.shared.decode(url: u),
                           let cg = decoded.image.sourceCGImage else { continue }
@@ -1264,7 +1387,9 @@ class ImageWindow {
         window.makeKeyAndOrderFront(nil)
         hideBatchOverlay()
         batchRunning = false
-        showStatusMessage("AI one-click enhance complete")
+        let wasCancelled = batchCancelled
+        batchCancelled = false
+        showStatusMessage(wasCancelled ? L10n.shared.t("AI batch cancelled") : L10n.shared.t("AI one-click enhance complete"))
         updateAIToolbarState()
     }
 
@@ -1285,7 +1410,7 @@ class ImageWindow {
         bar.maxValue = 1
         bar.isIndeterminate = false
 
-        let label = NSTextField(labelWithString: "This operation takes time, please wait")
+        let label = NSTextField(labelWithString: L10n.shared.t("This operation takes time, please wait"))
         label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         label.textColor = .white
         label.alignment = .center
@@ -1331,19 +1456,20 @@ class ImageWindow {
     /// empty state when the last one is removed.
     func deleteCurrentImage() {
         guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
+        if cropMode { exitCropMode() }
         let url = imageURLs[currentIndex]
 
         // Confirmation dialog (skipped when the user disabled it via the
         // "don't ask again" checkbox or the Preferences window).
         if AppConfig.shared.deleteConfirmationEnabled {
             let alert = NSAlert()
-            alert.messageText = "Delete “\(url.lastPathComponent)”?"
-            alert.informativeText = "The file will be moved to the Trash.\nSize: \(Self.fileSizeString(for: url))"
+            alert.messageText = L10n.shared.tf("Delete “%@”?", url.lastPathComponent)
+            alert.informativeText = L10n.shared.tf("The file will be moved to the Trash.\nSize: %@", Self.fileSizeString(for: url))
             alert.alertStyle = .warning
             alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = "Don't ask again"
-            alert.addButton(withTitle: "Delete")
-            alert.addButton(withTitle: "Cancel")
+            alert.suppressionButton?.title = L10n.shared.t("Don't ask again")
+            alert.addButton(withTitle: L10n.shared.t("Delete"))
+            alert.addButton(withTitle: L10n.shared.t("Cancel"))
 
             let response = alert.runModal()
             if alert.suppressionButton?.state == .on {
@@ -1357,7 +1483,7 @@ class ImageWindow {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
             Logger.shared.log("Move to Trash failed for \(url): \(error)")
-            showStatusMessage("Delete failed: \(error.localizedDescription)")
+            showStatusMessage(L10n.shared.tf("Delete failed: %@", error.localizedDescription))
             return
         }
 
@@ -1386,7 +1512,7 @@ class ImageWindow {
         }
 
         Logger.shared.log("Deleted \(url) (moved to Trash)")
-        showStatusMessage("Moved to Trash")
+        showStatusMessage(L10n.shared.t("Moved to Trash"))
     }
 
     /// Human-readable file size for the delete confirmation dialog.
@@ -1489,7 +1615,7 @@ class ImageWindow {
         }
         if finished {
             Logger.shared.log("Slideshow finished at the last image")
-            showStatusBarHint("播放结束 (playback ended)", for: 3.0)
+            showStatusBarHint(L10n.shared.t("Playback ended"), for: 3.0)
         }
     }
 
@@ -1517,7 +1643,7 @@ class ImageWindow {
 
         if currentIndex == 0 {
             Logger.shared.log("At first image, showing wrap-around message")
-            showStatusMessage("First image, wrapping to last")
+            blinkStatusBarHint(L10n.shared.t("First image, wrapping to last"))
         }
 
         currentIndex = (currentIndex - 1 + imageURLs.count) % imageURLs.count
@@ -1535,7 +1661,7 @@ class ImageWindow {
 
         if currentIndex == imageURLs.count - 1 {
             Logger.shared.log("At last image, showing wrap-around message")
-            showStatusMessage("Last image, wrapping to first")
+            blinkStatusBarHint(L10n.shared.t("Last image, wrapping to first"))
         }
 
         currentIndex = (currentIndex + 1) % imageURLs.count
@@ -1546,6 +1672,342 @@ class ImageWindow {
         }
     }
     
+    // MARK: - Crop mode
+
+    /// Toggle crop mode (toolbar crop button / View ▸ Crop / right-click menu).
+    func toggleCropMode() {
+        if cropMode {
+            exitCropMode()
+        } else {
+            enterCropMode()
+        }
+    }
+
+    /// Enter crop mode after format checks: GIF/animated images are rejected,
+    /// Live Photos require a one-time confirmation (configurable).
+    func enterCropMode() {
+        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), baseImage != nil else { return }
+        let url = imageURLs[currentIndex]
+
+        // GIF is the only animated format in this project; it cannot be cropped.
+        let format = currentFormat ?? MagicNumberDetector.detect(url: url)
+        currentFormat = format
+        if format == .gif {
+            let alert = NSAlert()
+            alert.messageText = L10n.shared.t("Cropping not supported")
+            alert.informativeText = L10n.shared.t("Cropping GIF and animated images is not supported.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L10n.shared.t("OK"))
+            alert.beginSheetModal(for: window) { _ in }
+            return
+        }
+
+        // Cropping a Live Photo turns it into a still image — confirm first.
+        if format == .livePhoto, AppConfig.shared.cropLivePhotoConfirm {
+            let alert = NSAlert()
+            alert.messageText = L10n.shared.t("Crop Live Photo?")
+            alert.informativeText = L10n.shared.t("Cropping converts this Live Photo into a regular still image.")
+            alert.addButton(withTitle: L10n.shared.t("Crop"))
+            alert.addButton(withTitle: L10n.shared.t("Cancel"))
+            let check = NSButton(checkboxWithTitle: L10n.shared.t("Don't ask again"), target: nil, action: nil)
+            alert.accessoryView = check
+            alert.beginSheetModal(for: window) { [weak self] response in
+                guard let self = self else { return }
+                if check.state == .on {
+                    AppConfig.shared.cropLivePhotoConfirm = false
+                }
+                guard response == .alertFirstButtonReturn else { return }
+                self.startCropMode()
+            }
+            return
+        }
+
+        startCropMode()
+    }
+
+    /// Create the crop overlay on top of the image view (initial rect = full image).
+    private func startCropMode() {
+        guard let imageView = container?.imageView, let psize = imageView.cgPixelSize else { return }
+        // Stop any running Live Photo playback while the user adjusts the rect.
+        imageView.livePhotoURL = nil
+        cropRectPixels = CGRect(origin: .zero, size: psize)
+        let overlay = CropOverlayView(imagePixelSize: psize)
+        overlay.toViewRect = { [weak imageView] r in imageView?.viewRect(forPixelRect: r) ?? .zero }
+        overlay.toPixelPoint = { [weak imageView] p in imageView?.pixelPoint(forViewPoint: p) ?? .zero }
+        overlay.onCropChanged = { [weak self] rect in
+            self?.cropRectPixels = rect
+        }
+        container?.addSubview(overlay)
+        // Keep the floating toolbar above the overlay.
+        if let toolbar = container?.toolbar {
+            container?.addSubview(toolbar, positioned: .above, relativeTo: overlay)
+        }
+        container?.cropOverlay = overlay
+        cropOverlay = overlay
+        cropMode = true
+    }
+
+    /// Exit crop mode without saving (Esc / crop button again).
+    func exitCropMode() {
+        guard cropMode else { return }
+        cropMode = false
+        cropOverlay?.removeFromSuperview()
+        cropOverlay = nil
+        container?.cropOverlay = nil
+        cropRectPixels = .zero
+    }
+
+    /// Crop the current source image (active AI result when applied, otherwise
+    /// the base image) to `cropRectPixels` and make it the new base image.
+    /// AI results for this URL are invalidated: they were computed from the
+    /// pre-crop image.
+    @discardableResult
+    private func applyCropToBaseImage() -> Bool {
+        guard let cg = currentSourceImage?.sourceCGImage else { return false }
+        let full = CGRect(x: 0, y: 0, width: CGFloat(cg.width), height: CGFloat(cg.height))
+        let rect = cropRectPixels.intersection(full)
+        guard rect.width >= CropOverlayView.minCropPixels, rect.height >= CropOverlayView.minCropPixels,
+              let cropped = cg.cropping(to: rect) else { return false }
+        baseImage = Self.nsImage(from: cropped)
+        rotationSteps = 0
+        if imageURLs.indices.contains(currentIndex) {
+            let url = imageURLs[currentIndex]
+            aiStates[url] = nil
+            // Cropping a Live Photo turns it into a still image.
+            if currentFormat == .livePhoto {
+                livePhotoSuppressed.insert(url)
+            }
+        }
+        refreshCurrentDisplay()
+        return true
+    }
+
+    // MARK: - Load spinner / unsupported-format view
+
+    /// Show a spinning indicator centered in the image area while a file decodes.
+    private func showLoadSpinner() {
+        guard loadSpinner == nil, let container = container else { return }
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.isIndeterminate = true
+        spinner.controlSize = .large
+        spinner.sizeToFit()
+        let s = spinner.frame.size
+        spinner.frame = NSRect(x: 0, y: 0, width: max(s.width, 32), height: max(s.height, 32))
+        container.addSubview(spinner)
+        positionLoadSpinner()
+        spinner.startAnimation(nil)
+        loadSpinner = spinner
+    }
+
+    /// Keep the spinner centered in the image area (window resizes).
+    private func positionLoadSpinner() {
+        guard let spinner = loadSpinner, let container = container else { return }
+        let b = container.bounds
+        let statusH = ViewerContainerView.statusBarHeight
+        let areaH = max(0, b.height - statusH)
+        spinner.frame.origin = NSPoint(x: (b.width - spinner.frame.width) / 2,
+                                       y: statusH + (areaH - spinner.frame.height) / 2)
+    }
+
+    private func hideLoadSpinner() {
+        loadSpinner?.stopAnimation(nil)
+        loadSpinner?.removeFromSuperview()
+        loadSpinner = nil
+    }
+
+    /// Show the centered icon + "Unsupported format" view for files that fail to decode.
+    private func showUnsupportedView() {
+        container?.imageView?.image = nil
+        container?.imageView?.livePhotoURL = nil
+        if unsupportedView == nil {
+            let view = UnsupportedFormatView()
+            container?.addSubview(view)
+            unsupportedView = view
+            unsupportedViewLabel = view.messageLabel
+        }
+        unsupportedViewLabel?.stringValue = L10n.shared.t("Unsupported format")
+        unsupportedView?.isHidden = false
+    }
+
+    private func hideUnsupportedView() {
+        unsupportedView?.isHidden = true
+    }
+
+    // MARK: - Status bar blink (wrap-around hints)
+
+    /// Normal status-bar label color (restored after a blink).
+    private static let statusBarTextColor = NSColor(white: 0.92, alpha: 1)
+
+    /// Flash the bottom status bar with `message`: alternate the label color
+    /// between orange and normal for ~8 ticks, then restore it.
+    private func blinkStatusBarHint(_ message: String) {
+        guard statusBarLabel != nil else { return }
+        blinkMessage = message
+        blinkRemainingTicks = 8
+        blinkTimer?.invalidate()
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            self.blinkRemainingTicks -= 1
+            if self.blinkRemainingTicks <= 0 {
+                timer.invalidate()
+                self.blinkTimer = nil
+                self.statusBarLabel?.textColor = Self.statusBarTextColor
+                self.updateStatusBar()
+                return
+            }
+            let on = (self.blinkRemainingTicks % 2 == 0)
+            self.statusBarLabel?.attributedStringValue = Self.statusString(self.blinkMessage)
+            self.statusBarLabel?.textColor = on ? AutoHideToolbar.buttonColor : Self.statusBarTextColor
+        }
+    }
+
+    // MARK: - Batch cancel
+
+    /// Esc during the AI batch: set the abort flag; runAIBatch notices it at
+    /// the top of its loops and returns to browse mode.
+    func cancelAIBatch() {
+        guard batchRunning else { return }
+        Logger.shared.log("AI batch cancelled by user (Esc)")
+        batchCancelled = true
+    }
+
+    // MARK: - Context menu (right-click on the image)
+
+    /// Build the right-click context menu: every toolbar/menu action plus Rename.
+    private func buildContextMenu() -> NSMenu? {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return nil }
+        let t = L10n.shared.t
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        func item(_ title: String, _ action: Selector) -> NSMenuItem {
+            let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            mi.target = self
+            menu.addItem(mi)
+            return mi
+        }
+
+        _ = item(t("Save"), #selector(contextSave))
+        _ = item(t("Save As..."), #selector(contextSaveAs))
+        _ = item(t("Rename..."), #selector(contextRename))
+        _ = item(t("Delete"), #selector(contextDelete))
+        menu.addItem(.separator())
+        let cropItem = item(t("Crop"), #selector(contextCrop))
+        cropItem.isEnabled = (currentFormat ?? MagicNumberDetector.detect(url: imageURLs[currentIndex])) != .gif
+        menu.addItem(.separator())
+        _ = item(t("Rotate Clockwise"), #selector(contextRotateCW))
+        _ = item(t("Rotate Counterclockwise"), #selector(contextRotateCCW))
+        menu.addItem(.separator())
+        _ = item(t("Zoom In"), #selector(contextZoomIn))
+        _ = item(t("Zoom Out"), #selector(contextZoomOut))
+        _ = item(t("Fit / 100%"), #selector(contextFitToggle))
+        menu.addItem(.separator())
+        _ = item(t("Play/Pause"), #selector(contextPlayPause))
+        _ = item(t("Start/Stop Slideshow"), #selector(contextSlideshow))
+        menu.addItem(.separator())
+        let upscaleItem = item(t("AI Super-Resolution"), #selector(contextAIUpscale))
+        upscaleItem.isEnabled = RealESRGANEngine.shared.isAvailable
+        let dewatermarkItem = item(t("AI Watermark Removal"), #selector(contextAIDewatermark))
+        dewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable
+        _ = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
+        _ = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
+        return menu
+    }
+
+    @objc private func contextSave() { saveCurrentRotation() }
+    @objc private func contextSaveAs() { saveAsImage() }
+    @objc private func contextRename() { renameCurrentImage() }
+    @objc private func contextDelete() { deleteCurrentImage() }
+    @objc private func contextCrop() { toggleCropMode() }
+    @objc private func contextRotateCW() { rotateClockwise() }
+    @objc private func contextRotateCCW() { rotateCounterclockwise() }
+    @objc private func contextZoomIn() { container?.imageView?.zoomIn() }
+    @objc private func contextZoomOut() { container?.imageView?.zoomOut() }
+    @objc private func contextFitToggle() { container?.imageView?.toggleFitOr100Percent() }
+    @objc private func contextPlayPause() { togglePlayPause() }
+    @objc private func contextSlideshow() { startOrStopSlideshow() }
+    @objc private func contextAIUpscale() { toggleAIUpscale() }
+    @objc private func contextAIDewatermark() { toggleAIDewatermark() }
+    @objc private func contextAIEnhance() { toggleAIEnhance() }
+    @objc private func contextAIOneClick() { runAIOneClickEnhance() }
+
+    // MARK: - Rename
+
+    /// Rename the current image file (same directory, same extension).
+    func renameCurrentImage() {
+        guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+
+        let alert = NSAlert()
+        alert.messageText = L10n.shared.t("Rename image")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = url.deletingPathExtension().lastPathComponent
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.shared.t("Rename"))
+        alert.addButton(withTitle: L10n.shared.t("Cancel"))
+        window.makeKeyAndOrderFront(nil)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self, response == .alertFirstButtonReturn else { return }
+            let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !newName.isEmpty else { return }
+            var dest = url.deletingLastPathComponent().appendingPathComponent(newName)
+            let ext = url.pathExtension
+            if !ext.isEmpty { dest.appendPathExtension(ext) }
+            guard dest != url else { return }
+            do {
+                try FileManager.default.moveItem(at: url, to: dest)
+                // Carry the per-image AI state over to the new URL.
+                if let state = self.aiStates[url] {
+                    self.aiStates[dest] = state
+                    self.aiStates[url] = nil
+                }
+                self.imageURLs[self.currentIndex] = dest
+                ImageCache.shared.removeAll()
+                // The pixel content is unchanged; re-display under the new URL.
+                if let base = self.baseImage {
+                    self.displayImage(base, at: dest)
+                    self.updateWindowTitle()
+                    self.updateStatusBar()
+                    self.updateAIToolbarState()
+                }
+                Logger.shared.log("Renamed \(url.lastPathComponent) → \(dest.lastPathComponent)")
+                self.showStatusMessage(L10n.shared.tf("Renamed to %@", dest.lastPathComponent))
+            } catch {
+                Logger.shared.log("Rename failed: \(error.localizedDescription)")
+                self.showStatusMessage(L10n.shared.tf("Rename failed: %@", error.localizedDescription))
+            }
+        }
+    }
+
+    // MARK: - Zoom (menu / context-menu entry points)
+
+    func zoomIn() { container?.imageView?.zoomIn() }
+    func zoomOut() { container?.imageView?.zoomOut() }
+    func toggleFitOr100Percent() { container?.imageView?.toggleFitOr100Percent() }
+
+    // MARK: - State for menu validation
+
+    /// Whether an image is currently displayed (drives menu enable state).
+    var hasCurrentImage: Bool {
+        return !imageURLs.isEmpty && imageURLs.indices.contains(currentIndex) && baseImage != nil
+    }
+
+    /// True while the AI one-click batch runs (locks most actions).
+    var isBatchRunning: Bool { batchRunning }
+
+    // MARK: - Localization refresh
+
+    /// Refresh localized chrome (status bar / window title / unsupported view)
+    /// when the UI language changes.
+    func refreshLocalizedUI() {
+        updateStatusBar()
+        updateWindowTitle()
+        if let label = unsupportedViewLabel, !label.isHidden {
+            label.stringValue = L10n.shared.t("Unsupported format")
+        }
+    }
+
     /// Show a status message at the bottom center of the window.
     private func showStatusMessage(_ message: String) {
         // Create a temporary label for the status message.
@@ -1589,5 +2051,38 @@ class ImageWindow {
                 }
             }
         }
+    }
+}
+
+/// Centered icon + message shown when the current file cannot be decoded.
+private final class UnsupportedFormatView: NSView {
+    let messageLabel = NSTextField(labelWithString: "")
+    private let iconView = NSImageView()
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 170))
+        wantsLayer = true
+        iconView.image = NSImage(systemSymbolName: "photo.badge.exclamationmark", accessibilityDescription: nil)
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)
+        iconView.contentTintColor = NSColor(white: 0.5, alpha: 1)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(iconView)
+
+        messageLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        messageLabel.textColor = NSColor(white: 0.5, alpha: 1)
+        messageLabel.alignment = .center
+        messageLabel.maximumNumberOfLines = 2
+        addSubview(messageLabel)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        let iconSize: CGFloat = 80
+        iconView.frame = NSRect(x: (bounds.width - iconSize) / 2, y: bounds.height - iconSize - 14, width: iconSize, height: iconSize)
+        messageLabel.sizeToFit()
+        let lw = min(messageLabel.frame.width, bounds.width - 16)
+        messageLabel.frame = NSRect(x: (bounds.width - lw) / 2, y: 14, width: lw, height: messageLabel.frame.height)
     }
 }

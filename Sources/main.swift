@@ -1,6 +1,6 @@
 import AppKit
 
-/// Global variables to pass parsed arguments to the SwiftUI app.
+/// Global variables to pass parsed arguments to the AppKit app.
 var commandPaths: [String] = []
 var isFullscreenMode = false
 
@@ -8,7 +8,7 @@ var isFullscreenMode = false
 struct PixAIEntry {
     static func main() {
         Logger.shared.log("Application starting")
-        
+
         // Parse command-line arguments
         let args = CommandLine.arguments.dropFirst() // skip executable path
         var skippedNonexistent = 0
@@ -31,7 +31,7 @@ struct PixAIEntry {
             Logger.shared.log("  Path: \(path)")
         }
 
-        // Create the SwiftUI app instance (it will be used as the delegate)
+        // Create the AppKit app delegate instance
         let pixaiApp = PixAIApp()
 
         // Set up the application

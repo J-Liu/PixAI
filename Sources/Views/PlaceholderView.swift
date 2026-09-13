@@ -12,13 +12,15 @@ class PlaceholderView: NSView {
     private let titleLabel: NSTextField
     private let subtitleLabel: NSTextField
 
+    private var l10nObserver: NSObjectProtocol?
+
     init(onOpen: @escaping () -> Void, onDrop: @escaping ([URL]) -> Void) {
         self.onOpen = onOpen
         self.onDrop = onDrop
 
         iconView = NSImageView()
-        titleLabel = NSTextField(labelWithString: "Open Images")
-        subtitleLabel = NSTextField(labelWithString: "Drag images here, or click here to open")
+        titleLabel = NSTextField(labelWithString: L10n.shared.t("Open Images"))
+        subtitleLabel = NSTextField(labelWithString: L10n.shared.t("Drag images here, or click here to open"))
 
         super.init(frame: .zero)
 
@@ -44,8 +46,23 @@ class PlaceholderView: NSView {
         subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.alignment = .center
         addSubview(subtitleLabel)
+        // Keep the labels in sync with the active UI language.
+        self.l10nObserver = NotificationCenter.default.addObserver(
+            forName: L10n.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.titleLabel.stringValue = L10n.shared.t("Open Images")
+            self.subtitleLabel.stringValue = L10n.shared.t("Drag images here, or click here to open")
+        }
     }
 
+    deinit {
+        if let observer = l10nObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

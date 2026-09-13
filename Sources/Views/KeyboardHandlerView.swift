@@ -17,7 +17,17 @@ class KeyboardHandlerView: NSView {
     /// Live query so Esc/Enter can exit the slideshow before falling back to
     /// exiting plain full screen.
     private let isSlideshowActive: () -> Bool
-    
+    /// Live query for whether the AI one-click batch (dedup / dewatermark)
+    /// is running; Esc then cancels it and returns to browse mode.
+    private let isBatchActive: () -> Bool
+    /// Called on Esc while the AI batch runs: cancel and return to browse mode.
+    private let onCancelBatch: () -> Void
+    /// Live query for whether crop mode is active.
+    private let isCropModeActive: () -> Bool
+    /// Called on Esc while cropping: exit crop mode without saving.
+    private let onCancelCrop: () -> Void
+    /// Called when "?" is pressed: show the keyboard-shortcuts help window.
+    private let onShowShortcuts: () -> Void
     init(onPrevious: @escaping () -> Void,
          onNext: @escaping () -> Void,
          onRotateClockwise: @escaping () -> Void,
@@ -29,7 +39,12 @@ class KeyboardHandlerView: NSView {
          onExitFullscreen: @escaping () -> Void,
          onPlayPause: @escaping () -> Void,
          onStartOrStopSlideshow: @escaping () -> Void,
-         isSlideshowActive: @escaping () -> Bool) {
+         isSlideshowActive: @escaping () -> Bool,
+         isBatchActive: @escaping () -> Bool,
+         onCancelBatch: @escaping () -> Void,
+         isCropModeActive: @escaping () -> Bool,
+         onCancelCrop: @escaping () -> Void,
+         onShowShortcuts: @escaping () -> Void) {
         self.onPrevious = onPrevious
         self.onNext = onNext
         self.onRotateClockwise = onRotateClockwise
@@ -42,6 +57,11 @@ class KeyboardHandlerView: NSView {
         self.onPlayPause = onPlayPause
         self.onStartOrStopSlideshow = onStartOrStopSlideshow
         self.isSlideshowActive = isSlideshowActive
+        self.isBatchActive = isBatchActive
+        self.onCancelBatch = onCancelBatch
+        self.isCropModeActive = isCropModeActive
+        self.onCancelCrop = onCancelCrop
+        self.onShowShortcuts = onShowShortcuts
         super.init(frame: .zero)
         
         wantsLayer = true
@@ -173,13 +193,21 @@ class KeyboardHandlerView: NSView {
         // Esc / Enter: exit the slideshow if active, otherwise exit full screen
         // (only while in full screen).
         case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
-            if isSlideshowActive() {
+            if isCropModeActive() {
+                onCancelCrop()
+            } else if isBatchActive() {
+                onCancelBatch()
+            } else if isSlideshowActive() {
                 onStartOrStopSlideshow()
             } else if isWindowInFullScreen {
                 onExitFullscreen()
             } else {
                 super.keyDown(with: event)
             }
+            return
+        // ?: show the keyboard-shortcuts help window.
+        case ("?", _):
+            onShowShortcuts()
             return
         default:
             super.keyDown(with: event)

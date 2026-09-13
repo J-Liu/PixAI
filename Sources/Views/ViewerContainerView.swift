@@ -18,7 +18,10 @@ class ViewerContainerView: NSView {
     var toolbar: AutoHideToolbar?
     var placeholder: PlaceholderView?
     var keyboardHandler: KeyboardHandlerView?
-    
+    /// Shown centered in the image area when the current file cannot be decoded.
+    var unsupportedView: NSView?
+    /// Interactive crop rectangle overlay (exactly over the image view).
+    var cropOverlay: NSView?
     private let onDrop: ([URL]) -> Void
     
     /// Height of the bottom status bar.
@@ -88,6 +91,22 @@ class ViewerContainerView: NSView {
                 width: size.width,
                 height: size.height
             )
+        }
+        // Unsupported-format placeholder: centered in the image area.
+        if let unsupportedView {
+            let size = unsupportedView.frame.size
+            let areaHeight = max(0, b.height - statusH)
+            unsupportedView.frame = NSRect(
+                x: (b.width - size.width) / 2,
+                y: statusH + (areaHeight - size.height) / 2,
+                width: size.width,
+                height: size.height
+            )
+        }
+        
+        // Crop overlay: exactly over the image view.
+        if let cropOverlay, let imageView {
+            cropOverlay.frame = imageView.frame
         }
         
         // Keyboard handler: covers the whole content area (mouse passes through).

@@ -2,8 +2,8 @@ import AppKit
 
 /// A side-by-side duplicate-comparison window. Two images are shown left and
 /// right; the user selects which to keep with the keyboard (←/↑/A/W/H = left,
-/// →/↓/D/S/J/K = right), confirms with Enter/Space, or cancels with Esc.
-/// The selected side is highlighted with an orange border + "KEEP" badge.
+/// →/↓/D/S/J/K = right) and confirms with Enter/Space. Esc CANCELS THE WHOLE
+/// dedup operation and returns the app to browse mode.
 final class DedupComparisonWindow {
     private let panel: NSPanel
     private let leftView: NSImageView
@@ -12,8 +12,10 @@ final class DedupComparisonWindow {
     private let rightBadge: NSTextField
     private var selection: Int = 0     // 0 = left, 1 = right
     private var onConfirm: ((Int) -> Void)?
-    private var onCancel: (() -> Void)?
-    private static var active: DedupComparisonWindow?
+    /// Called when the user presses Esc: cancel the entire dedup batch.
+    private var onCancelAll: (() -> Void)?
+    /// The currently active comparison window (singleton).
+    static var active: DedupComparisonWindow?
 
     private init(panel: NSPanel, leftView: NSImageView, rightView: NSImageView,
                  leftBadge: NSTextField, rightBadge: NSTextField) {
@@ -30,7 +32,7 @@ final class DedupComparisonWindow {
                         rightURL: URL,
                         initialSelection: Int = 0,
                         onConfirm: @escaping (Int) -> Void,
-                        onCancel: @escaping () -> Void) {
+                        onCancelAll: @escaping () -> Void) {
         // Only one comparison at a time.
         active?.close()
 
@@ -41,7 +43,7 @@ final class DedupComparisonWindow {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Choose which image to keep"
+        panel.title = L10n.shared.t("Choose which image to keep")
         panel.isReleasedWhenClosed = false
 
         let root = DedupKeyCatcher(frame: NSRect(origin: .zero, size: size))
@@ -83,7 +85,7 @@ final class DedupComparisonWindow {
         let win = DedupComparisonWindow(panel: panel, leftView: leftView, rightView: rightView,
                                         leftBadge: leftBadge, rightBadge: rightBadge)
         win.onConfirm = onConfirm
-        win.onCancel = onCancel
+        win.onCancelAll = onCancelAll
         win.selection = (initialSelection == 1) ? 1 : 0
         win.applySelection()
 
@@ -98,7 +100,7 @@ final class DedupComparisonWindow {
         root.onCancelKey = { [weak win] in
             guard let win = win else { return }
             win.close()
-            win.onCancel?()
+            win.onCancelAll?()
         }
 
         panel.makeKeyAndOrderFront(nil)
@@ -118,8 +120,9 @@ final class DedupComparisonWindow {
         leftView.layer?.borderColor = AutoHideToolbar.buttonColor.cgColor
         rightView.layer?.borderWidth = !leftSelected ? 4 : 0
         rightView.layer?.borderColor = AutoHideToolbar.buttonColor.cgColor
-        leftBadge.stringValue = leftSelected ? "← KEEP (Enter)" : ""
-        rightBadge.stringValue = !leftSelected ? "KEEP (Enter) →" : ""
+        let t = L10n.shared.t
+        leftBadge.stringValue = leftSelected ? t("← KEEP (Enter)") : ""
+        rightBadge.stringValue = !leftSelected ? t("KEEP (Enter) →") : ""
     }
 
     private func close() {

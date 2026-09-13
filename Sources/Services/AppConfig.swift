@@ -44,13 +44,22 @@ final class AppConfig {
         static let proxyPort = 7890
         /// Images with longest side ≤ this are considered "small" for auto-upscaling.
         static let smallImageMaxSide = 1024
+        /// UI language: "en" (default) or "zh".
+        static let uiLanguage = "en"
+        /// Image switch fade duration in seconds; 0 disables the animation.
+        static let imageTransitionDuration: Double = 0.1
+        /// Ask at startup whether to download missing/corrupted AI models.
+        static let modelCheckPromptEnabled = true
+        /// Confirm before cropping a Live Photo (the result is a still image).
+        static let cropLivePhotoConfirm = true
     }
 
     /// Allowed range for the image cache count.
     static let cacheCountRange = 1...20
     /// Allowed range for the slideshow interval (seconds).
     static let intervalRange: ClosedRange<Double> = 1.0...600.0
-
+    /// Allowed range for the image transition duration (seconds); 0 disables it.
+    static let transitionRange: ClosedRange<Double> = 0.0...2.0
     private struct Payload: Codable {
         var deleteConfirmationEnabled: Bool?
         var imageCacheCount: Int?
@@ -70,6 +79,11 @@ final class AppConfig {
         var proxyHost: String?
         var proxyPort: Int?
         var smallImageMaxSide: Int?
+        // UX / i18n
+        var uiLanguage: String?
+        var imageTransitionDuration: Double?
+        var modelCheckPromptEnabled: Bool?
+        var cropLivePhotoConfirm: Bool?
     }
 
     private let fileURL: URL
@@ -95,7 +109,11 @@ final class AppConfig {
     private var _proxyHost: String = Defaults.proxyHost
     private var _proxyPort: Int = Defaults.proxyPort
     private var _smallImageMaxSide: Int = Defaults.smallImageMaxSide
-
+    // UX / i18n backing storage
+    private var _uiLanguage: String = Defaults.uiLanguage
+    private var _imageTransitionDuration: Double = Defaults.imageTransitionDuration
+    private var _modelCheckPromptEnabled: Bool = Defaults.modelCheckPromptEnabled
+    private var _cropLivePhotoConfirm: Bool = Defaults.cropLivePhotoConfirm
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -387,6 +405,81 @@ final class AppConfig {
         }
     }
 
+    // MARK: - UX / i18n settings
+
+    /// UI language: "en" (default) or "zh".
+    var uiLanguage: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _uiLanguage
+        }
+        set {
+            let normalized = Self.normalizeLanguage(newValue)
+            lock.lock()
+            let changed = _uiLanguage != normalized
+            if changed { _uiLanguage = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Image switch fade duration in seconds (default 0.3, range 0...2;
+    /// 0 disables the transition animation).
+    var imageTransitionDuration: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _imageTransitionDuration
+        }
+        set {
+            let clamped = Self.clampTransitionDuration(newValue)
+            lock.lock()
+            let changed = _imageTransitionDuration != clamped
+            if changed { _imageTransitionDuration = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether startup shows a dialog when AI models are missing/corrupted
+    /// (default: true).
+    var modelCheckPromptEnabled: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _modelCheckPromptEnabled
+        }
+        set {
+            lock.lock()
+            let changed = _modelCheckPromptEnabled != newValue
+            if changed { _modelCheckPromptEnabled = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Whether cropping a Live Photo asks for confirmation first (default:
+    /// true); the crop converts it into a regular still image.
+    var cropLivePhotoConfirm: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _cropLivePhotoConfirm
+        }
+        set {
+            lock.lock()
+            let changed = _cropLivePhotoConfirm != newValue
+            if changed { _cropLivePhotoConfirm = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeLanguage(_ value: String) -> String {
+        switch value {
+        case "zh": return "zh"
+        case "zh-Hant": return "zh-Hant"
+        default: return "en"
+        }
+    }
+
     static func normalizeEnhanceMode(_ value: String) -> String {
         switch value {
         case "dedupOnly": return "dedupOnly"
@@ -468,6 +561,22 @@ final class AppConfig {
             _smallImageMaxSide = Defaults.smallImageMaxSide
             changed = true
         }
+        if _uiLanguage != Defaults.uiLanguage {
+            _uiLanguage = Defaults.uiLanguage
+            changed = true
+        }
+        if _imageTransitionDuration != Defaults.imageTransitionDuration {
+            _imageTransitionDuration = Defaults.imageTransitionDuration
+            changed = true
+        }
+        if _modelCheckPromptEnabled != Defaults.modelCheckPromptEnabled {
+            _modelCheckPromptEnabled = Defaults.modelCheckPromptEnabled
+            changed = true
+        }
+        if _cropLivePhotoConfirm != Defaults.cropLivePhotoConfirm {
+            _cropLivePhotoConfirm = Defaults.cropLivePhotoConfirm
+            changed = true
+        }
         lock.unlock()
         if changed { save(); notifyChange() }
     }
@@ -480,6 +589,10 @@ final class AppConfig {
 
     static func clampInterval(_ value: Double) -> Double {
         return min(max(value, intervalRange.lowerBound), intervalRange.upperBound)
+    }
+
+    static func clampTransitionDuration(_ value: Double) -> Double {
+        return min(max(value, transitionRange.lowerBound), transitionRange.upperBound)
     }
 
     // MARK: - Persistence
@@ -508,6 +621,10 @@ final class AppConfig {
         if let v = payload.proxyHost, !v.isEmpty { _proxyHost = v }
         if let v = payload.proxyPort { _proxyPort = min(max(v, 1), 65535) }
         if let v = payload.smallImageMaxSide { _smallImageMaxSide = min(max(v, 64), 8192) }
+        if let v = payload.uiLanguage { _uiLanguage = Self.normalizeLanguage(v) }
+        if let v = payload.imageTransitionDuration { _imageTransitionDuration = Self.clampTransitionDuration(v) }
+        if let v = payload.modelCheckPromptEnabled { _modelCheckPromptEnabled = v }
+        if let v = payload.cropLivePhotoConfirm { _cropLivePhotoConfirm = v }
         lock.unlock()
     }
 
@@ -530,7 +647,11 @@ final class AppConfig {
             proxyType: _proxyType,
             proxyHost: _proxyHost,
             proxyPort: _proxyPort,
-            smallImageMaxSide: _smallImageMaxSide
+            smallImageMaxSide: _smallImageMaxSide,
+            uiLanguage: _uiLanguage,
+            imageTransitionDuration: _imageTransitionDuration,
+            modelCheckPromptEnabled: _modelCheckPromptEnabled,
+            cropLivePhotoConfirm: _cropLivePhotoConfirm
         )
         lock.unlock()
         do {
