@@ -16,7 +16,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENDOR_DIR="$SCRIPT_DIR/Vendor/ExecuTorch"
 BUILD_DIR="$SCRIPT_DIR/.executorch_build"
 EXECUTORCH_VERSION="v0.6.0"
-PYTHON=/opt/homebrew/bin/python3.11
+
+# Use Python from environment or fall back to homebrew path
+# ExecuTorch requires Python 3.10+
+find_python() {
+    # CI: use setup-python's environment variable
+    if [ -n "$Python3_ROOT_DIR" ] && [ -x "$Python3_ROOT_DIR/bin/python3" ]; then
+        echo "$Python3_ROOT_DIR/bin/python3"
+        return
+    fi
+    # Check system python3 version
+    if command -v python3 &> /dev/null; then
+        local ver=$(python3 -c 'import sys; print(sys.version_info.major * 10 + sys.version_info.minor)')
+        if [ "$ver" -ge 310 ]; then
+            echo "python3"
+            return
+        fi
+    fi
+    # Fallback to Homebrew Python 3.11
+    if [ -x /opt/homebrew/bin/python3.11 ]; then
+        echo "/opt/homebrew/bin/python3.11"
+        return
+    fi
+    echo ""
+}
+PYTHON=$(find_python)
 
 echo "=== ExecuTorch xcframework Build Script (macOS only) ==="
 echo ""
@@ -31,8 +55,8 @@ check_prerequisites() {
         exit 1
     fi
     
-    if ! command -v $PYTHON &> /dev/null; then
-        echo "❌ Python 3.11 not found at $PYTHON"
+    if [ -z "$PYTHON" ] || ! command -v "$PYTHON" &> /dev/null; then
+        echo "❌ Python 3.10+ not found"
         echo "   brew install python@3.11"
         exit 1
     fi
