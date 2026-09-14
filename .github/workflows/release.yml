@@ -11,43 +11,51 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Show Swift version
         run: swift --version
 
-      - name: Cache ExecuTorch xcframeworks
-        id: cache-xcframeworks
+      - name: Cache ExecuTorch
+        id: cache-executorch
         uses: actions/cache@v4
         with:
-          path: Vendor/ExecuTorch
-          key: executorch-xcframeworks-v0.6.0-${{ runner.arch }}
+          path: |
+            Vendor/ExecuTorch
+            .executorch_build
+          key: executorch-v0.6.0-macos-${{ runner.arch }}
 
       - name: Setup Python
-        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
-        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
-        run: pip install zstd torch executorch
-
       - name: Install buck2
-        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
-        uses: dtolnay/install-buck2@latest
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
+        run: |
+          brew install zstd
+          curl -sLO "https://ossci-macos.s3.amazonaws.com/buck2-aarch64-apple-darwin-2024-05-15.zst"
+          zstd -d buck2-aarch64-apple-darwin-2024-05-15.zst -o buck2
+          chmod +x buck2
+          sudo mv buck2 /usr/local/bin/
+          buck2 --version
+
+      - name: Install Python dependencies
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
+        run: |
+          pip install zstd pyyaml
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Build ExecuTorch xcframeworks
-        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
         run: |
           chmod +x build_executorch.sh
           ./build_executorch.sh
-        timeout-minutes: 60
 
       - name: Build app bundle
         run: |

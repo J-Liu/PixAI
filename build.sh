@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# # SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright © 2026 Jia Liu
+#
 # PixAI - macOS App Packaging Script
 # This script compiles the Swift project and packages it as a .app bundle.
 # Usage: ./build.sh
@@ -47,13 +51,13 @@ if [ "$ALL_EXIST" = false ]; then
                 echo "   ⚠️  ExecuTorch xcframeworks not found. Building from source..."
                 echo "   This will download and build ExecuTorch $EXECUTORCH_VERSION (15-30 min)."
                 echo ""
-                
+
                 # Check if build_executorch.sh exists
                 if [ -f "$SCRIPT_DIR/build_executorch.sh" ]; then
                     # Run build_executorch.sh
                     cd "$SCRIPT_DIR"
                     bash build_executorch.sh
-                    
+
                     # Verify build succeeded
                     if [ ! -d "$VENDOR/$name.xcframework" ]; then
                         echo ""
