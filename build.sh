@@ -134,65 +134,13 @@ else
     echo "   ⚠️ Warning: Icon not found at Resources/PixAI.icns"
 fi
 
-# Create Info.plist
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>PixAI</string>
-    <key>CFBundleDisplayName</key>
-    <string>PixAI</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.pixai.app</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleExecutable</key>
-    <string>PixAI</string>
-    <key>CFBundleIconFile</key>
-    <string>PixAI.icns</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSUIElement</key>
-    <false/>
-    <key>NSMainNibFile</key>
-    <string></string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>PixAI Image Document</string>
-            <key>CFBundleTypeRole</key>
-            <string>Viewer</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.image</string>
-                <string>public.jpeg</string>
-                <string>public.png</string>
-                <string>public.heic</string>
-                <string>public.heif</string>
-                <string>com.compuserve.gif</string>
-                <string>org.webmproject.webp</string>
-                <string>com.microsoft.bmp</string>
-                <string>public.tiff</string>
-                <string>public.svg-image</string>
-                <string>com.adobe.pdf</string>
-                <string>com.apple.live-photo</string>
-            </array>
-        </dict>
-    </array>
-</dict>
-</plist>
-EOF
-
-echo "   📄 Info.plist created"
+# Copy Info.plist
+if [ -f "$SCRIPT_DIR/Resources/Info.plist" ]; then
+    cp "$SCRIPT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+    echo "   📄 Info.plist copied"
+else
+    echo "   ⚠️ Warning: Info.plist not found at Resources/Info.plist"
+fi
 echo ""
 echo "✅ Packaging complete: $APP_BUNDLE"
 echo "   Run with: open \"$APP_BUNDLE\""
