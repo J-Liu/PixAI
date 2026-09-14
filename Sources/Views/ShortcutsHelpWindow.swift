@@ -17,8 +17,8 @@ final class ShortcutsHelpWindow {
     private static func rows() -> [(String, String)] {
         let t = L10n.shared.t
         return [
-            ("← / ↑ / W / A / H", t("Previous image")),
-            ("→ / ↓ / S / J / K", t("Next image")),
+            ("← / ↑ / W / A / H / J", t("Previous image")),
+            ("→ / ↓ / S / D / L / K", t("Next image")),
             ("R", t("Rotate 90° clockwise")),
             ("⌘R", t("Rotate 90° counterclockwise")),
             ("Space", t("Play / Pause slideshow")),
