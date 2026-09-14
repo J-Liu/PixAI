@@ -166,7 +166,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <array>
         <dict>
             <key>CFBundleTypeName</key>
-            <string>Image</string>
+            <string>PixAI Image Document</string>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSHandlerRank</key>

@@ -72,11 +72,18 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         MenuBuilder.activeWindowProvider = { [weak self] in self?.activeWindow() }
 
         // Create the first window with command-line paths (if any).
+        // Skip if windows already exist (e.g., from application:openFile: called before didFinishLaunching).
         let urlPaths = paths.compactMap { URL(fileURLWithPath: $0) }
-        let first = makeNewWindow(paths: urlPaths)
+        var first: ImageWindow?
+        if imageWindows.isEmpty {
+            first = makeNewWindow(paths: urlPaths)
+        } else if !urlPaths.isEmpty {
+            // If we have command-line paths but already have windows, load into the first one.
+            imageWindows.first?.loadImages(from: urlPaths)
+        }
 
         // If fullscreen flag is set, enter fullscreen immediately.
-        if isFullscreen {
+        if isFullscreen, let first = first {
             first.window.toggleFullScreen(nil)
         }
 
@@ -151,6 +158,27 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             ImageCache.shared.removeAll()
         }
         Logger.shared.log("Window closed, \(imageWindows.count) window(s) remain")
+    }
+
+    /// Handle file open from Finder (double-click or "Open With").
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        if let win = activeWindow() {
+            win.loadImages(from: [url])
+        } else {
+            _ = makeNewWindow(paths: [url])
+        }
+        return true
+    }
+
+    /// Handle multiple files opened from Finder.
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let urls = filenames.map { URL(fileURLWithPath: $0) }
+        if let win = activeWindow() {
+            win.loadImages(from: urls)
+        } else {
+            _ = makeNewWindow(paths: urls)
+        }
     }
 
     /// One-shot startup check: if "ask to download" is enabled and any model
