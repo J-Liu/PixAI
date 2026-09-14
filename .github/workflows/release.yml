@@ -36,7 +36,7 @@ jobs:
 
       - name: Install Python dependencies
         if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
-        run: pip install zstd
+        run: pip install zstd torch executorch
 
       - name: Install buck2
         if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
