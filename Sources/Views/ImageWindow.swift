@@ -1064,10 +1064,12 @@ class ImageWindow {
         }
         guard wantUpscale || wantDewatermark, let cg = baseImage?.sourceCGImage else { return }
         aiBusy.insert(url)
+        let doUpscale = wantUpscale
+        let doDewatermark = wantDewatermark
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             defer { self.aiBusy.remove(url) }
-            if wantUpscale {
+            if doUpscale {
                 let out = await Task.detached(priority: .userInitiated) { () -> CGImage? in
                     guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
                     return try? RealESRGANEngine.shared.upscale(cg, progress: nil)
@@ -1082,7 +1084,7 @@ class ImageWindow {
                     Logger.shared.log("Auto upscale failed for \(url.lastPathComponent)")
                 }
             }
-            if wantDewatermark {
+            if doDewatermark {
                 let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
                     guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
                     return try? U2NetEngine.shared.removeWatermark(from: cg)

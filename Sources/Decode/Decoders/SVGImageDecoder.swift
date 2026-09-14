@@ -143,18 +143,24 @@ private final class WKSVGRenderer: NSObject, WKNavigationDelegate {
 
     // MARK: WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        loadContinuation?.resume(returning: true)
-        loadContinuation = nil
+    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Task { @MainActor in
+            loadContinuation?.resume(returning: true)
+            loadContinuation = nil
+        }
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        loadContinuation?.resume(returning: false)
-        loadContinuation = nil
+    nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Task { @MainActor in
+            loadContinuation?.resume(returning: false)
+            loadContinuation = nil
+        }
     }
 
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        loadContinuation?.resume(returning: false)
-        loadContinuation = nil
+    nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Task { @MainActor in
+            loadContinuation?.resume(returning: false)
+            loadContinuation = nil
+        }
     }
 }
