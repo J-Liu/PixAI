@@ -94,6 +94,26 @@ download_executorch() {
     echo "✅ Download complete"
 }
 
+# Install ExecuTorch Python package
+install_executorch_python() {
+    echo ""
+    echo "Installing ExecuTorch Python package..."
+
+    cd "$BUILD_DIR/executorch"
+
+    # Install CI requirements
+    if [ -f ".ci/docker/requirements-ci.txt" ]; then
+        echo "   Installing CI requirements..."
+        $PYTHON -m pip install -r .ci/docker/requirements-ci.txt
+    fi
+
+    # Install executorch in editable mode
+    echo "   Installing executorch package..."
+    $PYTHON -m pip install --no-build-isolation -e .
+
+    echo "✅ Python package installed"
+}
+
 # Build xcframeworks for macOS
 build_xcframeworks() {
     echo ""
@@ -203,6 +223,7 @@ package_xcframeworks() {
 main() {
     check_prerequisites
     download_executorch
+    install_executorch_python
     build_xcframeworks
     package_xcframeworks
 

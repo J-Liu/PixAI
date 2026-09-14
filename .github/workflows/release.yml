@@ -55,13 +55,6 @@ jobs:
           pip install zstd pyyaml cmake
           pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Setup ExecuTorch Python package
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        run: |
-          cd .executorch_build/executorch
-          pip install -r .ci/docker/requirements-ci.txt
-          pip install --no-build-isolation -e .
-
       - name: Build ExecuTorch xcframeworks
         if: steps.cache-executorch.outputs.cache-hit != 'true'
         run: |
