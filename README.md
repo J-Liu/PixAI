@@ -131,12 +131,12 @@ Subsequent builds are fast (seconds) — the xcframeworks are cached in `Vendor/
 ### Build Prerequisites
 
 - CMake 3.20+
-- Python 3.8+
+- Python 3.10+
 - Xcode Command Line Tools
 
 Install with Homebrew:
 ```bash
-brew install cmake python3
+brew install cmake python@3.11
 xcode-select --install
 ```
 

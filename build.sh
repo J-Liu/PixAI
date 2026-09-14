@@ -82,7 +82,8 @@ BC_SLICE="$VENDOR/backend_coreml.xcframework/macos-arm64"
 KO_SLICE="$VENDOR/kernels_optimized.xcframework/macos-arm64"
 TP_SLICE="$VENDOR/threadpool.xcframework/macos-arm64"
 
-if [ ! -f "$ET_SLICE/ExecuTorch.swiftinterface" ]; then
+# Check if xcframeworks exist (Headers for executorch, .a files for others)
+if [ ! -d "$ET_SLICE" ] || [ ! -d "$ET_SLICE/Headers" ]; then
     echo "❌ ExecuTorch xcframework missing or incomplete"
     echo "   Please ensure all xcframeworks are present in Vendor/ExecuTorch/"
     exit 1
@@ -102,10 +103,10 @@ SWIFT_PACKAGE_NO_SANDBOX=1 xcrun swiftc \
     -I "$ET_SLICE" \
     -I "$ET_SLICE/Headers" \
     -Xcc -I"$ET_SLICE/Headers" \
-    -L "$ET_SLICE" -lexecutorch_macos \
+    -Xlinker -force_load -Xlinker "$ET_SLICE/libexecutorch_macos.a" \
     -Xlinker -force_load -Xlinker "$BC_SLICE/libbackend_coreml_macos.a" \
     -Xlinker -force_load -Xlinker "$KO_SLICE/libkernels_optimized_macos.a" \
-    -L "$TP_SLICE" -lthreadpool_macos \
+    -Xlinker -force_load -Xlinker "$TP_SLICE/libthreadpool_macos.a" \
     -framework CoreML -framework Accelerate -framework CoreImage -framework Vision \
     -lsqlite3 -lc++ \
     $(find Sources -name "*.swift" | tr '\n' ' ')
