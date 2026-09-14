@@ -162,6 +162,32 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <string></string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Image</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.image</string>
+                <string>public.jpeg</string>
+                <string>public.png</string>
+                <string>public.heic</string>
+                <string>public.heif</string>
+                <string>com.compuserve.gif</string>
+                <string>org.webmproject.webp</string>
+                <string>com.microsoft.bmp</string>
+                <string>public.tiff</string>
+                <string>public.svg-image</string>
+                <string>com.adobe.pdf</string>
+                <string>com.apple.live-photo</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
