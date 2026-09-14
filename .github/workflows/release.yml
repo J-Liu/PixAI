@@ -35,10 +35,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install system dependencies
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
+        run: |
+          brew install zstd libomp
+
       - name: Install buck2
         if: steps.cache-executorch.outputs.cache-hit != 'true'
         run: |
-          brew install zstd
           curl -sLO "https://ossci-macos.s3.amazonaws.com/buck2-aarch64-apple-darwin-2024-05-15.zst"
           zstd -d buck2-aarch64-apple-darwin-2024-05-15.zst -o buck2
           chmod +x buck2
@@ -48,8 +52,15 @@ jobs:
       - name: Install Python dependencies
         if: steps.cache-executorch.outputs.cache-hit != 'true'
         run: |
-          pip install zstd pyyaml
+          pip install zstd pyyaml cmake
           pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Setup ExecuTorch Python package
+        if: steps.cache-executorch.outputs.cache-hit != 'true'
+        run: |
+          cd .executorch_build/executorch
+          pip install -r .ci/docker/requirements-ci.txt
+          pip install --no-build-isolation -e .
 
       - name: Build ExecuTorch xcframeworks
         if: steps.cache-executorch.outputs.cache-hit != 'true'
