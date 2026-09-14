@@ -53,7 +53,7 @@ jobs:
         if: steps.cache-executorch.outputs.cache-hit != 'true'
         run: |
           pip install zstd pyyaml cmake
-          pip install torch
+          pip install torch==2.7.0
 
       - name: Build ExecuTorch xcframeworks
         if: steps.cache-executorch.outputs.cache-hit != 'true'
