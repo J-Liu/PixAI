@@ -94,24 +94,11 @@ download_executorch() {
     echo "✅ Download complete"
 }
 
-# Install ExecuTorch Python package
-install_executorch_python() {
-    echo ""
-    echo "Installing ExecuTorch Python package..."
-
-    cd "$BUILD_DIR/executorch"
-
-    # Install CI requirements
-    if [ -f ".ci/docker/requirements-ci.txt" ]; then
-        echo "   Installing CI requirements..."
-        $PYTHON -m pip install -r .ci/docker/requirements-ci.txt
-    fi
-
-    # Install executorch in editable mode
-    echo "   Installing executorch package..."
-    $PYTHON -m pip install --no-build-isolation -e .
-
-    echo "✅ Python package installed"
+# Setup Python path for codegen tools
+setup_python_path() {
+    # Add executorch source directory to PYTHONPATH so codegen.tools can be imported
+    export PYTHONPATH="$BUILD_DIR/executorch:$PYTHONPATH"
+    echo "   PYTHONPATH includes: $BUILD_DIR/executorch"
 }
 
 # Build xcframeworks for macOS
@@ -203,7 +190,7 @@ package_xcframeworks() {
     echo "   Creating kernels_optimized.xcframework..."
     "$BUILD_DIR/executorch/scripts/create_frameworks.sh" \
         --directory=macos/Release \
-        --framework="kernels_optimized:libcpublas.a,liboptimized_kernels.a,liboptimized_native_cpu_ops_lib.a,liboptimized_portable_kernels.a:" \
+        --framework="kernels_optimized:libcpublas.a,liboptimized_portable_kernels.a:" \
         --output="$VENDOR_DIR"
 
     echo "   Creating threadpool.xcframework..."
@@ -223,7 +210,7 @@ package_xcframeworks() {
 main() {
     check_prerequisites
     download_executorch
-    install_executorch_python
+    setup_python_path
     build_xcframeworks
     package_xcframeworks
 
