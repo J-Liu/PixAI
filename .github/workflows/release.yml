@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Cache ExecuTorch xcframeworks
+        id: cache-xcframeworks
+        uses: actions/cache@v4
+        with:
+          path: Vendor/ExecuTorch
+          key: executorch-xcframeworks-v0.6.0
+
+      - name: Setup Python
+        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build ExecuTorch xcframeworks
+        if: steps.cache-xcframeworks.outputs.cache-hit != 'true'
+        run: |
+          chmod +x build_executorch.sh
+          ./build_executorch.sh
+        timeout-minutes: 60
+
+      - name: Build app bundle
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Verify app bundle
+        run: |
+          ls -la PixAI.app
+          test -d PixAI.app
+
+      - name: Package
+        run: |
+          zip -r PixAI.zip PixAI.app
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PixAI.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
