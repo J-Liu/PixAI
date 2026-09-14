@@ -84,7 +84,9 @@ build_xcframeworks() {
     fi
     
     # Build only for macOS (skip iOS and simulator)
-    rm -rf cmake-out && mkdir -p cmake-out && cd cmake-out
+    # Clean only build output, keep source code
+    rm -rf cmake-out
+    mkdir -p cmake-out && cd cmake-out
     mkdir -p macos && cd macos
     
     echo "   Configuring CMake..."
@@ -116,6 +118,7 @@ package_xcframeworks() {
     echo ""
     echo "Packaging xcframeworks..."
     
+    # Change to cmake-out directory
     cd "$BUILD_DIR/executorch/cmake-out"
     
     # Export headers
@@ -126,28 +129,36 @@ package_xcframeworks() {
     mkdir -p "$VENDOR_DIR"
     
     # Create xcframeworks using official script
+    # The --directory path is relative to current directory (cmake-out)
     echo "   Creating executorch.xcframework..."
     "$BUILD_DIR/executorch/scripts/create_frameworks.sh" \
-        --directory=macos \
+        --directory=macos/Release \
         --framework="executorch:libexecutorch.a,libexecutorch_core.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a,libextension_tensor.a:include/executorch" \
         --output="$VENDOR_DIR"
     
+    # Fix modulemap: header path is ExecuTorch.h, not ExecuTorch/ExecuTorch.h
+    local MODULEMAP="$VENDOR_DIR/executorch.xcframework/macos-arm64/Headers/module.modulemap"
+    if [ -f "$MODULEMAP" ]; then
+        echo "   Fixing module.modulemap header path..."
+        sed -i '' 's|ExecuTorch/ExecuTorch.h|ExecuTorch.h|g' "$MODULEMAP"
+    fi
+    
     echo "   Creating backend_coreml.xcframework..."
     "$BUILD_DIR/executorch/scripts/create_frameworks.sh" \
-        --directory=macos/backends/apple/coreml \
+        --directory=macos/Release \
         --framework="backend_coreml:libcoreml_util.a,libcoreml_inmemoryfs.a,libcoremldelegate.a:" \
         --output="$VENDOR_DIR"
     
     echo "   Creating kernels_optimized.xcframework..."
     "$BUILD_DIR/executorch/scripts/create_frameworks.sh" \
-        --directory=macos/kernels/optimized \
-        --framework="kernels_optimized:libcpublas.a,liboptimized_kernels.a,liboptimized_native_cpu_ops_lib.a:" \
+        --directory=macos/Release \
+        --framework="kernels_optimized:libcpublas.a,liboptimized_kernels.a,liboptimized_native_cpu_ops_lib.a,liboptimized_portable_kernels.a:" \
         --output="$VENDOR_DIR"
     
     echo "   Creating threadpool.xcframework..."
     "$BUILD_DIR/executorch/scripts/create_frameworks.sh" \
-        --directory=macos/extension/threadpool \
-        --framework="threadpool:libextension_threadpool.a:" \
+        --directory=macos/Release \
+        --framework="threadpool:libextension_threadpool.a,libcpuinfo.a,libpthreadpool.a:" \
         --output="$VENDOR_DIR"
     
     echo ""

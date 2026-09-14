@@ -68,3 +68,7 @@ fastlane/test_output
 # AI files
 AGENTS.md
 CLAUDE.md
+
+# ExecuTorch stuff
+Vendor/
+.executorch_build/

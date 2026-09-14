@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import CoreVideo
+import Accelerate
 import ExecuTorch
 
 /// U2Net watermark detection (ExecuTorch, Core ML delegate) + removal.
@@ -15,12 +16,15 @@ final class U2NetEngine {
 
     private let lock = NSLock()
     private var module: Module?
-    private var processor: ImageProcessor?
 
     /// Saliency threshold (after min-max normalization) for "is watermark".
     private let maskThreshold: Float = 0.5
     /// Masked area below this fraction of the image → treat as "no watermark".
     private let minMaskFraction: Double = 0.001
+
+    /// ImageNet normalization constants.
+    private let mean: [Float] = [0.485, 0.456, 0.406]
+    private let std: [Float] = [0.229, 0.224, 0.225]
 
     var isAvailable: Bool {
         return PluginManager.shared.isEnabled(ModelPlugin.u2net)
@@ -30,7 +34,7 @@ final class U2NetEngine {
 
     func ensureLoaded() throws {
         lock.lock()
-        if module != nil && processor != nil {
+        if module != nil {
             lock.unlock()
             return
         }
@@ -42,24 +46,10 @@ final class U2NetEngine {
         }
 
         let m = Module(filePath: pteURL.path)
-        let options = try BackendOptionsMap(options: [
-            "CoreMLBackend": [BackendOption("compute_unit", "cpu_and_gpu")]
-        ])
-        try m.load(options: options)
-
-        let proc = ImageProcessor(config: ImageProcessorConfig(
-            targetWidth: 320,
-            targetHeight: 320,
-            normalization: ImageNormalization(
-                scaleFactor: Float(1.0) / 255.0,
-                mean: [0.485, 0.456, 0.406],
-                standardDeviation: [0.229, 0.224, 0.225]
-            )
-        ))
+        try m.load()
 
         lock.lock()
         module = m
-        processor = proc
         lock.unlock()
         Logger.shared.log("U2Net: module loaded (Core ML delegate)")
     }
@@ -122,46 +112,88 @@ final class U2NetEngine {
     private func predictMask(_ cgImage: CGImage) throws -> [Float] {
         lock.lock()
         let m = module
-        let proc = processor
         lock.unlock()
-        guard let m = m, let proc = proc else { throw PluginManager.PluginError.notDownloaded }
+        guard let m = m else { throw PluginManager.PluginError.notDownloaded }
 
-        // Build an RGB CVPixelBuffer for the ImageProcessor.
-        let w = cgImage.width, h = cgImage.height
-        var pb: CVPixelBuffer?
-        let attrs = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: w,
-            kCVPixelBufferHeightKey as String: h
-        ] as CFDictionary
-        guard CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, attrs, &pb) == kCVReturnSuccess,
-              let pixelBuffer = pb else {
-            throw PluginManager.PluginError.downloadFailed("pixel buffer failed")
-        }
-        CVPixelBufferLockBaseAddress(pixelBuffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            throw PluginManager.PluginError.downloadFailed("base address failed")
-        }
-        let bpr = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        guard let ctx = CGContext(
-            data: base, width: w, height: h,
-            bitsPerComponent: 8, bytesPerRow: bpr,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { throw PluginManager.PluginError.downloadFailed("context failed") }
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // Preprocess: resize to 320x320 and normalize with ImageNet stats.
+        let inputTensor = try preprocessImage(cgImage, targetSize: 320)
 
-        let inputTensor = try proc.process(pixelBuffer)
+        // Run inference.
         let outputs = try m.forward([inputTensor])
-        guard let outValue = outputs.first, let maskTensor = outValue.tensor() as? Tensor<Float> else {
+
+        guard let outValue = outputs.first, let maskTensor = outValue.tensor else {
             throw PluginManager.PluginError.downloadFailed("missing tensor output")
         }
-        let scalars = maskTensor.scalars()
-        guard scalars.count >= 320 * 320 else {
-            throw PluginManager.PluginError.downloadFailed("unexpected mask size \(scalars.count)")
+
+        // Extract float data from tensor.
+        var maskData: [Float] = []
+        maskTensor.bytes { pointer, count, dataType in
+            guard dataType == .float else { return }
+            let floatPtr = pointer.assumingMemoryBound(to: Float.self)
+            maskData = Array(UnsafeBufferPointer(start: floatPtr, count: min(count, 320 * 320)))
         }
-        return Array(scalars.prefix(320 * 320))
+
+        guard maskData.count >= 320 * 320 else {
+            throw PluginManager.PluginError.downloadFailed("unexpected mask size \(maskData.count)")
+        }
+        return maskData
+    }
+
+    // MARK: - Preprocessing
+
+    /// Resize image to targetSize×targetSize and normalize with ImageNet stats.
+    /// Returns a Tensor with shape [1, 3, targetSize, targetSize] (NCHW).
+    private func preprocessImage(_ cgImage: CGImage, targetSize: Int) throws -> Tensor {
+        // Resize to targetSize×targetSize.
+        guard let ctx = CGContext(
+            data: nil, width: targetSize, height: targetSize,
+            bitsPerComponent: 8, bytesPerRow: targetSize * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw PluginManager.PluginError.downloadFailed("context failed")
+        }
+        ctx.interpolationQuality = .high
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetSize, height: targetSize))
+
+        guard let resizedCGImage = ctx.makeImage() else {
+            throw PluginManager.PluginError.downloadFailed("resize failed")
+        }
+
+        // Get RGBA pixels.
+        var rgba = [UInt8](repeating: 0, count: targetSize * targetSize * 4)
+        guard let ctx2 = CGContext(
+            data: &rgba, width: targetSize, height: targetSize,
+            bitsPerComponent: 8, bytesPerRow: targetSize * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw PluginManager.PluginError.downloadFailed("context2 failed")
+        }
+        ctx2.draw(resizedCGImage, in: CGRect(x: 0, y: 0, width: targetSize, height: targetSize))
+
+        // Convert to NCHW float tensor with ImageNet normalization.
+        let n = targetSize * targetSize
+        var floatData = [Float](repeating: 0, count: n * 3)
+
+        for i in 0..<n {
+            let r = Float(rgba[i * 4])
+            let g = Float(rgba[i * 4 + 1])
+            let b = Float(rgba[i * 4 + 2])
+
+            // Normalize: (pixel / 255 - mean) / std
+            let y = i / targetSize
+            let x = i % targetSize
+            let idx = y * targetSize + x
+
+            floatData[idx] = (r / 255.0 - mean[0]) / std[0]
+            floatData[n + idx] = (g / 255.0 - mean[1]) / std[1]
+            floatData[2 * n + idx] = (b / 255.0 - mean[2]) / std[2]
+        }
+
+        // Create tensor with shape [1, 3, targetSize, targetSize].
+        let shape: [NSNumber] = [1, 3, NSNumber(value: targetSize), NSNumber(value: targetSize)]
+        return Tensor(bytes: floatData, shape: shape, dataType: .float)
     }
 
     // MARK: - Mask / pixel helpers (static, testable)
