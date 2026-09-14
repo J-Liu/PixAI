@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import AppKit
 import UniformTypeIdentifiers
 import ImageIO
@@ -8,10 +11,10 @@ import ImageIO
 class ImageWindow {
     /// The underlying window.
     let window: NSWindow
-    
+
     /// Called when this window is closed (used by the app delegate to drop its reference).
     var onClose: ((ImageWindow) -> Void)?
-    
+
     private var container: ViewerContainerView?
     private var statusBarLabel: NSTextField?
     private var toolbar: AutoHideToolbar?
@@ -88,7 +91,7 @@ class ImageWindow {
     private let slideshow = SlideshowController()
 
     private var closeObserver: NSObjectProtocol?
-    
+
     init() {
         let windowRect = CGRect(x: 0, y: 0, width: 1200, height: 900)
         let window = NSWindow(
@@ -100,7 +103,7 @@ class ImageWindow {
         window.isReleasedWhenClosed = false
         window.title = "PixAI"
         self.window = window
-        
+
         // Container (light gray background) that accepts dropped images/folders.
         let container = ViewerContainerView(onDrop: { [weak self] urls in
             Logger.shared.log("Container drop: \(urls.count) URLs")
@@ -110,7 +113,7 @@ class ImageWindow {
         // so every child frame computed below is already correct.
         container.frame = windowRect
         self.container = container
-        
+
         // Image view: fills the area above the status bar. A custom NSView (NSImageView
         // has no zoom API) that draws the image itself, providing cursor-centered wheel
         // zoom (10% step, 10%~1000%), trackpad pinch zoom, drag panning when zoomed
@@ -130,24 +133,24 @@ class ImageWindow {
         }
         container.imageView = imageView
         container.addSubview(imageView)
-        
+
         // Bottom status bar: filename / size / zoom ratio / index-total.
         let statusBar = NSView()
         statusBar.wantsLayer = true
         statusBar.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.9).cgColor
-        
+
         let statusLabel = NSTextField(labelWithString: L10n.shared.t("Open or drag images here"))
         statusLabel.font = NSFont.systemFont(ofSize: 12)
         statusLabel.textColor = NSColor(white: 0.92, alpha: 1)
         statusLabel.lineBreakMode = .byTruncatingMiddle
         statusLabel.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
         statusBar.addSubview(statusLabel)
-        
+
         container.statusBar = statusBar
         container.statusLabel = statusLabel
         self.statusBarLabel = statusLabel
         container.addSubview(statusBar)
-        
+
         // Floating auto-hide toolbar, bottom-center above the status bar.
         let toolbar = AutoHideToolbar(
             onLeftTap: { [weak self] in
@@ -216,7 +219,7 @@ class ImageWindow {
         container.toolbar = toolbar
         self.toolbar = toolbar
         container.addSubview(toolbar)
-        
+
         // Empty-state placeholder (big icon + hint), centered in the image area.
         let placeholder = PlaceholderView(
             onOpen: { [weak self] in
@@ -230,7 +233,7 @@ class ImageWindow {
         )
         container.placeholder = placeholder
         container.addSubview(placeholder)
-        
+
         // Keyboard handler on top (mouse events pass through to the views below).
         let keyboardHandler = KeyboardHandlerView(
             onPrevious: { [weak self] in
@@ -364,7 +367,7 @@ class ImageWindow {
             self.blinkTimer = nil
             self.onClose?(self)
         }
-        
+
         // Refresh the status bar (zoom ratio) whenever the window resizes.
         NotificationCenter.default.addObserver(
             self,
@@ -373,20 +376,20 @@ class ImageWindow {
             object: window
         )
     }
-    
+
     /// Center the window and show it.
     func show() {
         window.center()
         Logger.shared.log("Window shown: \(window.frame)")
         window.makeKeyAndOrderFront(nil)
     }
-    
+
     /// Refresh the status bar when the window is resized (zoom ratio changes).
     @objc private func windowDidResize() {
         updateStatusBar()
         positionLoadSpinner()
     }
-    
+
     /// Open a file selection panel and load the chosen items.
     func presentOpenPanel() {
         Logger.shared.log("openFile action triggered")
@@ -403,7 +406,7 @@ class ImageWindow {
             }
         }
     }
-    
+
     /// Load images from URLs (files and/or directories).
     func loadImages(from urls: [URL]) {
         // A new image set invalidates the active crop rectangle (it belongs to
@@ -420,7 +423,7 @@ class ImageWindow {
         // Separate files and directories from the input
         var files: [URL] = []
         var directories: [URL] = []
-        
+
         for url in urls {
             do {
                 let isDir = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory
@@ -434,9 +437,9 @@ class ImageWindow {
                 files.append(url)
             }
         }
-        
+
         Logger.shared.log("loadImages: \(files.count) files, \(directories.count) directories")
-        
+
         // Case 1: Single file -> find all images in the same directory (non-recursive), dragged file first
         if files.count == 1, directories.isEmpty {
             let file = files[0]
@@ -450,12 +453,12 @@ class ImageWindow {
                         otherImages.append(img)
                     }
                 }
-                
+
                 Logger.shared.log("Single file case: parentDir=\(parentDir), allImages.count=\(allImages.count), otherImages.count=\(otherImages.count)")
-                
+
                 // Put the dragged file first, then other images
                 imageUrls = [file] + otherImages
-                
+
                 Logger.shared.log("Single file opened: dragged file first, then \(otherImages.count) other images")
             } else {
                 // Parent doesn't exist, use the single file
@@ -473,18 +476,18 @@ class ImageWindow {
             imageUrls = scanned
             Logger.shared.log("Directory/ies opened: scanned \(scanned.count) files from \(directories.count) directory(ies)")
         }
-        
+
         // Edge case: mix of files and directories (shouldn't happen in normal usage)
         if !files.isEmpty, !directories.isEmpty {
             let dirScans = FileScanner.scan(urls: directories)
             imageUrls = dirScans + FileScanner.scan(urls: files)
         }
-        
+
         Logger.shared.log("loadImages: total \(imageUrls.count) files in array")
-        
+
         imageURLs = imageUrls
         currentIndex = 0
-        
+
         if !imageURLs.isEmpty {
             loadImage(at: 0)
         } else {
@@ -493,7 +496,7 @@ class ImageWindow {
             updateStatusBar()
         }
     }
-    
+
     /// Scan only the immediate directory contents (no recursion).
     private func scanDirectoryOnly(_ directory: URL) -> [URL] {
         var results: [URL] = []
@@ -522,7 +525,7 @@ class ImageWindow {
         }
         return results.sorted { $0.absoluteString < $1.absoluteString }
     }
-    
+
     /// Load and display the image at the given index.
     private func loadImage(at index: Int) {
         guard index >= 0, index < imageURLs.count else { return }
@@ -530,7 +533,7 @@ class ImageWindow {
         if cropMode { exitCropMode() }
         currentIndex = index
         let url = imageURLs[index]
-        
+
         Logger.shared.log("Loading image at index \(index): \(url)")
 
         // Large-file warning (spec: 大图警告): a single image over 50 MB shows
@@ -788,33 +791,33 @@ class ImageWindow {
         }
         return nil
     }
-    
+
     /// The actual on-screen scale of the current image relative to its original size
     /// (1.0 == 100% == 1:1 pixels). Read live from the zoomable view so the status
     /// bar reflects wheel zoom / pan state in real time.
     private func currentZoomRatio() -> CGFloat {
         return container?.imageView?.zoomScale ?? 1
     }
-    
+
     /// Build a tab-separated attributed string (fixed tab interval for aligned columns).
     private static func statusString(_ text: String) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.defaultTabInterval = 96
         return NSAttributedString(string: text, attributes: [.paragraphStyle: paragraph])
     }
-    
+
     /// Update the bottom status bar: filename / size / zoom ratio / index-total.
     private func updateStatusBar() {
         guard let label = statusBarLabel else { return }
-        
+
         if imageURLs.isEmpty || currentIndex < 0 || currentIndex >= imageURLs.count {
             label.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
             return
         }
-        
+
         let url = imageURLs[currentIndex]
         var parts: [String] = [url.lastPathComponent]
-        
+
         if let size = currentPixelSize() {
             var sizeText = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
             if currentImageIsScaled {
@@ -824,14 +827,14 @@ class ImageWindow {
             parts.append(sizeText)
             parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
         }
-        
+
         if let mark = aiStates[url]?.activeMark {
             parts.append(mark)
         }
         parts.append("\(currentIndex + 1) / \(imageURLs.count)")
         label.attributedStringValue = Self.statusString(parts.joined(separator: "\t"))
     }
-    
+
     /// Update the toolbar's fit toggle icon (true = depicts "fit to window").
     /// The toggle state itself lives in ZoomableImageView; this only mirrors it.
     private func setFitToggleIcon(showsFit: Bool) {
@@ -1671,7 +1674,7 @@ class ImageWindow {
             slideshow.restartCountdown()
         }
     }
-    
+
     // MARK: - Crop mode
 
     /// Toggle crop mode (toolbar crop button / View ▸ Crop / right-click menu).
@@ -2019,27 +2022,27 @@ class ImageWindow {
         label.isBordered = false
         label.alignment = .center
         label.backgroundColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.6)
-        
+
         // Position it at the bottom center of the window (above the toolbar).
         let windowSize = window.contentView?.bounds.size ?? window.frame.size
         let labelWidth: CGFloat = 300
         let labelHeight: CGFloat = 24
         let labelX = (windowSize.width - labelWidth) / 2
         let labelY: CGFloat = ViewerContainerView.statusBarHeight + 60
-        
+
         label.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: labelHeight)
-        
+
         // Add the label to the window's content view.
         if let contentView = window.contentView {
             contentView.addSubview(label)
-            
+
             // Animate in.
             label.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.3
                 label.animator().alphaValue = 1
             }
-            
+
             // Remove after 2 seconds.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 NSAnimationContext.runAnimationGroup { context in

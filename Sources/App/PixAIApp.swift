@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import AppKit
 import UniformTypeIdentifiers
 
@@ -8,21 +11,21 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     private let paths: [String]
     /// Whether to launch in fullscreen mode.
     private let isFullscreen: Bool
-    
+
     /// All open viewer windows (strong references; closing a window removes it).
     private var imageWindows: [ImageWindow] = []
-    
+
     /// Rebuilds the menu bar when the UI language changes.
     private var l10nMenuObserver: NSObjectProtocol?
     /// Guards the one-shot startup model check.
     private var modelCheckDone = false
-    
+
     override init() {
         self.paths = commandPaths
         self.isFullscreen = isFullscreenMode
         super.init()
     }
-    
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Log the loaded config state (no-op while logging is disabled).
         AppConfig.shared.logLoadedState()
@@ -32,10 +35,10 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         // (Dispatch memory-pressure source — macOS has no AppKit equivalent
         // of UIApplication.didReceiveMemoryWarningNotification).
         MemoryPressureMonitor.shared.start()
-        
+
         // Build and set the menu bar.
         NSApplication.shared.mainMenu = MenuBuilder.build()
-        
+
         // Open: use the active window, or create one if none is open.
         MenuBuilder.openFileCallback = { [weak self] in
             guard let self = self else { return }
@@ -46,12 +49,12 @@ class PixAIApp: NSObject, NSApplicationDelegate {
                 win.presentOpenPanel()
             }
         }
-        
+
         // New Window (Cmd+N): always a blank window.
         MenuBuilder.newWindowCallback = { [weak self] in
             self?.makeNewWindow(paths: [])
         }
-        
+
         // Check for Updates: open the GitHub releases page (hardcoded URL, no
         // real version check).
         MenuBuilder.checkForUpdatesCallback = {
@@ -59,26 +62,26 @@ class PixAIApp: NSObject, NSApplicationDelegate {
                 NSWorkspace.shared.open(url)
             }
         }
-        
+
         // Preferences (Cmd+,): show the shared Preferences window.
         MenuBuilder.preferencesCallback = {
             PreferencesWindow.shared.show()
         }
-        
+
         // Menu validation + action routing use the active viewer window.
         MenuBuilder.activeWindowProvider = { [weak self] in self?.activeWindow() }
-        
+
         // Create the first window with command-line paths (if any).
         let urlPaths = paths.compactMap { URL(fileURLWithPath: $0) }
         let first = makeNewWindow(paths: urlPaths)
-        
+
         // If fullscreen flag is set, enter fullscreen immediately.
         if isFullscreen {
             first.window.toggleFullScreen(nil)
         }
-        
+
         Logger.shared.log("PixAIApp initialized with \(imageWindows.count) window(s)")
-        
+
         // Rebuild the menu bar when the UI language changes (all titles go
         // through L10n).
         self.l10nMenuObserver = NotificationCenter.default.addObserver(
@@ -88,13 +91,13 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         ) { _ in
             NSApplication.shared.mainMenu = MenuBuilder.build()
         }
-        
+
         // Startup AI-model check (config: ask to download when missing).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             self?.checkAIModelsOnStartup()
         }
     }
-    
+
     /// Whether closing the last window quits the app (configurable in
     /// Preferences; default: keep running).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -119,26 +122,26 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         }
         return imageWindows.last
     }
-    
+
     /// Create and show a new viewer window, optionally loading the given paths.
     @discardableResult
     private func makeNewWindow(paths: [URL]) -> ImageWindow {
         let win = ImageWindow()
         imageWindows.append(win)
-        
+
         win.onClose = { [weak self] closed in
             self?.removeWindow(closed)
         }
-        
+
         win.show()
-        
+
         if !paths.isEmpty {
             win.loadImages(from: paths)
         }
-        
+
         return win
     }
-    
+
     private func removeWindow(_ win: ImageWindow) {
         imageWindows.removeAll { $0 === win }
         // All windows closed: release every cached image. The app keeps
@@ -149,7 +152,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         }
         Logger.shared.log("Window closed, \(imageWindows.count) window(s) remain")
     }
-    
+
     /// One-shot startup check: if "ask to download" is enabled and any model
     /// plugin is missing (not downloaded / corrupted / deleted / moved), offer
     /// to open Preferences ▸ AI Models on the first window.
@@ -159,7 +162,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         guard AppConfig.shared.modelCheckPromptEnabled else { return }
         let missing = ModelPlugin.all.filter { !PluginManager.shared.isReady($0) }
         guard !missing.isEmpty, let win = activeWindow() else { return }
-        
+
         let t = L10n.shared.t
         let alert = NSAlert()
         alert.messageText = t("AI models are missing")

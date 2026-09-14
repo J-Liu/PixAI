@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import AppKit
 import UniformTypeIdentifiers
 
@@ -63,63 +66,63 @@ class KeyboardHandlerView: NSView {
         self.onCancelCrop = onCancelCrop
         self.onShowShortcuts = onShowShortcuts
         super.init(frame: .zero)
-        
+
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         focusRingType = .none
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     override var acceptsFirstResponder: Bool {
         return true
     }
-    
+
     /// Pass mouse events through to the views below (toolbar buttons, placeholder).
     /// Key events are still delivered because this view is the first responder.
     override func hitTest(_ point: NSPoint) -> NSView? {
         return nil
     }
-    
+
     /// True while the window is in native full-screen mode.
     private var isWindowInFullScreen: Bool {
         return self.window?.styleMask.contains(.fullScreen) ?? false
     }
-    
+
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags
         let key = event.characters?.lowercased() ?? ""
         let keyCode = event.keyCode
-        
+
         // Handle Cmd+W specifically: close THIS window only (the app keeps running).
         if mods.contains(.command) && (key == "w" || keyCode == 13) {
             self.window?.close()
             return
         }
-        
+
         // Cmd+R: rotate the current image 90° counterclockwise (temporary, not saved).
         if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
            (key == "r" || keyCode == 15) {
             onRotateCounterclockwise()
             return
         }
-        
+
         // Cmd+Shift+S: Save As (new file).
         if mods.contains(.command), mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
            (key == "s" || keyCode == 1) {
             onSaveAs()
             return
         }
-        
+
         // Cmd+S: save the rotated image back to the file.
         if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
            (key == "s" || keyCode == 1) {
             onSave()
             return
         }
-        
+
         // Cmd+Delete: move the current image to the Trash (keyCode 51 = Delete,
         // 117 = Forward Delete; both carry the 0x7F character).
         if mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
@@ -127,13 +130,13 @@ class KeyboardHandlerView: NSView {
             onDelete()
             return
         }
-        
+
         // Don't intercept if Cmd/Control/Option is pressed
         if mods.contains([.command, .control, .option]) {
             super.keyDown(with: event)
             return
         }
-        
+
         switch (key, keyCode) {
         // Arrow keys (use key code to detect them reliably)
         case ("leftarrow", _), (_, 123):

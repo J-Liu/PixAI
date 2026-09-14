@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import Foundation
 import Vision
 import CoreGraphics
@@ -184,4 +187,3 @@ enum DuplicateDetector {
         return NSSize(width: w, height: h)
     }
 }
-

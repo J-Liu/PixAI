@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import Foundation
 
 /// Drives slideshow playback (timer + play state) for one viewer window.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import AppKit
 
 /// A thread-safe NSCache of decoded NSImages keyed by file URL, shared by all

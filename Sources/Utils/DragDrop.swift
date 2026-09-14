@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright © 2026 Jia Liu
+
 import AppKit
 
 /// Shared drag-and-drop helpers for accepting image files and folders.
@@ -15,22 +18,22 @@ enum DragDropHelper {
         NSPasteboard.PasteboardType("com.microsoft.bmp"),
         NSPasteboard.PasteboardType("public.heic"),
     ]
-    
+
     /// Extract existing file/folder URLs from a drag pasteboard, trying several methods.
     static func extractURLs(from pasteboard: NSPasteboard) -> [URL] {
         var urls: [URL] = []
-        
+
         // Method 1: modern URL reading API (works for Finder file/folder drags).
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         if let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [NSURL] {
             urls = objects.map { $0 as URL }
         }
-        
+
         // Method 2: legacy NSFilenamesPboardType property list.
         if urls.isEmpty, let fileURLs = pasteboard.propertyList(forType: .init("NSFilenamesPboardType")) as? [String] {
             urls = fileURLs.map { URL(fileURLWithPath: $0) }
         }
-        
+
         // Method 3: string-based paths.
         if urls.isEmpty {
             for type in pasteboard.types ?? [] {
@@ -39,7 +42,7 @@ enum DragDropHelper {
                 }
             }
         }
-        
+
         // Method 4: raw data URL representations.
         if urls.isEmpty {
             for type in pasteboard.types ?? [] {
@@ -49,7 +52,7 @@ enum DragDropHelper {
                 }
             }
         }
-        
+
         return urls.filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
