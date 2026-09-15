@@ -1677,6 +1677,26 @@ class ImageWindow {
         }
     }
 
+    /// Go to first image.
+    private func goFirst() {
+        guard !batchRunning, imageURLs.count > 1, currentIndex != 0 else { return }
+        currentIndex = 0
+        loadImage(at: 0)
+        if slideshow.isPlaying {
+            slideshow.restartCountdown()
+        }
+    }
+
+    /// Go to last image.
+    private func goLast() {
+        guard !batchRunning, imageURLs.count > 1, currentIndex != imageURLs.count - 1 else { return }
+        currentIndex = imageURLs.count - 1
+        loadImage(at: currentIndex)
+        if slideshow.isPlaying {
+            slideshow.restartCountdown()
+        }
+    }
+
     // MARK: - Crop mode
 
     /// Toggle crop mode (toolbar crop button / View ▸ Crop / right-click menu).
@@ -1893,6 +1913,17 @@ class ImageWindow {
             return mi
         }
 
+        // Navigation group at the top
+        let prevItem = item(t("Previous Image"), #selector(contextPrevious))
+        prevItem.isEnabled = imageURLs.count > 1
+        let nextItem = item(t("Next Image"), #selector(contextNext))
+        nextItem.isEnabled = imageURLs.count > 1
+        let firstItem = item(t("First Image"), #selector(contextFirst))
+        firstItem.isEnabled = currentIndex > 0
+        let lastItem = item(t("Last Image"), #selector(contextLast))
+        lastItem.isEnabled = currentIndex < imageURLs.count - 1
+        menu.addItem(.separator())
+
         _ = item(t("Save"), #selector(contextSave))
         _ = item(t("Save As..."), #selector(contextSaveAs))
         _ = item(t("Rename..."), #selector(contextRename))
@@ -1920,6 +1951,10 @@ class ImageWindow {
         return menu
     }
 
+    @objc private func contextPrevious() { goPrevious() }
+    @objc private func contextNext() { goNext() }
+    @objc private func contextFirst() { goFirst() }
+    @objc private func contextLast() { goLast() }
     @objc private func contextSave() { saveCurrentRotation() }
     @objc private func contextSaveAs() { saveAsImage() }
     @objc private func contextRename() { renameCurrentImage() }
