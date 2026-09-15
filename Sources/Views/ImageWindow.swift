@@ -399,7 +399,8 @@ class ImageWindow {
         panel.allowedContentTypes = [.image, .folder]
         // Set initial directory from config
         panel.directoryURL = AppConfig.shared.getOpenPanelDirectory()
-        panel.begin { response in
+        // Use beginSheetModal to ensure the panel appears above the main window
+        panel.beginSheetModal(for: self.window) { response in
             if response == .OK {
                 Logger.shared.log("Open panel selected \(panel.urls.count) items")
                 // Remember the directory for next time (from first selected URL)
