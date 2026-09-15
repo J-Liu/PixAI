@@ -173,14 +173,14 @@ final class PreferencesWindow: NSObject {
 
     private func makeSection(_ root: NSView, title: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> NSView {
         let container = NSView(frame: NSRect(x: x, y: y, width: width, height: height))
-        
+
         // Title label at top-left
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         titleLabel.sizeToFit()
         titleLabel.frame = NSRect(x: 0, y: height - 20, width: min(titleLabel.frame.width + 4, width), height: 18)
         container.addSubview(titleLabel)
-        
+
         // Content view below title
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height - 28))
         contentView.wantsLayer = true
@@ -189,7 +189,7 @@ final class PreferencesWindow: NSObject {
         contentView.layer?.borderWidth = 1
         contentView.layer?.borderColor = NSColor.separatorColor.cgColor
         container.addSubview(contentView)
-        
+
         root.addSubview(container)
         return contentView
     }
@@ -833,11 +833,11 @@ final class PreferencesWindow: NSObject {
             let transition = AppConfig.shared.imageTransitionDuration
             if abs(self.transitionField.doubleValue - transition) > 0.001 { self.transitionField.stringValue = String(format: "%.1f", transition) }
             if abs(self.transitionStepper.doubleValue - transition) > 0.001 { self.transitionStepper.doubleValue = transition }
-            
+
             let interval = Int(AppConfig.shared.slideshowInterval)
             if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
             if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
-            
+
             self.modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
             self.cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
             self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
@@ -848,14 +848,14 @@ final class PreferencesWindow: NSObject {
             let currentDir = AppConfig.shared.getOpenPanelDirectory()
             let displayDir = currentDir?.lastPathComponent ?? ""
             if self.openDirField.stringValue != displayDir { self.openDirField.stringValue = displayDir }
-            
+
             let cache = AppConfig.shared.imageCacheCount
             if self.cacheField.integerValue != cache { self.cacheField.integerValue = cache }
             if self.cacheStepper.integerValue != cache { self.cacheStepper.integerValue = cache }
             self.logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
             let path = AppConfig.shared.logPath
             if self.logPathField.stringValue != path { self.logPathField.stringValue = path }
-            
+
             let vibrance = AppConfig.shared.enhanceVibrance
             if abs(self.enhanceVibranceField.doubleValue - vibrance) > 0.001 { self.enhanceVibranceField.stringValue = String(format: "%.2f", vibrance) }
             if abs(self.enhanceVibranceStepper.doubleValue - vibrance) > 0.001 { self.enhanceVibranceStepper.doubleValue = vibrance }
@@ -865,7 +865,7 @@ final class PreferencesWindow: NSObject {
             let sharpness = AppConfig.shared.enhanceSharpness
             if abs(self.enhanceSharpnessField.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessField.stringValue = String(format: "%.2f", sharpness) }
             if abs(self.enhanceSharpnessStepper.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessStepper.doubleValue = sharpness }
-            
+
             self.aiAutoUpscaleCheckbox?.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
 
             // Super resolution settings

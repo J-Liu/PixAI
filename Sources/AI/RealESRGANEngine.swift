@@ -18,7 +18,7 @@ final class RealESRGANEngine {
 
     private let lock = NSLock()
     private var model: MLModel?
-    
+
     /// Cancellation flag checked during inference.
     var isCancelled: Bool = false
 
@@ -175,7 +175,7 @@ final class RealESRGANEngine {
         let xs = tileOrigins(w)
         let ys = tileOrigins(h)
         Logger.shared.log("RealESRGAN: tileOrigins xs=\(xs), ys=\(ys)")
-        
+
         let bandCount = (h + bandInput - 1) / bandInput
         Logger.shared.log("RealESRGAN: bandCount=\(bandCount)")
 
@@ -265,7 +265,7 @@ final class RealESRGANEngine {
                         Logger.shared.log("RealESRGAN: WARNING - tileOut is nil, skipping")
                         continue
                     }
-                    
+
                     Logger.shared.log("RealESRGAN: blending tile, tileOut.count=\(tileOut.count)")
 
                     // Output rows of this tile that fall inside the current band.
@@ -274,11 +274,11 @@ final class RealESRGANEngine {
                     let tileOutYEnd = (ty + tileInput) * 4
                     let rowStart = max(by * 4, tileOutYStart)
                     let rowEnd = min((by + bh) * 4, tileOutYEnd)
-                    
+
                     // Also clamp c range to tile's output range
                     let tileOutXStart = tx * 4
                     let tileOutXEnd = (tx + tileInput) * 4
-                    
+
                     Logger.shared.log("RealESRGAN: blending rows \(rowStart)..<\(rowEnd), cols \(tileOutXStart)..<\(tileOutXEnd)")
 
                     for r in rowStart..<rowEnd {

@@ -17,10 +17,10 @@ enum AutoEnhance {
         let vibrance = cfg.enhanceVibrance
         let contrast = cfg.enhanceContrast
         let sharpness = cfg.enhanceSharpness
-        
+
         let input = CIImage(cgImage: cgImage)
         var current = input
-        
+
         // 1. Vibrance boost
         if vibrance > 0, let vibranceFilter = CIFilter(name: "CIVibrance") {
             vibranceFilter.setValue(current, forKey: kCIInputImageKey)
@@ -29,7 +29,7 @@ enum AutoEnhance {
                 current = output
             }
         }
-        
+
         // 2. Contrast adjustment
         if abs(contrast - 1.0) > 0.001, let contrastFilter = CIFilter(name: "CIColorControls") {
             contrastFilter.setValue(current, forKey: kCIInputImageKey)
@@ -38,7 +38,7 @@ enum AutoEnhance {
                 current = output
             }
         }
-        
+
         // 3. Sharpening
         if sharpness > 0, let sharpen = CIFilter(name: "CISharpenLuminance") {
             sharpen.setValue(current, forKey: kCIInputImageKey)
@@ -47,11 +47,11 @@ enum AutoEnhance {
                 current = output
             }
         }
-        
+
         let context = CIContext(options: nil)
         let extent = current.extent
         let renderRect = extent.isInfinite ? CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height) : extent
-        
+
         return context.createCGImage(current, from: renderRect)
     }
 }

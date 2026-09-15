@@ -1599,14 +1599,14 @@ class ImageWindow {
         guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
         guard let state = aiStates[url], state.canUndo else { return }
-        
+
         let undone = state.undo()
         aiStates[url] = state
-        
+
         if let kind = undone {
             Logger.shared.log("AI undo: \(kind.rawValue) undone")
         }
-        
+
         refreshCurrentDisplay()
     }
 

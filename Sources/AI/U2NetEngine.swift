@@ -19,7 +19,7 @@ final class U2NetEngine {
 
     private let lock = NSLock()
     private var module: Module?
-    
+
     /// Cancellation flag checked during inference.
     var isCancelled: Bool = false
 
@@ -78,7 +78,7 @@ final class U2NetEngine {
 
         // 1) Saliency mask at 320×320.
         let maskSmall = try predictMask(cgImage)
-        
+
         guard !isCancelled else {
             Logger.shared.log("U2Net: cancelled after mask prediction")
             throw CancellationError()

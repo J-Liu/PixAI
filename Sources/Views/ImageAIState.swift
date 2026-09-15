@@ -29,7 +29,7 @@ final class ImageAIState {
 
     /// The transform currently shown (most recently applied wins).
     var lastApplied: AIKind?
-    
+
     /// History of applied transforms (for Cmd+Z undo).
     private var appliedHistory: [AIKind] = []
 
@@ -66,17 +66,17 @@ final class ImageAIState {
     var hasAnyResult: Bool {
         return isUpscaled || isDewatermarked || isEnhanced
     }
-    
+
     /// Whether undo is possible.
     var canUndo: Bool {
         return !appliedHistory.isEmpty
     }
-    
+
     /// Record that a transform was applied (for undo history).
     func recordApplied(_ kind: AIKind) {
         appliedHistory.append(kind)
     }
-    
+
     /// Undo the most recently applied transform. Returns the kind that was undone, or nil.
     @discardableResult
     func undo() -> AIKind? {
