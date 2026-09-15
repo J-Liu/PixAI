@@ -143,11 +143,18 @@ final class RealESRGANEngine {
         let stride = tileInput - overlap
         var origins: [Int] = []
         var x = 0
-        while x < extent - tileInput {
+        while x + tileInput < extent {
             origins.append(x)
             x += stride
         }
-        origins.append(extent - tileInput)
+        // Ensure the last tile starts at least `stride` after the previous one,
+        // or exactly at extent - tileInput if that's further.
+        let lastOrigin = extent - tileInput
+        if origins.isEmpty || lastOrigin - origins.last! >= stride {
+            origins.append(lastOrigin)
+        } else {
+            origins.append(lastOrigin)
+        }
         return origins
     }
 
@@ -227,10 +234,22 @@ final class RealESRGANEngine {
                     let key = yi * 1000 + xi
                     var out: [UInt8]? = tileCache[key]
                     if out == nil {
-                        let tileRect = CGRect(x: tx, y: ty, width: tileInput, height: tileInput)
-                        guard let tileCG = cgImage.cropping(to: tileRect) else {
-                            Logger.shared.log("RealESRGAN: ERROR - tile crop failed")
-                            throw PluginManager.PluginError.downloadFailed("tile crop failed")
+                        let tileRect = CGRect(x: CGFloat(tx), y: CGFloat(ty), width: CGFloat(tileInput), height: CGFloat(tileInput))
+                        // Crop with edge replication for tiles that extend beyond image boundaries
+                        var tileCG: CGImage
+                        if tx + tileInput > w || ty + tileInput > h {
+                            // Tile extends beyond image - need edge-replicated padding
+                            guard let padded = Self.padTile(cgImage, tx: tx, ty: ty, tileSize: tileInput) else {
+                                Logger.shared.log("RealESRGAN: ERROR - tile padding failed")
+                                throw PluginManager.PluginError.downloadFailed("tile padding failed")
+                            }
+                            tileCG = padded
+                        } else {
+                            guard let cropped = cgImage.cropping(to: tileRect) else {
+                                Logger.shared.log("RealESRGAN: ERROR - tile crop failed")
+                                throw PluginManager.PluginError.downloadFailed("tile crop failed")
+                            }
+                            tileCG = cropped
                         }
                         out = try inferTile(tileCG)
                         Logger.shared.log("RealESRGAN: tile inference complete, checking cancellation")
@@ -275,7 +294,9 @@ final class RealESRGANEngine {
                             let wx = ramp(ic, edgeFull: leftEdge || rightEdge)
                             let wt = wx * wy
                             if wt <= 0 { continue }
-                            let srcIdx = (r - ty * 4) * tileOutput * 4 + c * 4
+                            // Convert global output column to tile-local output column
+                            let localC = c - tx * 4
+                            let srcIdx = (r - ty * 4) * tileOutput * 4 + localC * 4
                             let dstIdx = bandRow * W * 4 + c * 4
                             // Bounds check
                             guard srcIdx + 2 < tileOut.count, dstIdx + 2 < accum.count else {
@@ -455,6 +476,72 @@ final class RealESRGANEngine {
         }
 
         return ctx.makeImage() ?? image
+    }
+
+    /// Pad a tile that extends beyond image boundaries using edge replication.
+    /// `tx`, `ty` are the tile origin in the source image coordinate space.
+    private static func padTile(_ image: CGImage, tx: Int, ty: Int, tileSize: Int) -> CGImage? {
+        let imgW = image.width, imgH = image.height
+        // Compute the intersection of tile with image bounds
+        let srcX = max(0, tx)
+        let srcY = max(0, ty)
+        let srcW = min(tx + tileSize, imgW) - srcX
+        let srcH = min(ty + tileSize, imgH) - srcY
+        guard srcW > 0, srcH > 0 else { return nil }
+
+        // Create tileSize×tileSize context
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: tileSize, height: tileSize,
+            bitsPerComponent: 8, bytesPerRow: tileSize * 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // Destination position in the tile (0-based tile coordinates)
+        let dstX = max(0, -tx)
+        let dstY = max(0, -ty)
+
+        // Draw the available portion
+        if let cropped = image.cropping(to: CGRect(x: srcX, y: srcY, width: srcW, height: srcH)) {
+            ctx.draw(cropped, in: CGRect(x: dstX, y: dstY, width: srcW, height: srcH))
+        }
+
+        // Edge-replicate for right padding
+        if tx + tileSize > imgW {
+            let rightSrcX = imgW - 1
+            let rightSrcY = max(0, ty)
+            let rightSrcH = min(ty + tileSize, imgH) - rightSrcY
+            let rightDstX = imgW - tx
+            let rightDstW = tx + tileSize - imgW
+            if rightSrcH > 0, let rightCol = image.cropping(to: CGRect(x: rightSrcX, y: rightSrcY, width: 1, height: rightSrcH)) {
+                ctx.draw(rightCol, in: CGRect(x: rightDstX, y: dstY, width: rightDstW, height: rightSrcH))
+            }
+        }
+
+        // Edge-replicate for bottom padding
+        if ty + tileSize > imgH {
+            let bottomSrcX = max(0, tx)
+            let bottomSrcY = imgH - 1
+            let bottomSrcW = min(tx + tileSize, imgW) - bottomSrcX
+            let bottomDstY = imgH - ty
+            let bottomDstH = ty + tileSize - imgH
+            if bottomSrcW > 0, let bottomRow = image.cropping(to: CGRect(x: bottomSrcX, y: bottomSrcY, width: bottomSrcW, height: 1)) {
+                ctx.draw(bottomRow, in: CGRect(x: dstX, y: bottomDstY, width: bottomSrcW, height: bottomDstH))
+            }
+        }
+
+        // Edge-replicate for corner (bottom-right)
+        if tx + tileSize > imgW && ty + tileSize > imgH {
+            if let corner = image.cropping(to: CGRect(x: imgW - 1, y: imgH - 1, width: 1, height: 1)) {
+                let cornerDstX = imgW - tx
+                let cornerDstY = imgH - ty
+                let cornerDstW = tx + tileSize - imgW
+                let cornerDstH = ty + tileSize - imgH
+                ctx.draw(corner, in: CGRect(x: cornerDstX, y: cornerDstY, width: cornerDstW, height: cornerDstH))
+            }
+        }
+
+        return ctx.makeImage()
     }
 
     /// Build a CGImage from a tight BGRA8 buffer (row 0 = top).
