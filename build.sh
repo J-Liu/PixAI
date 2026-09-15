@@ -126,18 +126,13 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_OUTPUT" "$APP_BUNDLE/Contents/MacOS/PixAI"
 chmod +x "$APP_BUNDLE/Contents/MacOS/PixAI"
 
-# Compile icon (macOS 27 .icon format → Assets.car)
-if [ -d "$SCRIPT_DIR/Resources/PixAI.icon" ]; then
-    echo "   🔧 Compiling icon..."
-    xcrun actool "$SCRIPT_DIR/Resources/PixAI.icon" \
-        --compile "$APP_BUNDLE/Contents/Resources" \
-        --platform macosx \
-        --minimum-deployment-target 14.0 \
-        --app-icon PixAI \
-        --output-partial-info-plist /dev/null 2>/dev/null
-    echo "   📌 Icon compiled: Assets.car"
+# Copy compiled icon (Assets.car from Resources/Compiled)
+if [ -f "$SCRIPT_DIR/Resources/Compiled/Assets.car" ]; then
+    cp "$SCRIPT_DIR/Resources/Compiled/Assets.car" "$APP_BUNDLE/Contents/Resources/Assets.car"
+    echo "   📌 Icon copied: Assets.car"
 else
-    echo "   ⚠️ Warning: Icon not found at Resources/PixAI.icon"
+    echo "   ⚠️ Warning: Compiled icon not found at Resources/Compiled/Assets.car"
+    echo "      Run ./build_icon.sh locally to compile the icon, then commit the result."
 fi
 
 # Copy Info.plist
