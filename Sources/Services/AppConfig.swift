@@ -59,6 +59,13 @@ final class AppConfig {
         static let openPanelDirectoryMode = "last"
         /// Custom directory for open panel (used when mode is "custom").
         static func customOpenDirectory() -> String { "" }
+        // ── AI Enhancement defaults ─────────────────────────────────────
+        /// Enhance vibrance amount (0.0 - 1.0, default 0.15)
+        static let enhanceVibrance: Double = 0.15
+        /// Enhance contrast multiplier (0.5 - 2.0, default 1.05, 1.0 = no change)
+        static let enhanceContrast: Double = 1.05
+        /// Enhance sharpness amount (0.0 - 1.0, default 0.1)
+        static let enhanceSharpness: Double = 0.1
     }
 
     /// Allowed range for the image cache count.
@@ -95,6 +102,10 @@ final class AppConfig {
         var openPanelDirectoryMode: String?
         var customOpenDirectory: String?
         var lastOpenDirectory: String?
+        // AI Enhancement
+        var enhanceVibrance: Double?
+        var enhanceContrast: Double?
+        var enhanceSharpness: Double?
     }
 
     private let fileURL: URL
@@ -129,6 +140,10 @@ final class AppConfig {
     private var _openPanelDirectoryMode: String = Defaults.openPanelDirectoryMode
     private var _customOpenDirectory: String = Defaults.customOpenDirectory()
     private var _lastOpenDirectory: String = ""
+    // AI Enhancement
+    private var _enhanceVibrance: Double = Defaults.enhanceVibrance
+    private var _enhanceContrast: Double = Defaults.enhanceContrast
+    private var _enhanceSharpness: Double = Defaults.enhanceSharpness
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -553,6 +568,56 @@ final class AppConfig {
         return nil
     }
 
+    // MARK: - AI Enhancement settings
+
+    /// Enhance vibrance amount (0.0 - 1.0, default 0.15)
+    var enhanceVibrance: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _enhanceVibrance
+        }
+        set {
+            let clamped = min(max(newValue, 0), 1)
+            lock.lock()
+            let changed = _enhanceVibrance != clamped
+            if changed { _enhanceVibrance = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Enhance contrast multiplier (0.5 - 2.0, default 1.05, 1.0 = no change)
+    var enhanceContrast: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _enhanceContrast
+        }
+        set {
+            let clamped = min(max(newValue, 0.5), 2.0)
+            lock.lock()
+            let changed = _enhanceContrast != clamped
+            if changed { _enhanceContrast = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Enhance sharpness amount (0.0 - 1.0, default 0.1)
+    var enhanceSharpness: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _enhanceSharpness
+        }
+        set {
+            let clamped = min(max(newValue, 0), 1)
+            lock.lock()
+            let changed = _enhanceSharpness != clamped
+            if changed { _enhanceSharpness = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
     static func normalizeLanguage(_ value: String) -> String {
         switch value {
         case "zh": return "zh"
@@ -719,6 +784,10 @@ final class AppConfig {
         if let v = payload.openPanelDirectoryMode { _openPanelDirectoryMode = (v == "custom") ? "custom" : "last" }
         if let v = payload.customOpenDirectory, !v.isEmpty { _customOpenDirectory = (v as NSString).expandingTildeInPath }
         if let v = payload.lastOpenDirectory, !v.isEmpty { _lastOpenDirectory = (v as NSString).expandingTildeInPath }
+        // AI Enhancement
+        if let v = payload.enhanceVibrance { _enhanceVibrance = min(max(v, 0), 1) }
+        if let v = payload.enhanceContrast { _enhanceContrast = min(max(v, 0.5), 2.0) }
+        if let v = payload.enhanceSharpness { _enhanceSharpness = min(max(v, 0), 1) }
         lock.unlock()
     }
 
@@ -748,7 +817,10 @@ final class AppConfig {
             cropLivePhotoConfirm: _cropLivePhotoConfirm,
             openPanelDirectoryMode: _openPanelDirectoryMode,
             customOpenDirectory: _customOpenDirectory,
-            lastOpenDirectory: _lastOpenDirectory
+            lastOpenDirectory: _lastOpenDirectory,
+            enhanceVibrance: _enhanceVibrance,
+            enhanceContrast: _enhanceContrast,
+            enhanceSharpness: _enhanceSharpness
         )
         lock.unlock()
         do {

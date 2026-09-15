@@ -5,7 +5,8 @@ import AppKit
 
 /// The Preferences window (Cmd+, / PixAI ▸ Preferences...).
 ///
-/// Settings are grouped into tabs (General / Slideshow / AI / Advanced).
+/// Settings are grouped into tabs (General / AI / Advanced).
+/// AI tab has sub-tabs for each AI feature (Enhance / Upscale / Dewatermark / One-click).
 /// Every control writes straight to `AppConfig.shared`, which persists the
 /// new value to `~/.pixai/config.json` immediately and posts a change
 /// notification — so edits take effect at once without restarting.
@@ -13,7 +14,8 @@ final class PreferencesWindow: NSObject {
     static let shared = PreferencesWindow()
 
     private var window: NSWindow?
-    private var tabView: NSTabView!
+    private var mainTabView: NSTabView!
+    private var aiTabView: NSTabView!
 
     // Controls (kept as references so values can be refreshed).
     private var quitCheckbox: NSButton!
@@ -27,22 +29,40 @@ final class PreferencesWindow: NSObject {
     private var liveMutedCheckbox: NSButton!
     private var openDirModePopup: NSPopUpButton!
     private var openDirField: NSTextField!
+    // Slideshow (moved to General)
     private var intervalField: NSTextField!
     private var intervalStepper: NSStepper!
+    // Advanced
     private var cacheField: NSTextField!
     private var cacheStepper: NSStepper!
     private var logEnabledCheckbox: NSButton!
     private var logPathField: NSTextField!
 
+    // AI - Enhance tab
+    private var enhanceVibranceField: NSTextField!
+    private var enhanceVibranceStepper: NSStepper!
+    private var enhanceContrastField: NSTextField!
+    private var enhanceContrastStepper: NSStepper!
+    private var enhanceSharpnessField: NSTextField!
+    private var enhanceSharpnessStepper: NSStepper!
+
+    // AI - Upscale tab
     private var aiAutoUpscaleCheckbox: NSButton!
+
+    // AI - Dewatermark tab
     private var aiAutoDewatermarkCheckbox: NSButton!
+
+    // AI - One-click tab
     private var enhanceModePopup: NSPopUpButton!
     private var dedupAskContinueCheckbox: NSButton!
+
+    // Proxy
     private var proxyEnabledCheckbox: NSButton!
     private var proxyTypePopup: NSPopUpButton!
     private var proxyHostField: NSTextField!
     private var proxyPortField: NSTextField!
     private var proxyPortStepper: NSStepper!
+
     private var modelRows: [(plugin: ModelPlugin, statusLabel: NSTextField, enabledCheck: NSButton)] = []
     private var pluginObserver: NSObjectProtocol?
 
@@ -61,7 +81,6 @@ final class PreferencesWindow: NSObject {
         guard let window = window else { return }
         window.center()
         window.makeKeyAndOrderFront(nil)
-        // Don't give focus to text fields; give focus to the tab view itself
         window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -69,7 +88,7 @@ final class PreferencesWindow: NSObject {
     // MARK: - Building
 
     private func buildWindow() {
-        let contentSize = NSSize(width: 600, height: 440)
+        let contentSize = NSSize(width: 600, height: 520)
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
@@ -85,39 +104,32 @@ final class PreferencesWindow: NSObject {
         let margin: CGFloat = 20
         let tabHeight: CGFloat = contentSize.height - margin * 2
 
-        tabView = NSTabView(frame: NSRect(x: margin, y: margin, width: contentSize.width - margin * 2, height: tabHeight))
-        tabView.tabViewType = .topTabsBezelBorder
-        root.addSubview(tabView)
+        mainTabView = NSTabView(frame: NSRect(x: margin, y: margin, width: contentSize.width - margin * 2, height: tabHeight))
+        mainTabView.tabViewType = .topTabsBezelBorder
+        root.addSubview(mainTabView)
 
         let t = L10n.shared.t
 
         // ─── General Tab ───────────────────────────────────────────────
         let generalTab = NSTabViewItem(identifier: "general")
         generalTab.label = t("General")
-        generalTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: tabView.bounds.width - 20, height: tabHeight - 40))
+        generalTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildGeneralTab(generalTab.view!, t: t)
-        tabView.addTabViewItem(generalTab)
-
-        // ─── Slideshow Tab ─────────────────────────────────────────────
-        let slideshowTab = NSTabViewItem(identifier: "slideshow")
-        slideshowTab.label = t("Slideshow")
-        slideshowTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: tabView.bounds.width - 20, height: tabHeight - 40))
-        buildSlideshowTab(slideshowTab.view!, t: t)
-        tabView.addTabViewItem(slideshowTab)
+        mainTabView.addTabViewItem(generalTab)
 
         // ─── AI Tab ────────────────────────────────────────────────────
         let aiTab = NSTabViewItem(identifier: "ai")
         aiTab.label = t("AI")
-        aiTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: tabView.bounds.width - 20, height: tabHeight - 40))
+        aiTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildAITab(aiTab.view!, t: t)
-        tabView.addTabViewItem(aiTab)
+        mainTabView.addTabViewItem(aiTab)
 
         // ─── Advanced Tab ──────────────────────────────────────────────
         let advancedTab = NSTabViewItem(identifier: "advanced")
         advancedTab.label = t("Advanced")
-        advancedTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: tabView.bounds.width - 20, height: tabHeight - 40))
+        advancedTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildAdvancedTab(advancedTab.view!, t: t)
-        tabView.addTabViewItem(advancedTab)
+        mainTabView.addTabViewItem(advancedTab)
 
         changeObserver = NotificationCenter.default.addObserver(
             forName: AppConfig.didChangeNotification,
@@ -147,8 +159,7 @@ final class PreferencesWindow: NSObject {
             self?.syncModelRows()
         }
 
-        // Clear focus when switching tabs
-        tabView.delegate = self
+        mainTabView.delegate = self
 
         self.window = win
     }
@@ -156,7 +167,7 @@ final class PreferencesWindow: NSObject {
     private func buildGeneralTab(_ root: NSView, t: (String) -> String) {
         var y: CGFloat = 14
         let contentWidth = root.bounds.width - 28
-        let sectionHeight: CGFloat = 294
+        let sectionHeight: CGFloat = 350
 
         let box = makeSection(root, title: t("General"), x: 14, y: y, width: contentWidth, contentHeight: sectionHeight)
         quitCheckbox = makeCheck(box.contentView!, title: t("Quit app when the last window is closed"), x: 14, y: 10)
@@ -180,7 +191,6 @@ final class PreferencesWindow: NSObject {
         openDirModePopup.target = self
         openDirModePopup.action = #selector(openDirModeChanged(_:))
 
-        // Directory display (read-only text field)
         openDirField = NSTextField(frame: NSRect(x: 126 + openDirLabel.frame.width + 10, y: 93, width: 260, height: 24))
         openDirField.font = NSFont.systemFont(ofSize: 12)
         openDirField.isEditable = false
@@ -207,22 +217,40 @@ final class PreferencesWindow: NSObject {
         transitionStepper.action = #selector(transitionStepperChanged(_:))
         box.contentView!.addSubview(transitionStepper)
 
-        modelCheckPromptCheckbox = makeCheck(box.contentView!, title: t("Ask to download AI models at startup when missing"), x: 14, y: 152)
+        // Slideshow interval (moved here)
+        let intervalLabel = makeLabel(box.contentView!, text: t("Slideshow interval (1–600 s):"), x: 14, y: 152)
+        intervalField = NoAutoFocusNumberField(frame: NSRect(x: 14 + intervalLabel.frame.width + 10, y: 149, width: 64, height: 24))
+        intervalField.font = NSFont.systemFont(ofSize: 13)
+        intervalField.alignment = .center
+        box.contentView!.addSubview(intervalField)
+        intervalField.target = self
+        intervalField.action = #selector(intervalFieldChanged(_:))
+        intervalStepper = NSStepper(frame: NSRect(x: 14 + intervalLabel.frame.width + 82, y: 148, width: 19, height: 27))
+        intervalStepper.minValue = 1
+        intervalStepper.maxValue = 600
+        intervalStepper.increment = 1
+        intervalStepper.valueWraps = false
+        intervalStepper.integerValue = Int(AppConfig.shared.slideshowInterval)
+        intervalStepper.target = self
+        intervalStepper.action = #selector(intervalStepperChanged(_:))
+        box.contentView!.addSubview(intervalStepper)
+
+        modelCheckPromptCheckbox = makeCheck(box.contentView!, title: t("Ask to download AI models at startup when missing"), x: 14, y: 180)
         modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
         modelCheckPromptCheckbox.target = self
         modelCheckPromptCheckbox.action = #selector(toggleModelCheckPrompt(_:))
 
-        cropLivePhotoConfirmCheckbox = makeCheck(box.contentView!, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: 180)
+        cropLivePhotoConfirmCheckbox = makeCheck(box.contentView!, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: 208)
         cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
         cropLivePhotoConfirmCheckbox.target = self
         cropLivePhotoConfirmCheckbox.action = #selector(toggleCropLivePhotoConfirm(_:))
 
-        liveAutoPlayCheckbox = makeCheck(box.contentView!, title: t("Auto-play Live Photos when displayed"), x: 14, y: 208)
+        liveAutoPlayCheckbox = makeCheck(box.contentView!, title: t("Auto-play Live Photos when displayed"), x: 14, y: 236)
         liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
         liveAutoPlayCheckbox.target = self
         liveAutoPlayCheckbox.action = #selector(toggleLiveAutoPlay(_:))
 
-        liveMutedCheckbox = makeCheck(box.contentView!, title: t("Mute Live Photo playback"), x: 14, y: 236)
+        liveMutedCheckbox = makeCheck(box.contentView!, title: t("Mute Live Photo playback"), x: 14, y: 264)
         liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
         liveMutedCheckbox.target = self
         liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
@@ -236,64 +264,175 @@ final class PreferencesWindow: NSObject {
         root.addSubview(restoreButton)
     }
 
-    private func buildSlideshowTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
+    private func buildAITab(_ root: NSView, t: (String) -> String) {
+        let y: CGFloat = 14
         let contentWidth = root.bounds.width - 28
 
-        let box = makeSection(root, title: t("Slideshow"), x: 14, y: y, width: contentWidth, contentHeight: 36)
-        let intervalLabel = makeLabel(box.contentView!, text: t("Interval per slide (1–600 s):"), x: 14, y: 8)
-        intervalField = NoAutoFocusNumberField(frame: NSRect(x: 14 + intervalLabel.frame.width + 10, y: 5, width: 64, height: 24))
-        intervalField.font = NSFont.systemFont(ofSize: 13)
-        intervalField.alignment = .center
-        box.contentView!.addSubview(intervalField)
-        intervalField.target = self
-        intervalField.action = #selector(intervalFieldChanged(_:))
-        intervalStepper = NSStepper(frame: NSRect(x: 14 + intervalLabel.frame.width + 82, y: 4, width: 19, height: 27))
-        intervalStepper.minValue = 1
-        intervalStepper.maxValue = 600
-        intervalStepper.increment = 1
-        intervalStepper.valueWraps = false
-        intervalStepper.integerValue = Int(AppConfig.shared.slideshowInterval)
-        intervalStepper.target = self
-        intervalStepper.action = #selector(intervalStepperChanged(_:))
-        box.contentView!.addSubview(intervalStepper)
+        // Create inner tab view for AI sub-tabs
+        aiTabView = NSTabView(frame: NSRect(x: 14, y: y, width: contentWidth, height: root.bounds.height - y - 50))
+        aiTabView.tabViewType = .topTabsBezelBorder
+        root.addSubview(aiTabView)
+
+        // ─── Enhance sub-tab ──────────────────────────────────────────
+        let enhanceTab = NSTabViewItem(identifier: "enhance")
+        enhanceTab.label = t("Quality Enhance")
+        enhanceTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildEnhanceTab(enhanceTab.view!, t: t)
+        aiTabView.addTabViewItem(enhanceTab)
+
+        // ─── Upscale sub-tab ──────────────────────────────────────────
+        let upscaleTab = NSTabViewItem(identifier: "upscale")
+        upscaleTab.label = t("Super Resolution")
+        upscaleTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildUpscaleTab(upscaleTab.view!, t: t)
+        aiTabView.addTabViewItem(upscaleTab)
+
+        // ─── Dewatermark sub-tab ──────────────────────────────────────
+        let dewatermarkTab = NSTabViewItem(identifier: "dewatermark")
+        dewatermarkTab.label = t("Remove Watermark")
+        dewatermarkTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildDewatermarkTab(dewatermarkTab.view!, t: t)
+        aiTabView.addTabViewItem(dewatermarkTab)
+
+        // ─── One-click sub-tab ────────────────────────────────────────
+        let oneClickTab = NSTabViewItem(identifier: "oneclick")
+        oneClickTab.label = t("One-click Enhance")
+        oneClickTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildOneClickTab(oneClickTab.view!, t: t)
+        aiTabView.addTabViewItem(oneClickTab)
+
+        aiTabView.delegate = self
+    }
+
+    private func buildEnhanceTab(_ root: NSView, t: (String) -> String) {
+        var y: CGFloat = 14
+        let contentWidth = root.bounds.width - 28
+        let box = makeSection(root, title: t("Enhancement Parameters"), x: 14, y: y, width: contentWidth, contentHeight: 110)
         y += box.frame.height + 14
+        
+        var rowY: CGFloat = 10
+        
+        // Vibrance
+        let vibranceLabel = makeLabel(box.contentView!, text: t("Vibrance (0–1):"), x: 14, y: rowY)
+        enhanceVibranceField = NoAutoFocusNumberField(frame: NSRect(x: 14 + vibranceLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
+        enhanceVibranceField.font = NSFont.systemFont(ofSize: 13)
+        enhanceVibranceField.alignment = .center
+        box.contentView!.addSubview(enhanceVibranceField)
+        enhanceVibranceField.target = self
+        enhanceVibranceField.action = #selector(enhanceVibranceFieldChanged(_:))
+        enhanceVibranceStepper = NSStepper(frame: NSRect(x: 14 + vibranceLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
+        enhanceVibranceStepper.minValue = 0
+        enhanceVibranceStepper.maxValue = 1
+        enhanceVibranceStepper.increment = 0.05
+        enhanceVibranceStepper.valueWraps = false
+        enhanceVibranceStepper.doubleValue = AppConfig.shared.enhanceVibrance
+        enhanceVibranceStepper.target = self
+        enhanceVibranceStepper.action = #selector(enhanceVibranceStepperChanged(_:))
+        box.contentView!.addSubview(enhanceVibranceStepper)
+        rowY += 32
+
+        // Contrast
+        let contrastLabel = makeLabel(box.contentView!, text: t("Contrast (0.5–2.0, 1.0 = off):"), x: 14, y: rowY)
+        enhanceContrastField = NoAutoFocusNumberField(frame: NSRect(x: 14 + contrastLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
+        enhanceContrastField.font = NSFont.systemFont(ofSize: 13)
+        enhanceContrastField.alignment = .center
+        box.contentView!.addSubview(enhanceContrastField)
+        enhanceContrastField.target = self
+        enhanceContrastField.action = #selector(enhanceContrastFieldChanged(_:))
+        enhanceContrastStepper = NSStepper(frame: NSRect(x: 14 + contrastLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
+        enhanceContrastStepper.minValue = 0.5
+        enhanceContrastStepper.maxValue = 2.0
+        enhanceContrastStepper.increment = 0.05
+        enhanceContrastStepper.valueWraps = false
+        enhanceContrastStepper.doubleValue = AppConfig.shared.enhanceContrast
+        enhanceContrastStepper.target = self
+        enhanceContrastStepper.action = #selector(enhanceContrastStepperChanged(_:))
+        box.contentView!.addSubview(enhanceContrastStepper)
+        rowY += 32
+
+        // Sharpness
+        let sharpnessLabel = makeLabel(box.contentView!, text: t("Sharpness (0–1):"), x: 14, y: rowY)
+        enhanceSharpnessField = NoAutoFocusNumberField(frame: NSRect(x: 14 + sharpnessLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
+        enhanceSharpnessField.font = NSFont.systemFont(ofSize: 13)
+        enhanceSharpnessField.alignment = .center
+        box.contentView!.addSubview(enhanceSharpnessField)
+        enhanceSharpnessField.target = self
+        enhanceSharpnessField.action = #selector(enhanceSharpnessFieldChanged(_:))
+        enhanceSharpnessStepper = NSStepper(frame: NSRect(x: 14 + sharpnessLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
+        enhanceSharpnessStepper.minValue = 0
+        enhanceSharpnessStepper.maxValue = 1
+        enhanceSharpnessStepper.increment = 0.05
+        enhanceSharpnessStepper.valueWraps = false
+        enhanceSharpnessStepper.doubleValue = AppConfig.shared.enhanceSharpness
+        enhanceSharpnessStepper.target = self
+        enhanceSharpnessStepper.action = #selector(enhanceSharpnessStepperChanged(_:))
+        box.contentView!.addSubview(enhanceSharpnessStepper)
 
         let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
         restoreButton.title = t("Restore This Page Defaults")
         restoreButton.bezelStyle = .rounded
         restoreButton.target = self
-        restoreButton.action = #selector(restoreSlideshowDefaults(_:))
+        restoreButton.action = #selector(restoreEnhanceDefaults(_:))
         root.addSubview(restoreButton)
     }
 
-    private func buildAITab(_ root: NSView, t: (String) -> String) {
+    private func buildUpscaleTab(_ root: NSView, t: (String) -> String) {
         var y: CGFloat = 14
         let contentWidth = root.bounds.width - 28
-
-        let aiBox = makeSection(root, title: t("AI"), x: 14, y: y, width: contentWidth, contentHeight: 128)
-        aiAutoUpscaleCheckbox = makeCheck(aiBox.contentView!, title: t("Auto AI super-resolve small images on load"), x: 14, y: 10)
+        let box = makeSection(root, title: t("Super Resolution (Real-ESRGAN 4x)"), x: 14, y: y, width: contentWidth, contentHeight: 36)
+        y += box.frame.height + 14
+        
+        aiAutoUpscaleCheckbox = makeCheck(box.contentView!, title: t("Auto AI super-resolve small images on load"), x: 14, y: 8)
         aiAutoUpscaleCheckbox.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
         aiAutoUpscaleCheckbox.target = self
         aiAutoUpscaleCheckbox.action = #selector(toggleAutoUpscale(_:))
 
-        aiAutoDewatermarkCheckbox = makeCheck(aiBox.contentView!, title: t("Auto AI dewatermark on load"), x: 14, y: 38)
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreUpscaleDefaults(_:))
+        root.addSubview(restoreButton)
+    }
+
+    private func buildDewatermarkTab(_ root: NSView, t: (String) -> String) {
+        var y: CGFloat = 14
+        let contentWidth = root.bounds.width - 28
+        let box = makeSection(root, title: t("Watermark Removal (U2Net)"), x: 14, y: y, width: contentWidth, contentHeight: 36)
+        y += box.frame.height + 14
+        
+        aiAutoDewatermarkCheckbox = makeCheck(box.contentView!, title: t("Auto AI dewatermark on load"), x: 14, y: 8)
         aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
         aiAutoDewatermarkCheckbox.target = self
         aiAutoDewatermarkCheckbox.action = #selector(toggleAutoDewatermark(_:))
 
-        let modeLabel = makeLabel(aiBox.contentView!, text: t("One-click enhance:"), x: 14, y: 70)
-        enhanceModePopup = makePopup(aiBox.contentView!, items: [t("Both (dedup + dewatermark)"), t("Dedup only"), t("Watermark only")],
-                                     x: 14 + modeLabel.frame.width + 10, y: 66, width: 230)
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreDewatermarkDefaults(_:))
+        root.addSubview(restoreButton)
+    }
+
+    private func buildOneClickTab(_ root: NSView, t: (String) -> String) {
+        var y: CGFloat = 14
+        let contentWidth = root.bounds.width - 28
+
+        let box = makeSection(root, title: t("One-click Enhance Settings"), x: 14, y: y, width: contentWidth, contentHeight: 70)
+        
+        let modeLabel = makeLabel(box.contentView!, text: t("One-click enhance:"), x: 14, y: 10)
+        enhanceModePopup = makePopup(box.contentView!, items: [t("Both (dedup + dewatermark)"), t("Dedup only"), t("Watermark only")],
+                                     x: 14 + modeLabel.frame.width + 10, y: 6, width: 230)
         enhanceModePopup.target = self
         enhanceModePopup.action = #selector(enhanceModeChanged(_:))
 
-        dedupAskContinueCheckbox = makeCheck(aiBox.contentView!, title: t("Ask to continue between duplicate groups"), x: 14, y: 100)
+        dedupAskContinueCheckbox = makeCheck(box.contentView!, title: t("Ask to continue between duplicate groups"), x: 14, y: 38)
         dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
         dedupAskContinueCheckbox.target = self
         dedupAskContinueCheckbox.action = #selector(toggleDedupAskContinue(_:))
-        y += aiBox.frame.height + 14
+        y += box.frame.height + 14
 
+        // AI Models section
         let modelsBox = makeSection(root, title: t("AI Models"), x: 14, y: y, width: contentWidth, contentHeight: 72)
         modelRows = []
         var rowY: CGFloat = 10
@@ -329,7 +468,7 @@ final class PreferencesWindow: NSObject {
         restoreButton.title = t("Restore This Page Defaults")
         restoreButton.bezelStyle = .rounded
         restoreButton.target = self
-        restoreButton.action = #selector(restoreAIDefaults(_:))
+        restoreButton.action = #selector(restoreOneClickDefaults(_:))
         root.addSubview(restoreButton)
     }
 
@@ -360,7 +499,6 @@ final class PreferencesWindow: NSObject {
         proxyPortField = NoAutoFocusNumberField(frame: NSRect(x: 408, y: 39, width: 60, height: 24))
         proxyPortField.font = NSFont.systemFont(ofSize: 13)
         proxyPortField.alignment = .center
-        // Use plain number format (no thousands separator)
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
         proxyPortField.formatter = formatter
@@ -486,6 +624,11 @@ final class PreferencesWindow: NSObject {
             let transition = AppConfig.shared.imageTransitionDuration
             if abs(self.transitionField.doubleValue - transition) > 0.001 { self.transitionField.stringValue = String(format: "%.1f", transition) }
             if abs(self.transitionStepper.doubleValue - transition) > 0.001 { self.transitionStepper.doubleValue = transition }
+            
+            let interval = Int(AppConfig.shared.slideshowInterval)
+            if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
+            if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
+            
             self.modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
             self.cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
             self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
@@ -493,19 +636,28 @@ final class PreferencesWindow: NSObject {
             let openDirMode = AppConfig.shared.openPanelDirectoryMode
             let openDirModeIdx = (openDirMode == "custom") ? 1 : 0
             if self.openDirModePopup.indexOfSelectedItem != openDirModeIdx { self.openDirModePopup.selectItem(at: openDirModeIdx) }
-            // Show current directory name (last opened or custom)
             let currentDir = AppConfig.shared.getOpenPanelDirectory()
             let displayDir = currentDir?.lastPathComponent ?? ""
             if self.openDirField.stringValue != displayDir { self.openDirField.stringValue = displayDir }
-            let interval = Int(AppConfig.shared.slideshowInterval)
-            if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
-            if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
+            
             let cache = AppConfig.shared.imageCacheCount
             if self.cacheField.integerValue != cache { self.cacheField.integerValue = cache }
             if self.cacheStepper.integerValue != cache { self.cacheStepper.integerValue = cache }
             self.logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
             let path = AppConfig.shared.logPath
             if self.logPathField.stringValue != path { self.logPathField.stringValue = path }
+            
+            // AI Enhance
+            let vibrance = AppConfig.shared.enhanceVibrance
+            if abs(self.enhanceVibranceField.doubleValue - vibrance) > 0.001 { self.enhanceVibranceField.stringValue = String(format: "%.2f", vibrance) }
+            if abs(self.enhanceVibranceStepper.doubleValue - vibrance) > 0.001 { self.enhanceVibranceStepper.doubleValue = vibrance }
+            let contrast = AppConfig.shared.enhanceContrast
+            if abs(self.enhanceContrastField.doubleValue - contrast) > 0.001 { self.enhanceContrastField.stringValue = String(format: "%.2f", contrast) }
+            if abs(self.enhanceContrastStepper.doubleValue - contrast) > 0.001 { self.enhanceContrastStepper.doubleValue = contrast }
+            let sharpness = AppConfig.shared.enhanceSharpness
+            if abs(self.enhanceSharpnessField.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessField.stringValue = String(format: "%.2f", sharpness) }
+            if abs(self.enhanceSharpnessStepper.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessStepper.doubleValue = sharpness }
+            
             self.aiAutoUpscaleCheckbox.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
             self.aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
             let modeIdx: Int
@@ -548,7 +700,6 @@ final class PreferencesWindow: NSObject {
     @objc private func openDirModeChanged(_ sender: NSPopUpButton) {
         let isChoose = sender.indexOfSelectedItem == 1
         if isChoose {
-            // Pop up directory chooser immediately
             guard let window = window else { return }
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
@@ -557,20 +708,17 @@ final class PreferencesWindow: NSObject {
             panel.canCreateDirectories = true
             panel.prompt = "Select"
             panel.message = "Choose the default directory for the Open panel."
-
             var startDir = URL(fileURLWithPath: AppConfig.shared.customOpenDirectory, isDirectory: true)
             if !FileManager.default.fileExists(atPath: startDir.path) {
                 startDir = FileManager.default.homeDirectoryForCurrentUser
             }
             panel.directoryURL = startDir
-
             panel.beginSheetModal(for: window) { [weak self] response in
                 if response == .OK, let dir = panel.url {
                     AppConfig.shared.openPanelDirectoryMode = "custom"
                     AppConfig.shared.customOpenDirectory = dir.path
                     self?.openDirField.stringValue = dir.lastPathComponent
                 } else {
-                    // User cancelled, revert to "Last open"
                     self?.openDirModePopup.selectItem(at: 0)
                     AppConfig.shared.openPanelDirectoryMode = "last"
                 }
@@ -633,14 +781,12 @@ final class PreferencesWindow: NSObject {
         panel.canCreateDirectories = true
         panel.prompt = "Select"
         panel.message = "Choose the directory for the log file (PixAI.log will be created inside it)."
-
         var startDir = URL(fileURLWithPath: AppConfig.shared.logPath, isDirectory: false)
             .deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: startDir.path) {
             startDir = FileManager.default.homeDirectoryForCurrentUser
         }
         panel.directoryURL = startDir
-
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let dir = panel.url else { return }
             let path = dir.appendingPathComponent("PixAI.log").path
@@ -682,6 +828,59 @@ final class PreferencesWindow: NSObject {
 
     @objc private func toggleCropLivePhotoConfirm(_ sender: NSButton) {
         AppConfig.shared.cropLivePhotoConfirm = (sender.state == .on)
+    }
+
+    // MARK: - AI Enhance Actions
+
+    @objc private func enhanceVibranceStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        enhanceVibranceField.stringValue = String(format: "%.2f", value)
+        AppConfig.shared.enhanceVibrance = value
+    }
+
+    @objc private func enhanceVibranceFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0), 1)
+        sender.stringValue = String(format: "%.2f", clamped)
+        enhanceVibranceStepper.doubleValue = clamped
+        AppConfig.shared.enhanceVibrance = clamped
+    }
+
+    @objc private func enhanceContrastStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        enhanceContrastField.stringValue = String(format: "%.2f", value)
+        AppConfig.shared.enhanceContrast = value
+    }
+
+    @objc private func enhanceContrastFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0.5), 2.0)
+        sender.stringValue = String(format: "%.2f", clamped)
+        enhanceContrastStepper.doubleValue = clamped
+        AppConfig.shared.enhanceContrast = clamped
+    }
+
+    @objc private func enhanceSharpnessStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        enhanceSharpnessField.stringValue = String(format: "%.2f", value)
+        AppConfig.shared.enhanceSharpness = value
+    }
+
+    @objc private func enhanceSharpnessFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0), 1)
+        sender.stringValue = String(format: "%.2f", clamped)
+        enhanceSharpnessStepper.doubleValue = clamped
+        AppConfig.shared.enhanceSharpness = clamped
     }
 
     @objc private func toggleAutoUpscale(_ sender: NSButton) {
@@ -748,15 +947,24 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.livePhotoMuted = AppConfig.Defaults.livePhotoMuted
         AppConfig.shared.openPanelDirectoryMode = AppConfig.Defaults.openPanelDirectoryMode
         AppConfig.shared.customOpenDirectory = AppConfig.Defaults.customOpenDirectory()
-    }
-
-    @objc private func restoreSlideshowDefaults(_ sender: Any?) {
         AppConfig.shared.slideshowInterval = AppConfig.Defaults.slideshowInterval
     }
 
-    @objc private func restoreAIDefaults(_ sender: Any?) {
+    @objc private func restoreEnhanceDefaults(_ sender: Any?) {
+        AppConfig.shared.enhanceVibrance = AppConfig.Defaults.enhanceVibrance
+        AppConfig.shared.enhanceContrast = AppConfig.Defaults.enhanceContrast
+        AppConfig.shared.enhanceSharpness = AppConfig.Defaults.enhanceSharpness
+    }
+
+    @objc private func restoreUpscaleDefaults(_ sender: Any?) {
         AppConfig.shared.aiAutoUpscaleEnabled = AppConfig.Defaults.aiAutoUpscaleEnabled
+    }
+
+    @objc private func restoreDewatermarkDefaults(_ sender: Any?) {
         AppConfig.shared.aiAutoDewatermarkEnabled = AppConfig.Defaults.aiAutoDewatermarkEnabled
+    }
+
+    @objc private func restoreOneClickDefaults(_ sender: Any?) {
         AppConfig.shared.aiEnhanceMode = AppConfig.Defaults.aiEnhanceMode
         AppConfig.shared.dedupAskContinue = AppConfig.Defaults.dedupAskContinue
     }
@@ -847,8 +1055,6 @@ private final class FlippedBox: NSBox {
     override var isFlipped: Bool { true }
 }
 
-/// A text field that doesn't accept keyboard focus by default (tab navigation skips it).
-/// Focus is only gained when the user clicks directly on it.
 private final class NoAutoFocusTextField: NSTextField {
     private var allowFocus = false
 
@@ -887,7 +1093,6 @@ private final class NoAutoFocusNumberField: NSTextField {
 
 extension PreferencesWindow: NSTabViewDelegate {
     func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-        // Clear focus when switching tabs
         window?.makeFirstResponder(nil)
     }
 }

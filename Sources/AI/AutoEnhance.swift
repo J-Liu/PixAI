@@ -11,33 +11,38 @@ import CoreGraphics
 enum AutoEnhance {
     static var isAvailable: Bool { return true }
 
-    /// Apply auto-enhancement with subtle, natural adjustments.
+    /// Apply auto-enhancement with configurable adjustments from AppConfig.
     static func enhance(_ cgImage: CGImage) -> CGImage? {
+        let cfg = AppConfig.shared
+        let vibrance = cfg.enhanceVibrance
+        let contrast = cfg.enhanceContrast
+        let sharpness = cfg.enhanceSharpness
+        
         let input = CIImage(cgImage: cgImage)
         var current = input
         
-        // 1. Slight vibrance boost - very subtle color enhancement
-        if let vibrance = CIFilter(name: "CIVibrance") {
-            vibrance.setValue(current, forKey: kCIInputImageKey)
-            vibrance.setValue(0.15, forKey: kCIInputAmountKey)
-            if let output = vibrance.outputImage {
+        // 1. Vibrance boost
+        if vibrance > 0, let vibranceFilter = CIFilter(name: "CIVibrance") {
+            vibranceFilter.setValue(current, forKey: kCIInputImageKey)
+            vibranceFilter.setValue(vibrance, forKey: kCIInputAmountKey)
+            if let output = vibranceFilter.outputImage {
                 current = output
             }
         }
         
-        // 2. Slight contrast boost - improves overall tonality
-        if let contrast = CIFilter(name: "CIColorControls") {
-            contrast.setValue(current, forKey: kCIInputImageKey)
-            contrast.setValue(1.05, forKey: kCIInputContrastKey) // 1.0 = no change
-            if let output = contrast.outputImage {
+        // 2. Contrast adjustment
+        if abs(contrast - 1.0) > 0.001, let contrastFilter = CIFilter(name: "CIColorControls") {
+            contrastFilter.setValue(current, forKey: kCIInputImageKey)
+            contrastFilter.setValue(contrast, forKey: kCIInputContrastKey)
+            if let output = contrastFilter.outputImage {
                 current = output
             }
         }
         
-        // 3. Subtle sharpening - improve clarity without over-sharpening
-        if let sharpen = CIFilter(name: "CISharpenLuminance") {
+        // 3. Sharpening
+        if sharpness > 0, let sharpen = CIFilter(name: "CISharpenLuminance") {
             sharpen.setValue(current, forKey: kCIInputImageKey)
-            sharpen.setValue(0.1, forKey: kCIInputSharpnessKey)
+            sharpen.setValue(sharpness, forKey: kCIInputSharpnessKey)
             if let output = sharpen.outputImage {
                 current = output
             }
