@@ -66,6 +66,11 @@ final class AppConfig {
         static let enhanceContrast: Double = 1.05
         /// Enhance sharpness amount (0.0 - 1.0, default 0.1)
         static let enhanceSharpness: Double = 0.1
+        // ── Watermark removal defaults ──────────────────────────────
+        /// Saliency threshold for watermark detection (0.1 - 0.9, default 0.5)
+        static let watermarkMaskThreshold: Double = 0.5
+        /// Minimum mask fraction to treat as watermark (0.0001 - 0.1, default 0.001)
+        static let watermarkMinMaskFraction: Double = 0.001
     }
 
     /// Allowed range for the image cache count.
@@ -106,6 +111,9 @@ final class AppConfig {
         var enhanceVibrance: Double?
         var enhanceContrast: Double?
         var enhanceSharpness: Double?
+        // Watermark removal
+        var watermarkMaskThreshold: Double?
+        var watermarkMinMaskFraction: Double?
     }
 
     private let fileURL: URL
@@ -144,6 +152,9 @@ final class AppConfig {
     private var _enhanceVibrance: Double = Defaults.enhanceVibrance
     private var _enhanceContrast: Double = Defaults.enhanceContrast
     private var _enhanceSharpness: Double = Defaults.enhanceSharpness
+    // Watermark removal
+    private var _watermarkMaskThreshold: Double = Defaults.watermarkMaskThreshold
+    private var _watermarkMinMaskFraction: Double = Defaults.watermarkMinMaskFraction
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -618,6 +629,42 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Watermark removal settings
+
+    /// Saliency threshold for watermark detection (0.1 - 0.9, default 0.5).
+    /// Lower values = more sensitive (detects fainter watermarks but more false positives).
+    var watermarkMaskThreshold: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _watermarkMaskThreshold
+        }
+        set {
+            let clamped = min(max(newValue, 0.1), 0.9)
+            lock.lock()
+            let changed = _watermarkMaskThreshold != clamped
+            if changed { _watermarkMaskThreshold = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Minimum fraction of image that must be masked to treat as watermark (0.0001 - 0.1, default 0.001).
+    /// Lower values = detects smaller watermarks; higher = only large watermarks.
+    var watermarkMinMaskFraction: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _watermarkMinMaskFraction
+        }
+        set {
+            let clamped = min(max(newValue, 0.0001), 0.1)
+            lock.lock()
+            let changed = _watermarkMinMaskFraction != clamped
+            if changed { _watermarkMinMaskFraction = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
     static func normalizeLanguage(_ value: String) -> String {
         switch value {
         case "zh": return "zh"
@@ -788,6 +835,9 @@ final class AppConfig {
         if let v = payload.enhanceVibrance { _enhanceVibrance = min(max(v, 0), 1) }
         if let v = payload.enhanceContrast { _enhanceContrast = min(max(v, 0.5), 2.0) }
         if let v = payload.enhanceSharpness { _enhanceSharpness = min(max(v, 0), 1) }
+        // Watermark removal
+        if let v = payload.watermarkMaskThreshold { _watermarkMaskThreshold = min(max(v, 0.1), 0.9) }
+        if let v = payload.watermarkMinMaskFraction { _watermarkMinMaskFraction = min(max(v, 0.0001), 0.1) }
         lock.unlock()
     }
 
@@ -820,7 +870,9 @@ final class AppConfig {
             lastOpenDirectory: _lastOpenDirectory,
             enhanceVibrance: _enhanceVibrance,
             enhanceContrast: _enhanceContrast,
-            enhanceSharpness: _enhanceSharpness
+            enhanceSharpness: _enhanceSharpness,
+            watermarkMaskThreshold: _watermarkMaskThreshold,
+            watermarkMinMaskFraction: _watermarkMinMaskFraction
         )
         lock.unlock()
         do {

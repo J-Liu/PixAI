@@ -44,6 +44,7 @@ final class PluginManager {
     private var states: [String: PluginState] = [:]
     private var activeTasks: [String: URLSessionTask] = [:]
     private var cancelled: Set<String> = []
+    private var progressCallbacks: [String: (Double) -> Void] = [:]
 
     private init() {
         isInitializing = true
@@ -138,6 +139,7 @@ final class PluginManager {
         }
         cancelled.remove(plugin.id)
         states[plugin.id] = .downloading(progress: 0)
+        progressCallbacks[plugin.id] = progress
         lock.unlock()
         postChange()
 
@@ -176,6 +178,7 @@ final class PluginManager {
             self.lock.lock()
             self.states[plugin.id] = .ready
             self.activeTasks.removeValue(forKey: plugin.id)
+            self.progressCallbacks.removeValue(forKey: plugin.id)
             self.lock.unlock()
             postChange()
             DispatchQueue.main.async {
@@ -193,6 +196,7 @@ final class PluginManager {
         }
         activeTasks.removeValue(forKey: plugin.id)
         cancelled.remove(plugin.id)
+        progressCallbacks.removeValue(forKey: plugin.id)
         lock.unlock()
         postChange()
         DispatchQueue.main.async { [weak self] in
@@ -212,6 +216,7 @@ final class PluginManager {
         }
         cancelled.insert(plugin.id)
         activeTasks.removeValue(forKey: plugin.id)
+        progressCallbacks.removeValue(forKey: plugin.id)
         states[plugin.id] = .notDownloaded
         lock.unlock()
         postChange()
@@ -291,10 +296,15 @@ final class PluginManager {
         if case .downloading = states[plugin.id] ?? .notDownloaded {
             states[plugin.id] = .downloading(progress: value)
         }
-        let isDownloading = true
+        let callback = progressCallbacks[plugin.id]
         lock.unlock()
-        _ = isDownloading
         postChange()
+        // Call progress callback on main thread
+        if let callback = callback {
+            DispatchQueue.main.async {
+                callback(value)
+            }
+        }
     }
 
     /// Minimal URLSessionDownloadTask delegate capturing the temp file URL and progress.

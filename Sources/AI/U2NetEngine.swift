@@ -11,27 +11,22 @@ import ExecuTorch
 ///
 /// The model expects a 320×320 RGB input with ImageNet normalization and emits
 /// a 320×320 saliency mask in [0,1]. The mask is min-max normalized, resized to
-/// the original image size, thresholded at 0.5, and the masked pixels are
-/// removed with an onion-peel (multi-source BFS) inpaint that propagates color
-/// from the surrounding non-masked region, followed by a light local blur.
+/// the original image size, thresholded at the configured threshold, and the masked
+/// pixels are removed with an onion-peel (multi-source BFS) inpaint that propagates
+/// color from the surrounding non-masked region, followed by a light local blur.
 final class U2NetEngine {
     static let shared = U2NetEngine()
 
     private let lock = NSLock()
     private var module: Module?
 
-    /// Saliency threshold (after min-max normalization) for "is watermark".
-    private let maskThreshold: Float = 0.5
-    /// Masked area below this fraction of the image → treat as "no watermark".
-    private let minMaskFraction: Double = 0.001
+    var isAvailable: Bool {
+        return PluginManager.shared.isEnabled(ModelPlugin.u2net)
+    }
 
     /// ImageNet normalization constants.
     private let mean: [Float] = [0.485, 0.456, 0.406]
     private let std: [Float] = [0.229, 0.224, 0.225]
-
-    var isAvailable: Bool {
-        return PluginManager.shared.isEnabled(ModelPlugin.u2net)
-    }
 
     // MARK: - Loading
 
@@ -68,6 +63,10 @@ final class U2NetEngine {
             throw PluginManager.PluginError.downloadFailed("image too small")
         }
 
+        // Get thresholds from config
+        let maskThreshold = Float(AppConfig.shared.watermarkMaskThreshold)
+        let minMaskFraction = AppConfig.shared.watermarkMinMaskFraction
+
         // 1) Saliency mask at 320×320.
         let maskSmall = try predictMask(cgImage)
 
@@ -93,7 +92,7 @@ final class U2NetEngine {
         let maskedCount = target.filter { $0 }.count
         let fraction = Double(maskedCount) / Double(w * h)
         if fraction < minMaskFraction {
-            Logger.shared.log("U2Net: no significant watermark detected (mask \(fraction))")
+            Logger.shared.log("U2Net: no significant watermark detected (mask \(fraction), threshold \(minMaskFraction))")
             return (cgImage, 0)
         }
 
@@ -105,7 +104,7 @@ final class U2NetEngine {
         guard let result = Self.cgImage(fromRGBA: pixels, width: w, height: h) else {
             throw PluginManager.PluginError.downloadFailed("result image creation failed")
         }
-        Logger.shared.log("U2Net: removed watermark covering \(String(format: "%.2f%%", fraction * 100)) of the image")
+        Logger.shared.log("U2Net: removed watermark covering \(String(format: "%.2f%%", fraction * 100)) of the image (threshold \(maskThreshold))")
         return (result, fraction)
     }
 

@@ -4,12 +4,6 @@
 import AppKit
 
 /// The Preferences window (Cmd+, / PixAI ▸ Preferences...).
-///
-/// Settings are grouped into tabs (General / AI / Advanced).
-/// AI tab has sub-tabs for each AI feature (Enhance / Upscale / Dewatermark / One-click).
-/// Every control writes straight to `AppConfig.shared`, which persists the
-/// new value to `~/.pixai/config.json` immediately and posts a change
-/// notification — so edits take effect at once without restarting.
 final class PreferencesWindow: NSObject {
     static let shared = PreferencesWindow()
 
@@ -17,7 +11,7 @@ final class PreferencesWindow: NSObject {
     private var mainTabView: NSTabView!
     private var aiTabView: NSTabView!
 
-    // Controls (kept as references so values can be refreshed).
+    // Controls
     private var quitCheckbox: NSButton!
     private var deleteConfirmCheckbox: NSButton!
     private var languagePopup: NSPopUpButton!
@@ -29,10 +23,8 @@ final class PreferencesWindow: NSObject {
     private var liveMutedCheckbox: NSButton!
     private var openDirModePopup: NSPopUpButton!
     private var openDirField: NSTextField!
-    // Slideshow (moved to General)
     private var intervalField: NSTextField!
     private var intervalStepper: NSStepper!
-    // Advanced
     private var cacheField: NSTextField!
     private var cacheStepper: NSStepper!
     private var logEnabledCheckbox: NSButton!
@@ -48,13 +40,20 @@ final class PreferencesWindow: NSObject {
 
     // AI - Upscale tab
     private var aiAutoUpscaleCheckbox: NSButton!
+    private var smallImageThresholdField: NSTextField!
+    private var smallImageThresholdStepper: NSStepper!
 
     // AI - Dewatermark tab
     private var aiAutoDewatermarkCheckbox: NSButton!
+    private var watermarkThresholdField: NSTextField!
+    private var watermarkThresholdStepper: NSStepper!
+    private var watermarkMinFractionField: NSTextField!
+    private var watermarkMinFractionStepper: NSStepper!
 
     // AI - One-click tab
     private var enhanceModePopup: NSPopUpButton!
     private var dedupAskContinueCheckbox: NSButton!
+    private var oneClickStatusLabel: NSTextField!
 
     // Proxy
     private var proxyEnabledCheckbox: NSButton!
@@ -63,7 +62,7 @@ final class PreferencesWindow: NSObject {
     private var proxyPortField: NSTextField!
     private var proxyPortStepper: NSStepper!
 
-    private var modelRows: [(plugin: ModelPlugin, statusLabel: NSTextField, enabledCheck: NSButton)] = []
+    private var modelRows: [(plugin: ModelPlugin, nameLabel: NSTextField, statusLabel: NSTextField, downloadButton: NSButton, enabledCheck: NSButton, uninstallButton: NSButton)] = []
     private var pluginObserver: NSObjectProtocol?
 
     private var changeObserver: NSObjectProtocol?
@@ -85,16 +84,13 @@ final class PreferencesWindow: NSObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Show Preferences window and navigate to AI > One-click Enhance tab (where AI Models are).
     func showAIModelsTab() {
         show()
-        // Select AI tab (index 1) in main tab view
         if mainTabView.numberOfTabViewItems > 1 {
             mainTabView.selectTabViewItem(at: 1)
         }
-        // Select One-click Enhance sub-tab (index 3) in AI tab view
-        if let aiTab = aiTabView, aiTab.numberOfTabViewItems > 3 {
-            aiTab.selectTabViewItem(at: 3)
+        if let aiTab = aiTabView, aiTab.numberOfTabViewItems > 4 {
+            aiTab.selectTabViewItem(at: 4)
         }
     }
 
@@ -111,7 +107,7 @@ final class PreferencesWindow: NSObject {
         win.title = L10n.shared.t("Preferences")
         win.isReleasedWhenClosed = false
 
-        let root = FlippedView(frame: NSRect(origin: .zero, size: contentSize))
+        let root = NSView(frame: NSRect(origin: .zero, size: contentSize))
         win.contentView = root
 
         let margin: CGFloat = 20
@@ -123,24 +119,21 @@ final class PreferencesWindow: NSObject {
 
         let t = L10n.shared.t
 
-        // ─── General Tab ───────────────────────────────────────────────
         let generalTab = NSTabViewItem(identifier: "general")
         generalTab.label = t("General")
-        generalTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
+        generalTab.view = NSView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildGeneralTab(generalTab.view!, t: t)
         mainTabView.addTabViewItem(generalTab)
 
-        // ─── AI Tab ────────────────────────────────────────────────────
         let aiTab = NSTabViewItem(identifier: "ai")
         aiTab.label = t("AI")
-        aiTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
+        aiTab.view = NSView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildAITab(aiTab.view!, t: t)
         mainTabView.addTabViewItem(aiTab)
 
-        // ─── Advanced Tab ──────────────────────────────────────────────
         let advancedTab = NSTabViewItem(identifier: "advanced")
         advancedTab.label = t("Advanced")
-        advancedTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
+        advancedTab.view = NSView(frame: NSRect(x: 0, y: 0, width: mainTabView.bounds.width - 20, height: tabHeight - 40))
         buildAdvancedTab(advancedTab.view!, t: t)
         mainTabView.addTabViewItem(advancedTab)
 
@@ -173,431 +166,39 @@ final class PreferencesWindow: NSObject {
         }
 
         mainTabView.delegate = self
-
         self.window = win
     }
 
-    private func buildGeneralTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-        let sectionHeight: CGFloat = 350
+    // MARK: - Section Builder (simple NSView with title label)
 
-        let box = makeSection(root, title: t("General"), x: 14, y: y, width: contentWidth, contentHeight: sectionHeight)
-        quitCheckbox = makeCheck(box.contentView!, title: t("Quit app when the last window is closed"), x: 14, y: 10)
-        quitCheckbox.state = AppConfig.shared.quitOnLastWindowClosed ? .on : .off
-        quitCheckbox.target = self
-        quitCheckbox.action = #selector(toggleQuitOnLastClose(_:))
-
-        deleteConfirmCheckbox = makeCheck(box.contentView!, title: t("Ask for confirmation before deleting a file"), x: 14, y: 38)
-        deleteConfirmCheckbox.state = AppConfig.shared.deleteConfirmationEnabled ? .on : .off
-        deleteConfirmCheckbox.target = self
-        deleteConfirmCheckbox.action = #selector(toggleDeleteConfirm(_:))
-
-        let langLabel = makeLabel(box.contentView!, text: t("Language"), x: 14, y: 68)
-        languagePopup = makePopup(box.contentView!, items: ["English", "简体中文", "繁體中文"], x: 14 + langLabel.frame.width + 10, y: 64, width: 120)
-        languagePopup.target = self
-        languagePopup.action = #selector(languageChanged(_:))
-
-        // Open directory mode
-        let openDirLabel = makeLabel(box.contentView!, text: t("Default directory:"), x: 14, y: 96)
-        openDirModePopup = makePopup(box.contentView!, items: [t("Last open"), t("Choose...")], x: 14 + openDirLabel.frame.width + 10, y: 92, width: 100)
-        openDirModePopup.target = self
-        openDirModePopup.action = #selector(openDirModeChanged(_:))
-
-        openDirField = NSTextField(frame: NSRect(x: 126 + openDirLabel.frame.width + 10, y: 93, width: 260, height: 24))
-        openDirField.font = NSFont.systemFont(ofSize: 12)
-        openDirField.isEditable = false
-        openDirField.isBezeled = true
-        openDirField.drawsBackground = true
-        openDirField.backgroundColor = NSColor.controlBackgroundColor
-        openDirField.focusRingType = .none
-        box.contentView!.addSubview(openDirField)
-
-        let transitionLabel = makeLabel(box.contentView!, text: t("Image transition duration (0–2 s, 0 = off):"), x: 14, y: 124)
-        transitionField = NoAutoFocusTextField(frame: NSRect(x: 14 + transitionLabel.frame.width + 10, y: 121, width: 56, height: 24))
-        transitionField.font = NSFont.systemFont(ofSize: 13)
-        transitionField.alignment = .center
-        transitionField.target = self
-        transitionField.action = #selector(transitionFieldChanged(_:))
-        box.contentView!.addSubview(transitionField)
-        transitionStepper = NSStepper(frame: NSRect(x: 14 + transitionLabel.frame.width + 78, y: 120, width: 19, height: 27))
-        transitionStepper.minValue = 0
-        transitionStepper.maxValue = 2
-        transitionStepper.increment = 0.1
-        transitionStepper.valueWraps = false
-        transitionStepper.doubleValue = AppConfig.shared.imageTransitionDuration
-        transitionStepper.target = self
-        transitionStepper.action = #selector(transitionStepperChanged(_:))
-        box.contentView!.addSubview(transitionStepper)
-
-        // Slideshow interval (moved here)
-        let intervalLabel = makeLabel(box.contentView!, text: t("Slideshow interval (1–600 s):"), x: 14, y: 152)
-        intervalField = NoAutoFocusNumberField(frame: NSRect(x: 14 + intervalLabel.frame.width + 10, y: 149, width: 64, height: 24))
-        intervalField.font = NSFont.systemFont(ofSize: 13)
-        intervalField.alignment = .center
-        box.contentView!.addSubview(intervalField)
-        intervalField.target = self
-        intervalField.action = #selector(intervalFieldChanged(_:))
-        intervalStepper = NSStepper(frame: NSRect(x: 14 + intervalLabel.frame.width + 82, y: 148, width: 19, height: 27))
-        intervalStepper.minValue = 1
-        intervalStepper.maxValue = 600
-        intervalStepper.increment = 1
-        intervalStepper.valueWraps = false
-        intervalStepper.integerValue = Int(AppConfig.shared.slideshowInterval)
-        intervalStepper.target = self
-        intervalStepper.action = #selector(intervalStepperChanged(_:))
-        box.contentView!.addSubview(intervalStepper)
-
-        modelCheckPromptCheckbox = makeCheck(box.contentView!, title: t("Ask to download AI models at startup when missing"), x: 14, y: 180)
-        modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
-        modelCheckPromptCheckbox.target = self
-        modelCheckPromptCheckbox.action = #selector(toggleModelCheckPrompt(_:))
-
-        cropLivePhotoConfirmCheckbox = makeCheck(box.contentView!, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: 208)
-        cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
-        cropLivePhotoConfirmCheckbox.target = self
-        cropLivePhotoConfirmCheckbox.action = #selector(toggleCropLivePhotoConfirm(_:))
-
-        liveAutoPlayCheckbox = makeCheck(box.contentView!, title: t("Auto-play Live Photos when displayed"), x: 14, y: 236)
-        liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
-        liveAutoPlayCheckbox.target = self
-        liveAutoPlayCheckbox.action = #selector(toggleLiveAutoPlay(_:))
-
-        liveMutedCheckbox = makeCheck(box.contentView!, title: t("Mute Live Photo playback"), x: 14, y: 264)
-        liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
-        liveMutedCheckbox.target = self
-        liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
-        y += box.frame.height + 14
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreGeneralDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func buildAITab(_ root: NSView, t: (String) -> String) {
-        let y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-
-        // Create inner tab view for AI sub-tabs
-        aiTabView = NSTabView(frame: NSRect(x: 14, y: y, width: contentWidth, height: root.bounds.height - y - 50))
-        aiTabView.tabViewType = .topTabsBezelBorder
-        root.addSubview(aiTabView)
-
-        // ─── Enhance sub-tab ──────────────────────────────────────────
-        let enhanceTab = NSTabViewItem(identifier: "enhance")
-        enhanceTab.label = t("Quality Enhance")
-        enhanceTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
-        buildEnhanceTab(enhanceTab.view!, t: t)
-        aiTabView.addTabViewItem(enhanceTab)
-
-        // ─── Upscale sub-tab ──────────────────────────────────────────
-        let upscaleTab = NSTabViewItem(identifier: "upscale")
-        upscaleTab.label = t("Super Resolution")
-        upscaleTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
-        buildUpscaleTab(upscaleTab.view!, t: t)
-        aiTabView.addTabViewItem(upscaleTab)
-
-        // ─── Dewatermark sub-tab ──────────────────────────────────────
-        let dewatermarkTab = NSTabViewItem(identifier: "dewatermark")
-        dewatermarkTab.label = t("Remove Watermark")
-        dewatermarkTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
-        buildDewatermarkTab(dewatermarkTab.view!, t: t)
-        aiTabView.addTabViewItem(dewatermarkTab)
-
-        // ─── One-click sub-tab ────────────────────────────────────────
-        let oneClickTab = NSTabViewItem(identifier: "oneclick")
-        oneClickTab.label = t("One-click Enhance")
-        oneClickTab.view = FlippedView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
-        buildOneClickTab(oneClickTab.view!, t: t)
-        aiTabView.addTabViewItem(oneClickTab)
-
-        aiTabView.delegate = self
-    }
-
-    private func buildEnhanceTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-        let box = makeSection(root, title: t("Enhancement Parameters"), x: 14, y: y, width: contentWidth, contentHeight: 110)
-        y += box.frame.height + 14
+    private func makeSection(_ root: NSView, title: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> NSView {
+        let container = NSView(frame: NSRect(x: x, y: y, width: width, height: height))
         
-        var rowY: CGFloat = 10
+        // Title label at top-left
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.sizeToFit()
+        titleLabel.frame = NSRect(x: 0, y: height - 20, width: min(titleLabel.frame.width + 4, width), height: 18)
+        container.addSubview(titleLabel)
         
-        // Vibrance
-        let vibranceLabel = makeLabel(box.contentView!, text: t("Vibrance (0–1):"), x: 14, y: rowY)
-        enhanceVibranceField = NoAutoFocusNumberField(frame: NSRect(x: 14 + vibranceLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
-        enhanceVibranceField.font = NSFont.systemFont(ofSize: 13)
-        enhanceVibranceField.alignment = .center
-        box.contentView!.addSubview(enhanceVibranceField)
-        enhanceVibranceField.target = self
-        enhanceVibranceField.action = #selector(enhanceVibranceFieldChanged(_:))
-        enhanceVibranceStepper = NSStepper(frame: NSRect(x: 14 + vibranceLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
-        enhanceVibranceStepper.minValue = 0
-        enhanceVibranceStepper.maxValue = 1
-        enhanceVibranceStepper.increment = 0.05
-        enhanceVibranceStepper.valueWraps = false
-        enhanceVibranceStepper.doubleValue = AppConfig.shared.enhanceVibrance
-        enhanceVibranceStepper.target = self
-        enhanceVibranceStepper.action = #selector(enhanceVibranceStepperChanged(_:))
-        box.contentView!.addSubview(enhanceVibranceStepper)
-        rowY += 32
-
-        // Contrast
-        let contrastLabel = makeLabel(box.contentView!, text: t("Contrast (0.5–2.0, 1.0 = off):"), x: 14, y: rowY)
-        enhanceContrastField = NoAutoFocusNumberField(frame: NSRect(x: 14 + contrastLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
-        enhanceContrastField.font = NSFont.systemFont(ofSize: 13)
-        enhanceContrastField.alignment = .center
-        box.contentView!.addSubview(enhanceContrastField)
-        enhanceContrastField.target = self
-        enhanceContrastField.action = #selector(enhanceContrastFieldChanged(_:))
-        enhanceContrastStepper = NSStepper(frame: NSRect(x: 14 + contrastLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
-        enhanceContrastStepper.minValue = 0.5
-        enhanceContrastStepper.maxValue = 2.0
-        enhanceContrastStepper.increment = 0.05
-        enhanceContrastStepper.valueWraps = false
-        enhanceContrastStepper.doubleValue = AppConfig.shared.enhanceContrast
-        enhanceContrastStepper.target = self
-        enhanceContrastStepper.action = #selector(enhanceContrastStepperChanged(_:))
-        box.contentView!.addSubview(enhanceContrastStepper)
-        rowY += 32
-
-        // Sharpness
-        let sharpnessLabel = makeLabel(box.contentView!, text: t("Sharpness (0–1):"), x: 14, y: rowY)
-        enhanceSharpnessField = NoAutoFocusNumberField(frame: NSRect(x: 14 + sharpnessLabel.frame.width + 10, y: rowY - 3, width: 64, height: 24))
-        enhanceSharpnessField.font = NSFont.systemFont(ofSize: 13)
-        enhanceSharpnessField.alignment = .center
-        box.contentView!.addSubview(enhanceSharpnessField)
-        enhanceSharpnessField.target = self
-        enhanceSharpnessField.action = #selector(enhanceSharpnessFieldChanged(_:))
-        enhanceSharpnessStepper = NSStepper(frame: NSRect(x: 14 + sharpnessLabel.frame.width + 82, y: rowY - 4, width: 19, height: 27))
-        enhanceSharpnessStepper.minValue = 0
-        enhanceSharpnessStepper.maxValue = 1
-        enhanceSharpnessStepper.increment = 0.05
-        enhanceSharpnessStepper.valueWraps = false
-        enhanceSharpnessStepper.doubleValue = AppConfig.shared.enhanceSharpness
-        enhanceSharpnessStepper.target = self
-        enhanceSharpnessStepper.action = #selector(enhanceSharpnessStepperChanged(_:))
-        box.contentView!.addSubview(enhanceSharpnessStepper)
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreEnhanceDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func buildUpscaleTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-        let box = makeSection(root, title: t("Super Resolution (Real-ESRGAN 4x)"), x: 14, y: y, width: contentWidth, contentHeight: 36)
-        y += box.frame.height + 14
+        // Content view below title
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height - 28))
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        contentView.layer?.cornerRadius = 6
+        contentView.layer?.borderWidth = 1
+        contentView.layer?.borderColor = NSColor.separatorColor.cgColor
+        container.addSubview(contentView)
         
-        aiAutoUpscaleCheckbox = makeCheck(box.contentView!, title: t("Auto AI super-resolve small images on load"), x: 14, y: 8)
-        aiAutoUpscaleCheckbox.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
-        aiAutoUpscaleCheckbox.target = self
-        aiAutoUpscaleCheckbox.action = #selector(toggleAutoUpscale(_:))
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreUpscaleDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func buildDewatermarkTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-        let box = makeSection(root, title: t("Watermark Removal (U2Net)"), x: 14, y: y, width: contentWidth, contentHeight: 36)
-        y += box.frame.height + 14
-        
-        aiAutoDewatermarkCheckbox = makeCheck(box.contentView!, title: t("Auto AI dewatermark on load"), x: 14, y: 8)
-        aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
-        aiAutoDewatermarkCheckbox.target = self
-        aiAutoDewatermarkCheckbox.action = #selector(toggleAutoDewatermark(_:))
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreDewatermarkDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func buildOneClickTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-
-        let box = makeSection(root, title: t("One-click Enhance Settings"), x: 14, y: y, width: contentWidth, contentHeight: 70)
-        
-        let modeLabel = makeLabel(box.contentView!, text: t("One-click enhance:"), x: 14, y: 10)
-        enhanceModePopup = makePopup(box.contentView!, items: [t("Both (dedup + dewatermark)"), t("Dedup only"), t("Watermark only")],
-                                     x: 14 + modeLabel.frame.width + 10, y: 6, width: 230)
-        enhanceModePopup.target = self
-        enhanceModePopup.action = #selector(enhanceModeChanged(_:))
-
-        dedupAskContinueCheckbox = makeCheck(box.contentView!, title: t("Ask to continue between duplicate groups"), x: 14, y: 38)
-        dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
-        dedupAskContinueCheckbox.target = self
-        dedupAskContinueCheckbox.action = #selector(toggleDedupAskContinue(_:))
-        y += box.frame.height + 14
-
-        // AI Models section
-        let modelsBox = makeSection(root, title: t("AI Models"), x: 14, y: y, width: contentWidth, contentHeight: 72)
-        modelRows = []
-        var rowY: CGFloat = 10
-        for plugin in ModelPlugin.all {
-            let statusLabel = makeLabel(modelsBox.contentView!, text: plugin.displayName, x: 14, y: rowY)
-            statusLabel.frame = NSRect(x: 14, y: rowY, width: 176, height: statusLabel.frame.height)
-
-            let downloadButton = NSButton(frame: NSRect(x: 196, y: rowY - 3, width: 92, height: 26))
-            downloadButton.title = t("Download")
-            downloadButton.bezelStyle = .rounded
-            downloadButton.target = self
-            downloadButton.action = #selector(modelDownloadTapped(_:))
-            modelsBox.contentView!.addSubview(downloadButton)
-
-            let enabledCheck = makeCheck(modelsBox.contentView!, title: t("Enabled"), x: 296, y: rowY)
-            enabledCheck.frame = NSRect(x: 296, y: rowY, width: 110, height: enabledCheck.frame.height)
-            enabledCheck.target = self
-            enabledCheck.action = #selector(modelEnableToggled(_:))
-
-            let uninstallButton = NSButton(frame: NSRect(x: 414, y: rowY - 3, width: 60, height: 26))
-            uninstallButton.title = t("Uninstall")
-            uninstallButton.bezelStyle = .rounded
-            uninstallButton.target = self
-            uninstallButton.action = #selector(modelUninstallTapped(_:))
-            modelsBox.contentView!.addSubview(uninstallButton)
-
-            modelRows.append((plugin: plugin, statusLabel: statusLabel, enabledCheck: enabledCheck))
-            rowY += 32
-        }
-        y += modelsBox.frame.height + 14
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreOneClickDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func buildAdvancedTab(_ root: NSView, t: (String) -> String) {
-        var y: CGFloat = 14
-        let contentWidth = root.bounds.width - 28
-
-        let proxyBox = makeSection(root, title: t("Proxy"), x: 14, y: y, width: contentWidth, contentHeight: 70)
-        proxyEnabledCheckbox = makeCheck(proxyBox.contentView!, title: t("Enable proxy for model downloads"), x: 14, y: 10)
-        proxyEnabledCheckbox.state = AppConfig.shared.proxyEnabled ? .on : .off
-        proxyEnabledCheckbox.target = self
-        proxyEnabledCheckbox.action = #selector(toggleProxyEnabled(_:))
-
-        _ = makeLabel(proxyBox.contentView!, text: t("Type:"), x: 14, y: 42)
-        proxyTypePopup = makePopup(proxyBox.contentView!, items: ["HTTP", "SOCKS"], x: 58, y: 38, width: 90)
-        proxyTypePopup.target = self
-        proxyTypePopup.action = #selector(proxyTypeChanged(_:))
-
-        _ = makeLabel(proxyBox.contentView!, text: t("Host:"), x: 162, y: 42)
-        proxyHostField = NoAutoFocusTextField(frame: NSRect(x: 202, y: 39, width: 150, height: 24))
-        proxyHostField.font = NSFont.systemFont(ofSize: 13)
-        proxyHostField.placeholderString = "127.0.0.1"
-        proxyHostField.target = self
-        proxyHostField.action = #selector(proxyHostFieldChanged(_:))
-        proxyBox.contentView!.addSubview(proxyHostField)
-
-        _ = makeLabel(proxyBox.contentView!, text: t("Port:"), x: 366, y: 42)
-        proxyPortField = NoAutoFocusNumberField(frame: NSRect(x: 408, y: 39, width: 60, height: 24))
-        proxyPortField.font = NSFont.systemFont(ofSize: 13)
-        proxyPortField.alignment = .center
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .none
-        proxyPortField.formatter = formatter
-        proxyBox.contentView!.addSubview(proxyPortField)
-        proxyPortField.target = self
-        proxyPortField.action = #selector(proxyPortFieldChanged(_:))
-        proxyPortStepper = NSStepper(frame: NSRect(x: 474, y: 38, width: 19, height: 27))
-        proxyPortStepper.minValue = 1
-        proxyPortStepper.maxValue = 65535
-        proxyPortStepper.increment = 1
-        proxyPortStepper.valueWraps = false
-        proxyPortStepper.integerValue = AppConfig.shared.proxyPort
-        proxyPortStepper.target = self
-        proxyPortStepper.action = #selector(proxyPortStepperChanged(_:))
-        proxyBox.contentView!.addSubview(proxyPortStepper)
-        y += proxyBox.frame.height + 14
-
-        let cacheBox = makeSection(root, title: t("Image Cache"), x: 14, y: y, width: contentWidth, contentHeight: 36)
-        let cacheLabel = makeLabel(cacheBox.contentView!, text: t("Cached images (1–20):"), x: 14, y: 8)
-        cacheField = NoAutoFocusNumberField(frame: NSRect(x: 14 + cacheLabel.frame.width + 10, y: 5, width: 64, height: 24))
-        cacheField.font = NSFont.systemFont(ofSize: 13)
-        cacheField.alignment = .center
-        cacheBox.contentView!.addSubview(cacheField)
-        cacheField.target = self
-        cacheField.action = #selector(cacheFieldChanged(_:))
-        cacheStepper = NSStepper(frame: NSRect(x: 14 + cacheLabel.frame.width + 82, y: 4, width: 19, height: 27))
-        cacheStepper.minValue = Double(AppConfig.cacheCountRange.lowerBound)
-        cacheStepper.maxValue = Double(AppConfig.cacheCountRange.upperBound)
-        cacheStepper.increment = 1
-        cacheStepper.valueWraps = false
-        cacheStepper.integerValue = AppConfig.shared.imageCacheCount
-        cacheStepper.target = self
-        cacheStepper.action = #selector(cacheStepperChanged(_:))
-        cacheBox.contentView!.addSubview(cacheStepper)
-        y += cacheBox.frame.height + 14
-
-        let logBox = makeSection(root, title: t("Logging"), x: 14, y: y, width: contentWidth, contentHeight: 68)
-        logEnabledCheckbox = makeCheck(logBox.contentView!, title: t("Enable logging (default: off)"), x: 14, y: 10)
-        logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
-        logEnabledCheckbox.target = self
-        logEnabledCheckbox.action = #selector(toggleLogEnabled(_:))
-
-        let pathLabel = makeLabel(logBox.contentView!, text: t("Log file:"), x: 14, y: 42)
-        let browseWidth: CGFloat = 70
-        let fieldX = 14 + pathLabel.frame.width + 10
-        let fieldW = contentWidth - (fieldX) - browseWidth - 8 - 14
-        logPathField = NoAutoFocusTextField(frame: NSRect(x: fieldX, y: 39, width: fieldW, height: 24))
-        logPathField.font = NSFont.systemFont(ofSize: 12)
-        logPathField.placeholderString = AppConfig.Defaults.logPath()
-        logPathField.target = self
-        logPathField.action = #selector(logPathFieldChanged(_:))
-        logBox.contentView!.addSubview(logPathField)
-
-        let browseButton = NSButton(frame: NSRect(x: fieldX + fieldW + 8, y: 38, width: browseWidth, height: 26))
-        browseButton.title = t("Browse...")
-        browseButton.bezelStyle = .rounded
-        browseButton.target = self
-        browseButton.action = #selector(browseLogPath(_:))
-        logBox.contentView!.addSubview(browseButton)
-        y += logBox.frame.height + 14
-
-        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: y, width: 140, height: 26))
-        restoreButton.title = t("Restore This Page Defaults")
-        restoreButton.bezelStyle = .rounded
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreAdvancedDefaults(_:))
-        root.addSubview(restoreButton)
-    }
-
-    private func makeSection(_ root: NSView, title: String, x: CGFloat, y: CGFloat, width: CGFloat, contentHeight: CGFloat) -> FlippedBox {
-        let titleArea: CGFloat = 30
-        let box = FlippedBox(frame: NSRect(x: x, y: y, width: width, height: contentHeight + titleArea))
-        box.titlePosition = .atTop
-        box.titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        box.title = title
-        let content = FlippedView()
-        box.contentView = content
-        root.addSubview(box)
-        return box
+        root.addSubview(container)
+        return contentView
     }
 
     private func makeCheck(_ parent: NSView, title: String, x: CGFloat, y: CGFloat) -> NSButton {
         let check = NSButton(checkboxWithTitle: title, target: nil, action: nil)
         check.font = NSFont.systemFont(ofSize: 13)
         check.sizeToFit()
-        check.frame = NSRect(x: x, y: y, width: max(check.frame.width, parent.bounds.width - x - 8), height: check.frame.height)
+        check.frame = NSRect(x: x, y: y, width: check.frame.width, height: check.frame.height)
         parent.addSubview(check)
         return check
     }
@@ -617,6 +218,601 @@ final class PreferencesWindow: NSObject {
         popup.addItems(withTitles: items)
         parent.addSubview(popup)
         return popup
+    }
+
+    // MARK: - General Tab
+
+    private func buildGeneralTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreGeneralDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space above button
+        let sectionHeight = rootHeight - 54  // 54 = 14 (margin) + 26 (button) + 14 (gap)
+        let box = makeSection(root, title: t("General"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10  // Space from top edge
+        var rowY = boxHeight - topPadding  // First item's top edge position
+        quitCheckbox = makeCheck(box, title: t("Quit app when the last window is closed"), x: 14, y: rowY - 18)
+        quitCheckbox.state = AppConfig.shared.quitOnLastWindowClosed ? .on : .off
+        quitCheckbox.target = self
+        quitCheckbox.action = #selector(toggleQuitOnLastClose(_:))
+        rowY -= 28
+
+        deleteConfirmCheckbox = makeCheck(box, title: t("Ask for confirmation before deleting a file"), x: 14, y: rowY - 18)
+        deleteConfirmCheckbox.state = AppConfig.shared.deleteConfirmationEnabled ? .on : .off
+        deleteConfirmCheckbox.target = self
+        deleteConfirmCheckbox.action = #selector(toggleDeleteConfirm(_:))
+        rowY -= 28
+
+        let langLabel = makeLabel(box, text: t("Language"), x: 14, y: rowY - 16)
+        languagePopup = makePopup(box, items: ["English", "简体中文", "繁體中文"], x: langLabel.frame.maxX + 10, y: rowY - 18, width: 120)
+        languagePopup.target = self
+        languagePopup.action = #selector(languageChanged(_:))
+        rowY -= 28
+
+        let openDirLabel = makeLabel(box, text: t("Default directory:"), x: 14, y: rowY - 16)
+        openDirModePopup = makePopup(box, items: [t("Last open"), t("Choose...")], x: openDirLabel.frame.maxX + 10, y: rowY - 18, width: 100)
+        openDirModePopup.target = self
+        openDirModePopup.action = #selector(openDirModeChanged(_:))
+        openDirField = NSTextField(frame: NSRect(x: openDirModePopup.frame.maxX + 10, y: rowY - 20, width: 220, height: 24))
+        openDirField.font = NSFont.systemFont(ofSize: 12)
+        openDirField.isEditable = false
+        openDirField.isBezeled = true
+        openDirField.drawsBackground = true
+        openDirField.backgroundColor = NSColor.controlBackgroundColor
+        openDirField.focusRingType = .none
+        box.addSubview(openDirField)
+        rowY -= 28
+
+        let transitionLabel = makeLabel(box, text: t("Image transition duration (0–2 s, 0 = off):"), x: 14, y: rowY - 16)
+        transitionField = NSTextField(frame: NSRect(x: transitionLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
+        transitionField.font = NSFont.systemFont(ofSize: 13)
+        transitionField.alignment = .center
+        transitionField.target = self
+        transitionField.action = #selector(transitionFieldChanged(_:))
+        box.addSubview(transitionField)
+        transitionStepper = NSStepper(frame: NSRect(x: transitionField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        transitionStepper.minValue = 0
+        transitionStepper.maxValue = 2
+        transitionStepper.increment = 0.1
+        transitionStepper.valueWraps = false
+        transitionStepper.doubleValue = AppConfig.shared.imageTransitionDuration
+        transitionStepper.target = self
+        transitionStepper.action = #selector(transitionStepperChanged(_:))
+        box.addSubview(transitionStepper)
+        rowY -= 28
+
+        let intervalLabel = makeLabel(box, text: t("Slideshow interval (1–600 s):"), x: 14, y: rowY - 16)
+        intervalField = NSTextField(frame: NSRect(x: intervalLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+        intervalField.font = NSFont.systemFont(ofSize: 13)
+        intervalField.alignment = .center
+        box.addSubview(intervalField)
+        intervalField.target = self
+        intervalField.action = #selector(intervalFieldChanged(_:))
+        intervalStepper = NSStepper(frame: NSRect(x: intervalField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        intervalStepper.minValue = 1
+        intervalStepper.maxValue = 600
+        intervalStepper.increment = 1
+        intervalStepper.valueWraps = false
+        intervalStepper.integerValue = Int(AppConfig.shared.slideshowInterval)
+        intervalStepper.target = self
+        intervalStepper.action = #selector(intervalStepperChanged(_:))
+        box.addSubview(intervalStepper)
+        rowY -= 28
+
+        modelCheckPromptCheckbox = makeCheck(box, title: t("Ask to download AI models at startup when missing"), x: 14, y: rowY - 18)
+        modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
+        modelCheckPromptCheckbox.target = self
+        modelCheckPromptCheckbox.action = #selector(toggleModelCheckPrompt(_:))
+        rowY -= 28
+
+        cropLivePhotoConfirmCheckbox = makeCheck(box, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: rowY - 18)
+        cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
+        cropLivePhotoConfirmCheckbox.target = self
+        cropLivePhotoConfirmCheckbox.action = #selector(toggleCropLivePhotoConfirm(_:))
+        rowY -= 28
+
+        liveAutoPlayCheckbox = makeCheck(box, title: t("Auto-play Live Photos when displayed"), x: 14, y: rowY - 18)
+        liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
+        liveAutoPlayCheckbox.target = self
+        liveAutoPlayCheckbox.action = #selector(toggleLiveAutoPlay(_:))
+        rowY -= 28
+
+        liveMutedCheckbox = makeCheck(box, title: t("Mute Live Photo playback"), x: 14, y: rowY - 18)
+        liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
+        liveMutedCheckbox.target = self
+        liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
+    }
+
+    // MARK: - AI Tab
+
+    private func buildAITab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+
+        // AI tab view fills the available space
+        aiTabView = NSTabView(frame: NSRect(x: 14, y: 14, width: contentWidth, height: root.bounds.height - 28))
+        aiTabView.tabViewType = .topTabsBezelBorder
+        root.addSubview(aiTabView)
+
+        let enhanceTab = NSTabViewItem(identifier: "enhance")
+        enhanceTab.label = t("Quality Enhance")
+        enhanceTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildEnhanceTab(enhanceTab.view!, t: t)
+        aiTabView.addTabViewItem(enhanceTab)
+
+        let upscaleTab = NSTabViewItem(identifier: "upscale")
+        upscaleTab.label = t("Super Resolution")
+        upscaleTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildUpscaleTab(upscaleTab.view!, t: t)
+        aiTabView.addTabViewItem(upscaleTab)
+
+        let dewatermarkTab = NSTabViewItem(identifier: "dewatermark")
+        dewatermarkTab.label = t("Remove Watermark")
+        dewatermarkTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildDewatermarkTab(dewatermarkTab.view!, t: t)
+        aiTabView.addTabViewItem(dewatermarkTab)
+
+        let oneClickTab = NSTabViewItem(identifier: "oneclick")
+        oneClickTab.label = t("One-click Enhance")
+        oneClickTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildOneClickTab(oneClickTab.view!, t: t)
+        aiTabView.addTabViewItem(oneClickTab)
+
+        let modelsTab = NSTabViewItem(identifier: "models")
+        modelsTab.label = t("AI Models")
+        modelsTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildModelsTab(modelsTab.view!, t: t)
+        aiTabView.addTabViewItem(modelsTab)
+
+        aiTabView.delegate = self
+    }
+
+    private func buildEnhanceTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreEnhanceDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space
+        let sectionHeight = rootHeight - 54
+        let box = makeSection(root, title: t("Enhancement Parameters"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        var rowY = boxHeight - topPadding
+        let vibranceLabel = makeLabel(box, text: t("Vibrance (0–1):"), x: 14, y: rowY - 16)
+        enhanceVibranceField = NSTextField(frame: NSRect(x: vibranceLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+        enhanceVibranceField.font = NSFont.systemFont(ofSize: 13)
+        enhanceVibranceField.alignment = .center
+        box.addSubview(enhanceVibranceField)
+        enhanceVibranceField.target = self
+        enhanceVibranceField.action = #selector(enhanceVibranceFieldChanged(_:))
+        enhanceVibranceStepper = NSStepper(frame: NSRect(x: enhanceVibranceField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        enhanceVibranceStepper.minValue = 0
+        enhanceVibranceStepper.maxValue = 1
+        enhanceVibranceStepper.increment = 0.05
+        enhanceVibranceStepper.valueWraps = false
+        enhanceVibranceStepper.doubleValue = AppConfig.shared.enhanceVibrance
+        enhanceVibranceStepper.target = self
+        enhanceVibranceStepper.action = #selector(enhanceVibranceStepperChanged(_:))
+        box.addSubview(enhanceVibranceStepper)
+        rowY -= 34
+
+        let contrastLabel = makeLabel(box, text: t("Contrast (0.5–2.0, 1.0 = off):"), x: 14, y: rowY - 16)
+        enhanceContrastField = NSTextField(frame: NSRect(x: contrastLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+        enhanceContrastField.font = NSFont.systemFont(ofSize: 13)
+        enhanceContrastField.alignment = .center
+        box.addSubview(enhanceContrastField)
+        enhanceContrastField.target = self
+        enhanceContrastField.action = #selector(enhanceContrastFieldChanged(_:))
+        enhanceContrastStepper = NSStepper(frame: NSRect(x: enhanceContrastField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        enhanceContrastStepper.minValue = 0.5
+        enhanceContrastStepper.maxValue = 2.0
+        enhanceContrastStepper.increment = 0.05
+        enhanceContrastStepper.valueWraps = false
+        enhanceContrastStepper.doubleValue = AppConfig.shared.enhanceContrast
+        enhanceContrastStepper.target = self
+        enhanceContrastStepper.action = #selector(enhanceContrastStepperChanged(_:))
+        box.addSubview(enhanceContrastStepper)
+        rowY -= 34
+
+        let sharpnessLabel = makeLabel(box, text: t("Sharpness (0–1):"), x: 14, y: rowY - 16)
+        enhanceSharpnessField = NSTextField(frame: NSRect(x: sharpnessLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+        enhanceSharpnessField.font = NSFont.systemFont(ofSize: 13)
+        enhanceSharpnessField.alignment = .center
+        box.addSubview(enhanceSharpnessField)
+        enhanceSharpnessField.target = self
+        enhanceSharpnessField.action = #selector(enhanceSharpnessFieldChanged(_:))
+        enhanceSharpnessStepper = NSStepper(frame: NSRect(x: enhanceSharpnessField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        enhanceSharpnessStepper.minValue = 0
+        enhanceSharpnessStepper.maxValue = 1
+        enhanceSharpnessStepper.increment = 0.05
+        enhanceSharpnessStepper.valueWraps = false
+        enhanceSharpnessStepper.doubleValue = AppConfig.shared.enhanceSharpness
+        enhanceSharpnessStepper.target = self
+        enhanceSharpnessStepper.action = #selector(enhanceSharpnessStepperChanged(_:))
+        box.addSubview(enhanceSharpnessStepper)
+    }
+
+    private func buildUpscaleTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreUpscaleDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space
+        let sectionHeight = rootHeight - 54
+        let box = makeSection(root, title: t("Super Resolution (Real-ESRGAN 4x)"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        var rowY = boxHeight - topPadding
+
+        let modelReady = PluginManager.shared.isReady(.realesrgan)
+        if modelReady {
+            aiAutoUpscaleCheckbox = makeCheck(box, title: t("Auto AI super-resolve small images on load"), x: 14, y: rowY - 18)
+            aiAutoUpscaleCheckbox.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
+            aiAutoUpscaleCheckbox.target = self
+            aiAutoUpscaleCheckbox.action = #selector(toggleAutoUpscale(_:))
+            rowY -= 32
+
+            // Small image threshold
+            let thresholdLabel = makeLabel(box, text: t("Small image threshold (px, longest side):"), x: 14, y: rowY - 16)
+            smallImageThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+            smallImageThresholdField.font = NSFont.systemFont(ofSize: 13)
+            smallImageThresholdField.alignment = .center
+            smallImageThresholdField.target = self
+            smallImageThresholdField.action = #selector(smallImageThresholdFieldChanged(_:))
+            box.addSubview(smallImageThresholdField)
+            smallImageThresholdStepper = NSStepper(frame: NSRect(x: smallImageThresholdField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+            smallImageThresholdStepper.minValue = 64
+            smallImageThresholdStepper.maxValue = 8192
+            smallImageThresholdStepper.increment = 128
+            smallImageThresholdStepper.valueWraps = false
+            smallImageThresholdStepper.integerValue = AppConfig.shared.smallImageMaxSide
+            smallImageThresholdStepper.target = self
+            smallImageThresholdStepper.action = #selector(smallImageThresholdStepperChanged(_:))
+            box.addSubview(smallImageThresholdStepper)
+        } else {
+            let statusLabel = NSTextField(frame: NSRect(x: 14, y: rowY - 20, width: contentWidth - 28, height: 20))
+            statusLabel.stringValue = t("Model not downloaded. Please download in AI Models tab.")
+            statusLabel.font = NSFont.systemFont(ofSize: 12)
+            statusLabel.textColor = NSColor.secondaryLabelColor
+            statusLabel.isBezeled = false
+            statusLabel.drawsBackground = false
+            statusLabel.isEditable = false
+            statusLabel.isSelectable = false
+            box.addSubview(statusLabel)
+        }
+    }
+
+    private func buildDewatermarkTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreDewatermarkDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space
+        let sectionHeight = rootHeight - 54
+        let box = makeSection(root, title: t("Watermark Removal (U2Net)"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        var rowY = boxHeight - topPadding
+
+        let modelReady = PluginManager.shared.isReady(.u2net)
+        if modelReady {
+            aiAutoDewatermarkCheckbox = makeCheck(box, title: t("Auto AI dewatermark on load"), x: 14, y: rowY - 18)
+            aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
+            aiAutoDewatermarkCheckbox.target = self
+            aiAutoDewatermarkCheckbox.action = #selector(toggleAutoDewatermark(_:))
+            rowY -= 32
+
+            // Detection threshold
+            let thresholdLabel = makeLabel(box, text: t("Detection sensitivity (0.1–0.9, lower = more sensitive):"), x: 14, y: rowY - 16)
+            watermarkThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
+            watermarkThresholdField.font = NSFont.systemFont(ofSize: 13)
+            watermarkThresholdField.alignment = .center
+            watermarkThresholdField.target = self
+            watermarkThresholdField.action = #selector(watermarkThresholdFieldChanged(_:))
+            box.addSubview(watermarkThresholdField)
+            watermarkThresholdStepper = NSStepper(frame: NSRect(x: watermarkThresholdField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+            watermarkThresholdStepper.minValue = 0.1
+            watermarkThresholdStepper.maxValue = 0.9
+            watermarkThresholdStepper.increment = 0.05
+            watermarkThresholdStepper.valueWraps = false
+            watermarkThresholdStepper.doubleValue = AppConfig.shared.watermarkMaskThreshold
+            watermarkThresholdStepper.target = self
+            watermarkThresholdStepper.action = #selector(watermarkThresholdStepperChanged(_:))
+            box.addSubview(watermarkThresholdStepper)
+            rowY -= 32
+
+            // Minimum fraction
+            let minFractionLabel = makeLabel(box, text: t("Min. watermark size (0.0001–0.1, lower = detect smaller):"), x: 14, y: rowY - 16)
+            watermarkMinFractionField = NSTextField(frame: NSRect(x: minFractionLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+            watermarkMinFractionField.font = NSFont.systemFont(ofSize: 13)
+            watermarkMinFractionField.alignment = .center
+            watermarkMinFractionField.target = self
+            watermarkMinFractionField.action = #selector(watermarkMinFractionFieldChanged(_:))
+            box.addSubview(watermarkMinFractionField)
+            watermarkMinFractionStepper = NSStepper(frame: NSRect(x: watermarkMinFractionField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+            watermarkMinFractionStepper.minValue = 0.0001
+            watermarkMinFractionStepper.maxValue = 0.1
+            watermarkMinFractionStepper.increment = 0.0001
+            watermarkMinFractionStepper.valueWraps = false
+            watermarkMinFractionStepper.doubleValue = AppConfig.shared.watermarkMinMaskFraction
+            watermarkMinFractionStepper.target = self
+            watermarkMinFractionStepper.action = #selector(watermarkMinFractionStepperChanged(_:))
+            box.addSubview(watermarkMinFractionStepper)
+        } else {
+            let statusLabel = NSTextField(frame: NSRect(x: 14, y: rowY - 20, width: contentWidth - 28, height: 20))
+            statusLabel.stringValue = t("Model not downloaded. Please download in AI Models tab.")
+            statusLabel.font = NSFont.systemFont(ofSize: 12)
+            statusLabel.textColor = NSColor.secondaryLabelColor
+            statusLabel.isBezeled = false
+            statusLabel.drawsBackground = false
+            statusLabel.isEditable = false
+            statusLabel.isSelectable = false
+            box.addSubview(statusLabel)
+        }
+    }
+
+    private func buildOneClickTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreOneClickDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space
+        let sectionHeight = rootHeight - 54
+        let box = makeSection(root, title: t("One-click Enhance Settings"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        var rowY = boxHeight - topPadding
+        let modeLabel = makeLabel(box, text: t("One-click enhance:"), x: 14, y: rowY - 16)
+        enhanceModePopup = makePopup(box, items: [t("Both (dedup + dewatermark)"), t("Dedup only"), t("Dewatermark only")],
+                                     x: modeLabel.frame.maxX + 10, y: rowY - 18, width: 230)
+        enhanceModePopup.target = self
+        enhanceModePopup.action = #selector(enhanceModeChanged(_:))
+
+        let savedMode = AppConfig.shared.aiEnhanceMode
+        if savedMode == "dedupOnly" {
+            enhanceModePopup.selectItem(at: 1)
+        } else if savedMode == "watermarkOnly" {
+            enhanceModePopup.selectItem(at: 2)
+        } else {
+            enhanceModePopup.selectItem(at: 0)
+        }
+        rowY -= 28
+
+        let statusLabel = NSTextField(frame: NSRect(x: 14, y: rowY - 16, width: contentWidth - 28, height: 20))
+        statusLabel.font = NSFont.systemFont(ofSize: 11)
+        statusLabel.textColor = NSColor.secondaryLabelColor
+        statusLabel.isBezeled = false
+        statusLabel.drawsBackground = false
+        statusLabel.isEditable = false
+        statusLabel.isSelectable = false
+        statusLabel.stringValue = ""
+        box.addSubview(statusLabel)
+        rowY -= 28
+
+        dedupAskContinueCheckbox = makeCheck(box, title: t("Ask to continue between duplicate groups"), x: 14, y: rowY - 18)
+        dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
+        dedupAskContinueCheckbox.target = self
+        dedupAskContinueCheckbox.action = #selector(toggleDedupAskContinue(_:))
+
+        oneClickStatusLabel = statusLabel
+        updateOneClickStatus()
+    }
+
+    private func buildModelsTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Section fills available space
+        let sectionHeight = rootHeight - 28  // 28 = 14 (bottom margin) + 14 (top margin)
+        let box = makeSection(root, title: t("AI Models"), x: 14, y: 14, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        let headerLabel = makeLabel(box, text: t("Download third-party models for AI features:"), x: 14, y: (boxHeight - topPadding) - 16)
+        headerLabel.font = NSFont.systemFont(ofSize: 12)
+
+        modelRows = []
+        var rowY = boxHeight - topPadding - 54
+        for plugin in ModelPlugin.all {
+            let funcText = plugin == .realesrgan ? t("Super Resolution") : t("Remove Watermark")
+            let funcLabel = makeLabel(box, text: funcText, x: 14, y: rowY)
+            funcLabel.font = NSFont.systemFont(ofSize: 12)
+            funcLabel.textColor = NSColor.secondaryLabelColor
+
+            let nameText = plugin == .realesrgan ? "Real-ESRGAN 4x" : "U2Net"
+            let nameLabel = makeLabel(box, text: nameText, x: 14, y: rowY - 18)
+            nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+            let statusLabel = NSTextField(frame: NSRect(x: 120, y: rowY - 18, width: 100, height: 16))
+            statusLabel.font = NSFont.systemFont(ofSize: 11)
+            statusLabel.textColor = NSColor.secondaryLabelColor
+            statusLabel.isBezeled = false
+            statusLabel.drawsBackground = false
+            statusLabel.isEditable = false
+            statusLabel.isSelectable = false
+            box.addSubview(statusLabel)
+
+            let downloadButton = NSButton(frame: NSRect(x: 230, y: rowY - 21, width: 80, height: 26))
+            downloadButton.title = t("Download")
+            downloadButton.bezelStyle = .rounded
+            downloadButton.target = self
+            downloadButton.action = #selector(modelDownloadTapped(_:))
+            box.addSubview(downloadButton)
+
+            let enabledCheck = makeCheck(box, title: t("On"), x: 320, y: rowY - 18)
+            enabledCheck.target = self
+            enabledCheck.action = #selector(modelEnableToggled(_:))
+
+            let uninstallButton = NSButton(frame: NSRect(x: 380, y: rowY - 21, width: 30, height: 26))
+            uninstallButton.bezelStyle = .rounded
+            uninstallButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: t("Uninstall"))
+            uninstallButton.imagePosition = .imageOnly
+            uninstallButton.target = self
+            uninstallButton.action = #selector(modelUninstallTapped(_:))
+            box.addSubview(uninstallButton)
+
+            modelRows.append((plugin: plugin, nameLabel: nameLabel, statusLabel: statusLabel, downloadButton: downloadButton, enabledCheck: enabledCheck, uninstallButton: uninstallButton))
+            rowY -= 52
+        }
+    }
+
+    private func buildAdvancedTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Section heights
+        let logHeight: CGFloat = 96
+        let cacheHeight: CGFloat = 64
+        let proxyHeight: CGFloat = 98
+        let gap: CGFloat = 14
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreAdvancedDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Start from top, spacer will be at bottom
+        var y = rootHeight - proxyHeight - 14
+        let padding: CGFloat = 10
+
+        // Proxy at top
+        let proxyBox = makeSection(root, title: t("Proxy"), x: 14, y: y, width: contentWidth, height: proxyHeight)
+        let proxyContentH = proxyHeight - 28
+        proxyEnabledCheckbox = makeCheck(proxyBox, title: t("Enable proxy for model downloads"), x: 14, y: proxyContentH - padding - 18)
+        proxyEnabledCheckbox.state = AppConfig.shared.proxyEnabled ? .on : .off
+        proxyEnabledCheckbox.target = self
+        proxyEnabledCheckbox.action = #selector(toggleProxyEnabled(_:))
+
+        _ = makeLabel(proxyBox, text: t("Type:"), x: 14, y: proxyContentH - padding - 48)
+        proxyTypePopup = makePopup(proxyBox, items: ["HTTP", "SOCKS"], x: 58, y: proxyContentH - padding - 50, width: 90)
+        proxyTypePopup.target = self
+        proxyTypePopup.action = #selector(proxyTypeChanged(_:))
+
+        _ = makeLabel(proxyBox, text: t("Host:"), x: 162, y: proxyContentH - padding - 48)
+        proxyHostField = NSTextField(frame: NSRect(x: 202, y: proxyContentH - padding - 48, width: 150, height: 24))
+        proxyHostField.font = NSFont.systemFont(ofSize: 13)
+        proxyHostField.placeholderString = "127.0.0.1"
+        proxyHostField.target = self
+        proxyHostField.action = #selector(proxyHostFieldChanged(_:))
+        proxyBox.addSubview(proxyHostField)
+
+        _ = makeLabel(proxyBox, text: t("Port:"), x: 366, y: proxyContentH - padding - 48)
+        proxyPortField = NSTextField(frame: NSRect(x: 408, y: proxyContentH - padding - 48, width: 60, height: 24))
+        proxyPortField.font = NSFont.systemFont(ofSize: 13)
+        proxyPortField.alignment = .center
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        proxyPortField.formatter = formatter
+        proxyBox.addSubview(proxyPortField)
+        proxyPortField.target = self
+        proxyPortField.action = #selector(proxyPortFieldChanged(_:))
+        proxyPortStepper = NSStepper(frame: NSRect(x: 474, y: proxyContentH - padding - 50, width: 19, height: 27))
+        proxyPortStepper.minValue = 1
+        proxyPortStepper.maxValue = 65535
+        proxyPortStepper.increment = 1
+        proxyPortStepper.valueWraps = false
+        proxyPortStepper.integerValue = AppConfig.shared.proxyPort
+        proxyPortStepper.target = self
+        proxyPortStepper.action = #selector(proxyPortStepperChanged(_:))
+        proxyBox.addSubview(proxyPortStepper)
+        y -= cacheHeight + gap
+
+        // Cache in middle
+        let cacheBox = makeSection(root, title: t("Image Cache"), x: 14, y: y, width: contentWidth, height: cacheHeight)
+        let cacheContentH = cacheHeight - 28
+        let cacheLabel = makeLabel(cacheBox, text: t("Cached images (1–20):"), x: 14, y: cacheContentH - padding - 16)
+        cacheField = NSTextField(frame: NSRect(x: cacheLabel.frame.maxX + 10, y: cacheContentH - padding - 20, width: 64, height: 24))
+        cacheField.font = NSFont.systemFont(ofSize: 13)
+        cacheField.alignment = .center
+        cacheBox.addSubview(cacheField)
+        cacheField.target = self
+        cacheField.action = #selector(cacheFieldChanged(_:))
+        cacheStepper = NSStepper(frame: NSRect(x: cacheField.frame.maxX + 4, y: cacheContentH - padding - 20, width: 19, height: 27))
+        cacheStepper.minValue = Double(AppConfig.cacheCountRange.lowerBound)
+        cacheStepper.maxValue = Double(AppConfig.cacheCountRange.upperBound)
+        cacheStepper.increment = 1
+        cacheStepper.valueWraps = false
+        cacheStepper.integerValue = AppConfig.shared.imageCacheCount
+        cacheStepper.target = self
+        cacheStepper.action = #selector(cacheStepperChanged(_:))
+        cacheBox.addSubview(cacheStepper)
+        y -= logHeight + gap
+
+        // Logging at bottom (above restore button)
+        let logBox = makeSection(root, title: t("Logging"), x: 14, y: y, width: contentWidth, height: logHeight)
+        let logContentH = logHeight - 28
+        logEnabledCheckbox = makeCheck(logBox, title: t("Enable logging (default: off)"), x: 14, y: logContentH - padding - 18)
+        logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
+        logEnabledCheckbox.target = self
+        logEnabledCheckbox.action = #selector(toggleLogEnabled(_:))
+
+        let pathLabel = makeLabel(logBox, text: t("Log file:"), x: 14, y: logContentH - padding - 48)
+        let browseWidth: CGFloat = 70
+        let fieldX = pathLabel.frame.maxX + 10
+        let fieldW = contentWidth - fieldX - browseWidth - 8 - 14
+        logPathField = NSTextField(frame: NSRect(x: fieldX, y: logContentH - padding - 48, width: fieldW, height: 24))
+        logPathField.font = NSFont.systemFont(ofSize: 12)
+        logPathField.placeholderString = AppConfig.Defaults.logPath()
+        logPathField.target = self
+        logPathField.action = #selector(logPathFieldChanged(_:))
+        logBox.addSubview(logPathField)
+
+        let browseButton = NSButton(frame: NSRect(x: fieldX + fieldW + 8, y: logContentH - padding - 49, width: browseWidth, height: 26))
+        browseButton.title = t("Browse...")
+        browseButton.bezelStyle = .rounded
+        browseButton.target = self
+        browseButton.action = #selector(browseLogPath(_:))
+        logBox.addSubview(browseButton)
     }
 
     // MARK: - Syncing
@@ -660,7 +856,6 @@ final class PreferencesWindow: NSObject {
             let path = AppConfig.shared.logPath
             if self.logPathField.stringValue != path { self.logPathField.stringValue = path }
             
-            // AI Enhance
             let vibrance = AppConfig.shared.enhanceVibrance
             if abs(self.enhanceVibranceField.doubleValue - vibrance) > 0.001 { self.enhanceVibranceField.stringValue = String(format: "%.2f", vibrance) }
             if abs(self.enhanceVibranceStepper.doubleValue - vibrance) > 0.001 { self.enhanceVibranceStepper.doubleValue = vibrance }
@@ -671,8 +866,35 @@ final class PreferencesWindow: NSObject {
             if abs(self.enhanceSharpnessField.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessField.stringValue = String(format: "%.2f", sharpness) }
             if abs(self.enhanceSharpnessStepper.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessStepper.doubleValue = sharpness }
             
-            self.aiAutoUpscaleCheckbox.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
-            self.aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
+            self.aiAutoUpscaleCheckbox?.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
+
+            // Super resolution settings
+            let smallThreshold = AppConfig.shared.smallImageMaxSide
+            if let field = self.smallImageThresholdField, field.integerValue != smallThreshold {
+                field.integerValue = smallThreshold
+            }
+            if let stepper = self.smallImageThresholdStepper, stepper.integerValue != smallThreshold {
+                stepper.integerValue = smallThreshold
+            }
+
+            self.aiAutoDewatermarkCheckbox?.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
+
+            // Watermark removal settings
+            let threshold = AppConfig.shared.watermarkMaskThreshold
+            if let field = self.watermarkThresholdField, abs(field.doubleValue - threshold) > 0.001 {
+                field.stringValue = String(format: "%.2f", threshold)
+            }
+            if let stepper = self.watermarkThresholdStepper, abs(stepper.doubleValue - threshold) > 0.001 {
+                stepper.doubleValue = threshold
+            }
+            let minFraction = AppConfig.shared.watermarkMinMaskFraction
+            if let field = self.watermarkMinFractionField, abs(field.doubleValue - minFraction) > 0.00001 {
+                field.stringValue = String(format: "%.4f", minFraction)
+            }
+            if let stepper = self.watermarkMinFractionStepper, abs(stepper.doubleValue - minFraction) > 0.00001 {
+                stepper.doubleValue = minFraction
+            }
+
             let modeIdx: Int
             switch AppConfig.shared.aiEnhanceMode {
             case "dedupOnly": modeIdx = 1
@@ -896,8 +1118,61 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.enhanceSharpness = clamped
     }
 
+    // MARK: - Watermark Removal Actions
+
+    @objc private func watermarkThresholdStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        watermarkThresholdField.stringValue = String(format: "%.2f", value)
+        AppConfig.shared.watermarkMaskThreshold = value
+    }
+
+    @objc private func watermarkThresholdFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0.1), 0.9)
+        sender.stringValue = String(format: "%.2f", clamped)
+        watermarkThresholdStepper.doubleValue = clamped
+        AppConfig.shared.watermarkMaskThreshold = clamped
+    }
+
+    @objc private func watermarkMinFractionStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        watermarkMinFractionField.stringValue = String(format: "%.4f", value)
+        AppConfig.shared.watermarkMinMaskFraction = value
+    }
+
+    @objc private func watermarkMinFractionFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0.0001), 0.1)
+        sender.stringValue = String(format: "%.4f", clamped)
+        watermarkMinFractionStepper.doubleValue = clamped
+        AppConfig.shared.watermarkMinMaskFraction = clamped
+    }
+
     @objc private func toggleAutoUpscale(_ sender: NSButton) {
         AppConfig.shared.aiAutoUpscaleEnabled = (sender.state == .on)
+    }
+
+    @objc private func smallImageThresholdStepperChanged(_ sender: NSStepper) {
+        let value = sender.integerValue
+        smallImageThresholdField.integerValue = value
+        AppConfig.shared.smallImageMaxSide = value
+    }
+
+    @objc private func smallImageThresholdFieldChanged(_ sender: NSTextField) {
+        guard let value = Int(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 64), 8192)
+        sender.integerValue = clamped
+        smallImageThresholdStepper.integerValue = clamped
+        AppConfig.shared.smallImageMaxSide = clamped
     }
 
     @objc private func toggleAutoDewatermark(_ sender: NSButton) {
@@ -947,7 +1222,7 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.proxyPort = clamped
     }
 
-    // MARK: - Restore Defaults (per tab)
+    // MARK: - Restore Defaults
 
     @objc private func restoreGeneralDefaults(_ sender: Any?) {
         AppConfig.shared.quitOnLastWindowClosed = AppConfig.Defaults.quitOnLastWindowClosed
@@ -971,10 +1246,13 @@ final class PreferencesWindow: NSObject {
 
     @objc private func restoreUpscaleDefaults(_ sender: Any?) {
         AppConfig.shared.aiAutoUpscaleEnabled = AppConfig.Defaults.aiAutoUpscaleEnabled
+        AppConfig.shared.smallImageMaxSide = AppConfig.Defaults.smallImageMaxSide
     }
 
     @objc private func restoreDewatermarkDefaults(_ sender: Any?) {
         AppConfig.shared.aiAutoDewatermarkEnabled = AppConfig.Defaults.aiAutoDewatermarkEnabled
+        AppConfig.shared.watermarkMaskThreshold = AppConfig.Defaults.watermarkMaskThreshold
+        AppConfig.shared.watermarkMinMaskFraction = AppConfig.Defaults.watermarkMinMaskFraction
     }
 
     @objc private func restoreOneClickDefaults(_ sender: Any?) {
@@ -992,8 +1270,10 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.logPath = AppConfig.Defaults.logPath()
     }
 
-    private func modelRow(forControl view: NSView) -> (plugin: ModelPlugin, statusLabel: NSTextField, enabledCheck: NSButton)? {
-        for row in modelRows where row.statusLabel === view || row.enabledCheck === view {
+    // MARK: - Model Management
+
+    private func modelRow(forControl view: NSView) -> (plugin: ModelPlugin, nameLabel: NSTextField, statusLabel: NSTextField, downloadButton: NSButton, enabledCheck: NSButton, uninstallButton: NSButton)? {
+        for row in modelRows where row.downloadButton === view || row.enabledCheck === view || row.uninstallButton === view {
             return row
         }
         return nil
@@ -1003,14 +1283,24 @@ final class PreferencesWindow: NSObject {
         guard let row = modelRow(forControl: sender) else { return }
         if case .downloading = PluginManager.shared.state(for: row.plugin) { return }
         row.statusLabel.stringValue = L10n.shared.t("Downloading…")
+        row.downloadButton.isEnabled = false
         PluginManager.shared.download(row.plugin, progress: { p in
-            self.modelRows.first { $0.plugin == row.plugin }?.statusLabel.stringValue = L10n.shared.tf("Downloading… %.0f%%", p * 100)
+            DispatchQueue.main.async {
+                if let r = self.modelRows.first(where: { $0.plugin == row.plugin }) {
+                    r.statusLabel.stringValue = L10n.shared.tf("%.0f%%", p * 100)
+                }
+            }
         }, completion: { result in
-            switch result {
-            case .success:
-                self.syncModelRows()
-            case .failure(let error):
-                self.modelRows.first { $0.plugin == row.plugin }?.statusLabel.stringValue = L10n.shared.tf("Error: %@", error.localizedDescription)
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self.syncModelRows()
+                case .failure(let error):
+                    if let r = self.modelRows.first(where: { $0.plugin == row.plugin }) {
+                        r.statusLabel.stringValue = L10n.shared.tf("Error: %@", error.localizedDescription)
+                        r.downloadButton.isEnabled = true
+                    }
+                }
             }
         })
     }
@@ -1028,8 +1318,9 @@ final class PreferencesWindow: NSObject {
 
     @objc private func modelUninstallTapped(_ sender: NSButton) {
         guard let row = modelRow(forControl: sender) else { return }
+        let nameText = row.plugin == .realesrgan ? L10n.shared.t("Super Resolution (Real-ESRGAN 4x)") : L10n.shared.t("Watermark Removal (U2Net)")
         let alert = NSAlert()
-        alert.messageText = L10n.shared.tf("Uninstall %@?", row.plugin.displayName)
+        alert.messageText = L10n.shared.tf("Uninstall %@?", nameText)
         alert.informativeText = L10n.shared.t("The downloaded model files will be deleted. You can download them again later.")
         alert.addButton(withTitle: L10n.shared.t("Uninstall"))
         alert.addButton(withTitle: "Cancel")
@@ -1044,65 +1335,64 @@ final class PreferencesWindow: NSObject {
             let enabled = PluginManager.shared.isEnabled(plugin)
             switch state {
             case .notDownloaded:
-                modelRows[i].statusLabel.stringValue = L10n.shared.t("Not downloaded")
+                modelRows[i].statusLabel.stringValue = ""
+                modelRows[i].downloadButton.title = L10n.shared.t("Download")
+                modelRows[i].downloadButton.isEnabled = true
+                modelRows[i].uninstallButton.isHidden = true
             case .downloading(let p):
-                modelRows[i].statusLabel.stringValue = L10n.shared.tf("Downloading… %.0f%%", p * 100)
+                modelRows[i].statusLabel.stringValue = L10n.shared.tf("%.0f%%", p * 100)
+                modelRows[i].downloadButton.title = L10n.shared.t("Downloading…")
+                modelRows[i].downloadButton.isEnabled = false
+                modelRows[i].uninstallButton.isHidden = true
             case .ready:
-                modelRows[i].statusLabel.stringValue = enabled ? L10n.shared.t("Enabled") : L10n.shared.t("Ready (disabled)")
+                modelRows[i].statusLabel.stringValue = ""
+                modelRows[i].downloadButton.title = L10n.shared.t("Downloaded")
+                modelRows[i].downloadButton.isEnabled = false
+                modelRows[i].uninstallButton.isHidden = false
             case .error(let msg):
                 modelRows[i].statusLabel.stringValue = L10n.shared.tf("Error: %@", msg)
+                modelRows[i].downloadButton.title = L10n.shared.t("Download")
+                modelRows[i].downloadButton.isEnabled = true
+                modelRows[i].uninstallButton.isHidden = true
             }
             let wantState: Int = enabled ? 1 : 0
             if modelRows[i].enabledCheck.state.rawValue != wantState {
                 modelRows[i].enabledCheck.state = (enabled ? .on : .off)
             }
         }
-    }
-}
-
-private final class FlippedView: NSView {
-    override var isFlipped: Bool { true }
-}
-
-private final class FlippedBox: NSBox {
-    override var isFlipped: Bool { true }
-}
-
-private final class NoAutoFocusTextField: NSTextField {
-    private var allowFocus = false
-
-    func enableFocus() {
-        allowFocus = true
-        window?.makeFirstResponder(self)
-        allowFocus = false
+        updateOneClickStatus()
     }
 
-    override var acceptsFirstResponder: Bool { allowFocus }
+    private func updateOneClickStatus() {
+        let t = L10n.shared.t
+        let watermarkReady = PluginManager.shared.isReady(.u2net)
 
-    override func mouseDown(with event: NSEvent) {
-        enableFocus()
-        super.mouseDown(with: event)
+        var statusText = ""
+        if !watermarkReady {
+            statusText = t("Missing model for") + ": " + t("Remove Watermark")
+            oneClickStatusLabel?.textColor = NSColor.systemOrange
+        } else {
+            statusText = t("All models ready")
+            oneClickStatusLabel?.textColor = NSColor.systemGreen
+        }
+        oneClickStatusLabel?.stringValue = statusText
+
+        // Logic: if watermark model is ready, all options available; otherwise only "Dedup only"
+        if let menu = enhanceModePopup?.menu {
+            menu.item(at: 0)?.isEnabled = watermarkReady  // Both
+            menu.item(at: 1)?.isEnabled = true            // Dedup only (always available)
+            menu.item(at: 2)?.isEnabled = watermarkReady  // Dewatermark only
+        }
+
+        let currentMode = AppConfig.shared.aiEnhanceMode
+
+        // If current mode is not available, switch to "dedup only" (always available)
+        if (currentMode == "both" || currentMode == "watermarkOnly") && !watermarkReady {
+            enhanceModePopup?.selectItem(at: 1)
+            AppConfig.shared.aiEnhanceMode = "dedupOnly"
+        }
     }
 }
-
-private final class NoAutoFocusNumberField: NSTextField {
-    private var allowFocus = false
-
-    func enableFocus() {
-        allowFocus = true
-        window?.makeFirstResponder(self)
-        allowFocus = false
-    }
-
-    override var acceptsFirstResponder: Bool { allowFocus }
-
-    override func mouseDown(with event: NSEvent) {
-        enableFocus()
-        super.mouseDown(with: event)
-    }
-}
-
-// MARK: - NSTabViewDelegate
 
 extension PreferencesWindow: NSTabViewDelegate {
     func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
