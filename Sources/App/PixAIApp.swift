@@ -205,7 +205,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
                 AppConfig.shared.modelCheckPromptEnabled = false
             }
             if response == .alertFirstButtonReturn {
-                PreferencesWindow.shared.show()
+                PreferencesWindow.shared.showAIModelsTab()
             }
         }
     }

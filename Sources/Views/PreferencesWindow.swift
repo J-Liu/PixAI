@@ -85,6 +85,19 @@ final class PreferencesWindow: NSObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Show Preferences window and navigate to AI > One-click Enhance tab (where AI Models are).
+    func showAIModelsTab() {
+        show()
+        // Select AI tab (index 1) in main tab view
+        if mainTabView.numberOfTabViewItems > 1 {
+            mainTabView.selectTabViewItem(at: 1)
+        }
+        // Select One-click Enhance sub-tab (index 3) in AI tab view
+        if let aiTab = aiTabView, aiTab.numberOfTabViewItems > 3 {
+            aiTab.selectTabViewItem(at: 3)
+        }
+    }
+
     // MARK: - Building
 
     private func buildWindow() {
