@@ -5,13 +5,26 @@
   "groups" : [
     {
       "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "layers" : [
         {
-          "image-name" : "02_foreground.svg",
-          "name" : "02_foreground"
+          "image-name" : "02_foreground 2.svg",
+          "name" : "02_foreground 2"
         },
         {
-          "image-name" : "01_background.svg",
-          "name" : "01_background"
+          "image-name" : "01_background 2.svg",
+          "name" : "01_background 2"
         }
       ],
       "shadow" : {
