@@ -1126,7 +1126,10 @@ class ImageWindow {
             refreshCurrentDisplay()
             return
         }
-        guard let cg = baseImage?.sourceCGImage else { return }
+        guard let cg = baseImage?.sourceCGImage else {
+            showStatusMessage(L10n.shared.t("Cannot get image data"))
+            return
+        }
         aiBusy.insert(url)
         Task { @MainActor [weak self] in
             guard let self = self else { return }
