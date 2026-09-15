@@ -13,10 +13,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PixAI",
-            path: "Sources",
-            resources: [
-                .process("Resources/PixAI.icns")
-            ]
+            path: "Sources"
         )
     ]
 )
