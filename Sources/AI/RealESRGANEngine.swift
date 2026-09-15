@@ -299,13 +299,16 @@ final class RealESRGANEngine {
                             let srcIdx = (r - ty * 4) * tileOutput * 4 + localC * 4
                             let dstIdx = bandRow * W * 4 + c * 4
                             // Bounds check
-                            guard srcIdx + 2 < tileOut.count, dstIdx + 2 < accum.count else {
+                            guard srcIdx + 3 < tileOut.count, dstIdx + 2 < accum.count else {
                                 Logger.shared.log("RealESRGAN: ERROR - array bounds exceeded srcIdx=\(srcIdx), dstIdx=\(dstIdx)")
                                 continue
                             }
-                            accum[dstIdx] += Float(tileOut[srcIdx]) * wt       // B
-                            accum[dstIdx + 1] += Float(tileOut[srcIdx + 1]) * wt // G
-                            accum[dstIdx + 2] += Float(tileOut[srcIdx + 2]) * wt // R
+                            // Accumulate in the same format as the output (no channel conversion during blending)
+                            // The output format is "ARGB" which on little-endian is actually BGRA in memory
+                            // We'll convert to RGBA when writing to the canvas
+                            accum[dstIdx] += Float(tileOut[srcIdx + 2]) * wt     // R (BGRA[2])
+                            accum[dstIdx + 1] += Float(tileOut[srcIdx + 1]) * wt // G (BGRA[1])
+                            accum[dstIdx + 2] += Float(tileOut[srcIdx]) * wt     // B (BGRA[0])
                             weight[bandRow * W + c] += wt
                         }
                     }
@@ -326,9 +329,9 @@ final class RealESRGANEngine {
                     let wt = weight[r * W + c]
                     let s = r * W * 4 + c * 4
                     if wt > 0 {
-                        canvasBase[canvasRow + c * 4] = UInt8(min(255, max(0, (accum[s + 2] / wt).rounded())))     // R
+                        canvasBase[canvasRow + c * 4] = UInt8(min(255, max(0, (accum[s] / wt).rounded())))         // R
                         canvasBase[canvasRow + c * 4 + 1] = UInt8(min(255, max(0, (accum[s + 1] / wt).rounded()))) // G
-                        canvasBase[canvasRow + c * 4 + 2] = UInt8(min(255, max(0, (accum[s] / wt).rounded())))     // B
+                        canvasBase[canvasRow + c * 4 + 2] = UInt8(min(255, max(0, (accum[s + 2] / wt).rounded()))) // B
                     } else {
                         canvasBase[canvasRow + c * 4] = 0
                         canvasBase[canvasRow + c * 4 + 1] = 0
@@ -368,16 +371,16 @@ final class RealESRGANEngine {
         let model = try lockedModel()
         Logger.shared.log("RealESRGAN: inferTile start, tile size: \(tileCG.width)x\(tileCG.height)")
 
-        // 512×512 BGRA input pixel buffer.
+        // 512×512 ARGB input pixel buffer (matching Core ML output format).
         var pb: CVPixelBuffer?
         let attrs = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
             kCVPixelBufferWidthKey as String: tileInput,
             kCVPixelBufferHeightKey as String: tileInput,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ] as CFDictionary
         guard CVPixelBufferCreate(kCFAllocatorDefault, tileInput, tileInput,
-                                  kCVPixelFormatType_32BGRA, attrs, &pb) == kCVReturnSuccess,
+                                  kCVPixelFormatType_32ARGB, attrs, &pb) == kCVReturnSuccess,
               let pixelBuffer = pb else {
             throw PluginManager.PluginError.downloadFailed("input pixel buffer failed")
         }
@@ -393,7 +396,7 @@ final class RealESRGANEngine {
             data: base, width: tileInput, height: tileInput,
             bitsPerComponent: 8, bytesPerRow: bpr,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         ) else { throw PluginManager.PluginError.downloadFailed("input context failed") }
         ctx.interpolationQuality = .high
         ctx.draw(tileCG, in: CGRect(x: 0, y: 0, width: tileInput, height: tileInput))
@@ -415,11 +418,18 @@ final class RealESRGANEngine {
             throw PluginManager.PluginError.downloadFailed("missing 'activation_out' image feature")
         }
 
-        // Copy the 2048×2048 BGRA output into a tight [UInt8] buffer.
+        // Copy the 2048×2048 output into a tight [UInt8] buffer.
         let ow = CVPixelBufferGetWidth(outPB)
         let oh = CVPixelBufferGetHeight(outPB)
         let obpr = CVPixelBufferGetBytesPerRow(outPB)
-        Logger.shared.log("RealESRGAN: inferTile - output buffer: \(ow)x\(oh), bytesPerRow=\(obpr)")
+        let outFormat = CVPixelBufferGetPixelFormatType(outPB)
+        let formatStr = String(bytes: [
+            UInt8(outFormat & 0xFF),
+            UInt8((outFormat >> 8) & 0xFF),
+            UInt8((outFormat >> 16) & 0xFF),
+            UInt8((outFormat >> 24) & 0xFF)
+        ], encoding: .utf8) ?? "unknown"
+        Logger.shared.log("RealESRGAN: inferTile - output buffer: \(ow)x\(oh), format=\(formatStr), bytesPerRow=\(obpr)")
         var bytes = [UInt8](repeating: 0, count: ow * oh * 4)
         Logger.shared.log("RealESRGAN: inferTile - copying \(ow)x\(oh) bytes, total=\(bytes.count)")
         CVPixelBufferLockBaseAddress(outPB, [])
