@@ -312,6 +312,13 @@ class ImageWindow {
                 Logger.shared.log("Keyboard handler: cancel AI operation (Esc)")
                 self?.cancelAIOperation()
             },
+            canUndoAI: { [weak self] in
+                self?.canUndoAI() ?? false
+            },
+            onUndo: { [weak self] in
+                Logger.shared.log("Keyboard handler: undo AI operation (Cmd+Z)")
+                self?.undoAI()
+            },
             onShowShortcuts: {
                 Logger.shared.log("Keyboard handler: show shortcuts help (?)")
                 ShortcutsHelpWindow.shared.show()
@@ -1102,6 +1109,7 @@ class ImageWindow {
                     state.upscaledImage = Self.nsImage(from: out)
                     state.isUpscaled = true
                     state.lastApplied = .upscale
+                    state.recordApplied(.upscale)
                     self.aiStates[url] = state
                 } else {
                     Logger.shared.log("Auto upscale failed for \(url.lastPathComponent)")
@@ -1117,6 +1125,7 @@ class ImageWindow {
                     state.dewatermarkedImage = Self.nsImage(from: out)
                     state.isDewatermarked = true
                     state.lastApplied = .dewatermark
+                    state.recordApplied(.dewatermark)
                     self.aiStates[url] = state
                 }
             }
@@ -1166,6 +1175,7 @@ class ImageWindow {
                 state.enhancedImage = Self.nsImage(from: out)
                 state.isEnhanced = true
                 state.lastApplied = .enhance
+                state.recordApplied(.enhance)
                 self.aiStates[url] = state
             } else {
                 self.showStatusMessage(L10n.shared.t("AI enhance failed"))
@@ -1223,6 +1233,7 @@ class ImageWindow {
                 state.upscaledImage = Self.nsImage(from: out)
                 state.isUpscaled = true
                 state.lastApplied = .upscale
+                state.recordApplied(.upscale)
                 self.aiStates[url] = state
             } else {
                 self.showStatusMessage(L10n.shared.t("AI upscale failed"))
@@ -1278,6 +1289,7 @@ class ImageWindow {
                     state.dewatermarkedImage = Self.nsImage(from: out)
                     state.isDewatermarked = true
                     state.lastApplied = .dewatermark
+                    state.recordApplied(.dewatermark)
                     self.aiStates[url] = state
                 }
             } else {
@@ -1416,6 +1428,7 @@ class ImageWindow {
                         state.dewatermarkedImage = Self.nsImage(from: out)
                         state.isDewatermarked = true
                         state.lastApplied = .dewatermark
+                        state.recordApplied(.dewatermark)
                         aiStates[u] = state
                     }
                 }
@@ -1570,6 +1583,31 @@ class ImageWindow {
         aiOperationCancelled = true
         RealESRGANEngine.shared.isCancelled = true
         U2NetEngine.shared.isCancelled = true
+    }
+
+    // MARK: - AI Undo
+
+    /// Whether the current image has an AI operation that can be undone.
+    func canUndoAI() -> Bool {
+        guard imageURLs.indices.contains(currentIndex) else { return false }
+        let url = imageURLs[currentIndex]
+        return aiStates[url]?.canUndo ?? false
+    }
+
+    /// Undo the most recently applied AI operation (Cmd+Z or Esc).
+    func undoAI() {
+        guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+        guard let state = aiStates[url], state.canUndo else { return }
+        
+        let undone = state.undo()
+        aiStates[url] = state
+        
+        if let kind = undone {
+            Logger.shared.log("AI undo: \(kind.rawValue) undone")
+        }
+        
+        refreshCurrentDisplay()
     }
 
     // MARK: - Delete (move to Trash)

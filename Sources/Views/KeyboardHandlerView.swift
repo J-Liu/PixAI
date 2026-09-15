@@ -33,6 +33,10 @@ class KeyboardHandlerView: NSView {
     private let isAIOperationActive: () -> Bool
     /// Called on Esc during a single AI operation: cancel it.
     private let onCancelAIOperation: () -> Void
+    /// Live query for whether an AI operation can be undone.
+    private let canUndoAI: () -> Bool
+    /// Called on Cmd+Z: undo last AI operation.
+    private let onUndo: () -> Void
     /// Called when "?" is pressed: show the keyboard-shortcuts help window.
     private let onShowShortcuts: () -> Void
     init(onPrevious: @escaping () -> Void,
@@ -53,6 +57,8 @@ class KeyboardHandlerView: NSView {
          onCancelCrop: @escaping () -> Void,
          isAIOperationActive: @escaping () -> Bool,
          onCancelAIOperation: @escaping () -> Void,
+         canUndoAI: @escaping () -> Bool,
+         onUndo: @escaping () -> Void,
          onShowShortcuts: @escaping () -> Void) {
         self.onPrevious = onPrevious
         self.onNext = onNext
@@ -72,6 +78,8 @@ class KeyboardHandlerView: NSView {
         self.onCancelCrop = onCancelCrop
         self.isAIOperationActive = isAIOperationActive
         self.onCancelAIOperation = onCancelAIOperation
+        self.canUndoAI = canUndoAI
+        self.onUndo = onUndo
         self.onShowShortcuts = onShowShortcuts
         super.init(frame: .zero)
 
@@ -128,6 +136,13 @@ class KeyboardHandlerView: NSView {
         if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
            (key == "s" || keyCode == 1) {
             onSave()
+            return
+        }
+
+        // Cmd+Z: undo last AI operation.
+        if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
+           (key == "z" || keyCode == 6) {
+            onUndo()
             return
         }
 
@@ -208,6 +223,8 @@ class KeyboardHandlerView: NSView {
                 onCancelCrop()
             } else if isAIOperationActive() {
                 onCancelAIOperation()
+            } else if canUndoAI() {
+                onUndo()
             } else if isBatchActive() {
                 onCancelBatch()
             } else if isSlideshowActive() {
