@@ -1218,9 +1218,11 @@ class ImageWindow {
             let out = await Task.detached(priority: .userInitiated) { [weak self] () -> CGImage? in
                 guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
                 return try? RealESRGANEngine.shared.upscale(cg) { p in
-                    DispatchQueue.main.async {
-                        guard let self = self, !self.aiOperationCancelled else { return }
-                        self.aiOperationLabel?.stringValue = L10n.shared.tf("AI upscaling… %.0f%%", p * 100)
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        if !self.aiOperationCancelled {
+                            self.aiOperationLabel?.stringValue = L10n.shared.tf("AI upscaling… %.0f%%", p * 100)
+                        }
                     }
                 }
             }.value

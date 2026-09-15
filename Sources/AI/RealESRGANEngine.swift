@@ -396,9 +396,9 @@ final class RealESRGANEngine {
             data: base, width: tileInput, height: tileInput,
             bitsPerComponent: 8, bytesPerRow: bpr,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
         ) else { throw PluginManager.PluginError.downloadFailed("input context failed") }
-        ctx.interpolationQuality = .high
+        ctx.interpolationQuality = CGInterpolationQuality.high
         ctx.draw(tileCG, in: CGRect(x: 0, y: 0, width: tileInput, height: tileInput))
         Logger.shared.log("RealESRGAN: inferTile - input drawn to context")
 
