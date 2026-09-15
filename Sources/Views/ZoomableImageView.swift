@@ -568,14 +568,14 @@ class ZoomableImageView: NSView {
         liveEventObservers.removeAll()
         guard let item else { return }
         liveEventObservers.append(NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: item,
             queue: .main
         ) { [weak self] _ in
             self?.stopLivePlayback()
         })
         liveEventObservers.append(NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
             object: item,
             queue: .main
         ) { [weak self] _ in

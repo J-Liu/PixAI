@@ -215,6 +215,11 @@ final class L10n {
         "Ask to download AI models at startup when missing": "启动时若 AI 模型缺失/损坏则询问下载",
         "Auto-play Live Photos when displayed": "显示时自动播放 Live Photo",
         "Mute Live Photo playback": "Live Photo 播放静音",
+
+        // ── Open panel directory ────────────────────────────────────
+        "Default directory:": "默认目录：",
+        "Last open": "上次打开",
+        "Choose...": "选择...",
         "Slideshow": "幻灯片",
         "Interval per slide (1–600 s):": "每张间隔（1–600 秒）：",
         "Image Cache": "图片缓存",
@@ -420,6 +425,11 @@ final class L10n {
         "Ask to download AI models at startup when missing": "啟動時若 AI 模型缺失/損壞則詢問下載",
         "Auto-play Live Photos when displayed": "顯示時自動播放 Live Photo",
         "Mute Live Photo playback": "Live Photo 播放靜音",
+
+        // ── Open panel directory ────────────────────────────────────
+        "Default directory:": "預設目錄：",
+        "Last open": "上次開啟",
+        "Choose...": "選擇...",
         "Slideshow": "幻燈片",
         "Interval per slide (1–600 s):": "每張間隔（1–600 秒）：",
         "Image Cache": "圖片快取",

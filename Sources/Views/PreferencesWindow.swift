@@ -25,6 +25,8 @@ final class PreferencesWindow: NSObject {
     private var cropLivePhotoConfirmCheckbox: NSButton!
     private var liveAutoPlayCheckbox: NSButton!
     private var liveMutedCheckbox: NSButton!
+    private var openDirModePopup: NSPopUpButton!
+    private var openDirField: NSTextField!
     private var intervalField: NSTextField!
     private var intervalStepper: NSStepper!
     private var cacheField: NSTextField!
@@ -67,7 +69,7 @@ final class PreferencesWindow: NSObject {
     // MARK: - Building
 
     private func buildWindow() {
-        let contentSize = NSSize(width: 600, height: 500)
+        let contentSize = NSSize(width: 600, height: 440)
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
@@ -154,7 +156,7 @@ final class PreferencesWindow: NSObject {
     private func buildGeneralTab(_ root: NSView, t: (String) -> String) {
         var y: CGFloat = 14
         let contentWidth = root.bounds.width - 28
-        let sectionHeight: CGFloat = 240
+        let sectionHeight: CGFloat = 294
 
         let box = makeSection(root, title: t("General"), x: 14, y: y, width: contentWidth, contentHeight: sectionHeight)
         quitCheckbox = makeCheck(box.contentView!, title: t("Quit app when the last window is closed"), x: 14, y: 10)
@@ -172,14 +174,30 @@ final class PreferencesWindow: NSObject {
         languagePopup.target = self
         languagePopup.action = #selector(languageChanged(_:))
 
-        let transitionLabel = makeLabel(box.contentView!, text: t("Image transition duration (0–2 s, 0 = off):"), x: 14, y: 96)
-        transitionField = NoAutoFocusTextField(frame: NSRect(x: 14 + transitionLabel.frame.width + 10, y: 93, width: 56, height: 24))
+        // Open directory mode
+        let openDirLabel = makeLabel(box.contentView!, text: t("Default directory:"), x: 14, y: 96)
+        openDirModePopup = makePopup(box.contentView!, items: [t("Last open"), t("Choose...")], x: 14 + openDirLabel.frame.width + 10, y: 92, width: 100)
+        openDirModePopup.target = self
+        openDirModePopup.action = #selector(openDirModeChanged(_:))
+
+        // Directory display (read-only text field)
+        openDirField = NSTextField(frame: NSRect(x: 126 + openDirLabel.frame.width + 10, y: 93, width: 260, height: 24))
+        openDirField.font = NSFont.systemFont(ofSize: 12)
+        openDirField.isEditable = false
+        openDirField.isBezeled = true
+        openDirField.drawsBackground = true
+        openDirField.backgroundColor = NSColor.controlBackgroundColor
+        openDirField.focusRingType = .none
+        box.contentView!.addSubview(openDirField)
+
+        let transitionLabel = makeLabel(box.contentView!, text: t("Image transition duration (0–2 s, 0 = off):"), x: 14, y: 124)
+        transitionField = NoAutoFocusTextField(frame: NSRect(x: 14 + transitionLabel.frame.width + 10, y: 121, width: 56, height: 24))
         transitionField.font = NSFont.systemFont(ofSize: 13)
         transitionField.alignment = .center
         transitionField.target = self
         transitionField.action = #selector(transitionFieldChanged(_:))
         box.contentView!.addSubview(transitionField)
-        transitionStepper = NSStepper(frame: NSRect(x: 14 + transitionLabel.frame.width + 78, y: 92, width: 19, height: 27))
+        transitionStepper = NSStepper(frame: NSRect(x: 14 + transitionLabel.frame.width + 78, y: 120, width: 19, height: 27))
         transitionStepper.minValue = 0
         transitionStepper.maxValue = 2
         transitionStepper.increment = 0.1
@@ -189,22 +207,22 @@ final class PreferencesWindow: NSObject {
         transitionStepper.action = #selector(transitionStepperChanged(_:))
         box.contentView!.addSubview(transitionStepper)
 
-        modelCheckPromptCheckbox = makeCheck(box.contentView!, title: t("Ask to download AI models at startup when missing"), x: 14, y: 124)
+        modelCheckPromptCheckbox = makeCheck(box.contentView!, title: t("Ask to download AI models at startup when missing"), x: 14, y: 152)
         modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
         modelCheckPromptCheckbox.target = self
         modelCheckPromptCheckbox.action = #selector(toggleModelCheckPrompt(_:))
 
-        cropLivePhotoConfirmCheckbox = makeCheck(box.contentView!, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: 152)
+        cropLivePhotoConfirmCheckbox = makeCheck(box.contentView!, title: t("Confirm before cropping a Live Photo (result is a still image)"), x: 14, y: 180)
         cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
         cropLivePhotoConfirmCheckbox.target = self
         cropLivePhotoConfirmCheckbox.action = #selector(toggleCropLivePhotoConfirm(_:))
 
-        liveAutoPlayCheckbox = makeCheck(box.contentView!, title: t("Auto-play Live Photos when displayed"), x: 14, y: 180)
+        liveAutoPlayCheckbox = makeCheck(box.contentView!, title: t("Auto-play Live Photos when displayed"), x: 14, y: 208)
         liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
         liveAutoPlayCheckbox.target = self
         liveAutoPlayCheckbox.action = #selector(toggleLiveAutoPlay(_:))
 
-        liveMutedCheckbox = makeCheck(box.contentView!, title: t("Mute Live Photo playback"), x: 14, y: 208)
+        liveMutedCheckbox = makeCheck(box.contentView!, title: t("Mute Live Photo playback"), x: 14, y: 236)
         liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
         liveMutedCheckbox.target = self
         liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
@@ -472,6 +490,13 @@ final class PreferencesWindow: NSObject {
             self.cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
             self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
             self.liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
+            let openDirMode = AppConfig.shared.openPanelDirectoryMode
+            let openDirModeIdx = (openDirMode == "custom") ? 1 : 0
+            if self.openDirModePopup.indexOfSelectedItem != openDirModeIdx { self.openDirModePopup.selectItem(at: openDirModeIdx) }
+            // Show current directory name (last opened or custom)
+            let currentDir = AppConfig.shared.getOpenPanelDirectory()
+            let displayDir = currentDir?.lastPathComponent ?? ""
+            if self.openDirField.stringValue != displayDir { self.openDirField.stringValue = displayDir }
             let interval = Int(AppConfig.shared.slideshowInterval)
             if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
             if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
@@ -518,6 +543,41 @@ final class PreferencesWindow: NSObject {
 
     @objc private func toggleLiveMuted(_ sender: NSButton) {
         AppConfig.shared.livePhotoMuted = (sender.state == .on)
+    }
+
+    @objc private func openDirModeChanged(_ sender: NSPopUpButton) {
+        let isChoose = sender.indexOfSelectedItem == 1
+        if isChoose {
+            // Pop up directory chooser immediately
+            guard let window = window else { return }
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            panel.canCreateDirectories = true
+            panel.prompt = "Select"
+            panel.message = "Choose the default directory for the Open panel."
+
+            var startDir = URL(fileURLWithPath: AppConfig.shared.customOpenDirectory, isDirectory: true)
+            if !FileManager.default.fileExists(atPath: startDir.path) {
+                startDir = FileManager.default.homeDirectoryForCurrentUser
+            }
+            panel.directoryURL = startDir
+
+            panel.beginSheetModal(for: window) { [weak self] response in
+                if response == .OK, let dir = panel.url {
+                    AppConfig.shared.openPanelDirectoryMode = "custom"
+                    AppConfig.shared.customOpenDirectory = dir.path
+                    self?.openDirField.stringValue = dir.lastPathComponent
+                } else {
+                    // User cancelled, revert to "Last open"
+                    self?.openDirModePopup.selectItem(at: 0)
+                    AppConfig.shared.openPanelDirectoryMode = "last"
+                }
+            }
+        } else {
+            AppConfig.shared.openPanelDirectoryMode = "last"
+        }
     }
 
     @objc private func intervalStepperChanged(_ sender: NSStepper) {
@@ -686,6 +746,8 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.cropLivePhotoConfirm = AppConfig.Defaults.cropLivePhotoConfirm
         AppConfig.shared.livePhotoAutoPlay = AppConfig.Defaults.livePhotoAutoPlay
         AppConfig.shared.livePhotoMuted = AppConfig.Defaults.livePhotoMuted
+        AppConfig.shared.openPanelDirectoryMode = AppConfig.Defaults.openPanelDirectoryMode
+        AppConfig.shared.customOpenDirectory = AppConfig.Defaults.customOpenDirectory()
     }
 
     @objc private func restoreSlideshowDefaults(_ sender: Any?) {

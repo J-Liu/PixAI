@@ -55,6 +55,10 @@ final class AppConfig {
         static let modelCheckPromptEnabled = true
         /// Confirm before cropping a Live Photo (the result is a still image).
         static let cropLivePhotoConfirm = true
+        /// Open panel directory mode: "last" (remember last opened) or "custom" (fixed directory).
+        static let openPanelDirectoryMode = "last"
+        /// Custom directory for open panel (used when mode is "custom").
+        static func customOpenDirectory() -> String { "" }
     }
 
     /// Allowed range for the image cache count.
@@ -87,6 +91,10 @@ final class AppConfig {
         var imageTransitionDuration: Double?
         var modelCheckPromptEnabled: Bool?
         var cropLivePhotoConfirm: Bool?
+        // Open panel directory
+        var openPanelDirectoryMode: String?
+        var customOpenDirectory: String?
+        var lastOpenDirectory: String?
     }
 
     private let fileURL: URL
@@ -117,6 +125,10 @@ final class AppConfig {
     private var _imageTransitionDuration: Double = Defaults.imageTransitionDuration
     private var _modelCheckPromptEnabled: Bool = Defaults.modelCheckPromptEnabled
     private var _cropLivePhotoConfirm: Bool = Defaults.cropLivePhotoConfirm
+    // Open panel directory
+    private var _openPanelDirectoryMode: String = Defaults.openPanelDirectoryMode
+    private var _customOpenDirectory: String = Defaults.customOpenDirectory()
+    private var _lastOpenDirectory: String = ""
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -475,6 +487,72 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Open panel directory settings
+
+    /// Open panel directory mode: "last" (remember last opened) or "custom" (fixed directory).
+    var openPanelDirectoryMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _openPanelDirectoryMode
+        }
+        set {
+            let normalized = (newValue == "custom") ? "custom" : "last"
+            lock.lock()
+            let changed = _openPanelDirectoryMode != normalized
+            if changed { _openPanelDirectoryMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Custom directory for open panel (used when mode is "custom").
+    var customOpenDirectory: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _customOpenDirectory
+        }
+        set {
+            let expanded = (newValue as NSString).expandingTildeInPath
+            lock.lock()
+            let changed = _customOpenDirectory != expanded
+            if changed { _customOpenDirectory = expanded }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Last opened directory (updated after each file open).
+    var lastOpenDirectory: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _lastOpenDirectory
+        }
+        set {
+            let expanded = (newValue as NSString).expandingTildeInPath
+            lock.lock()
+            let changed = _lastOpenDirectory != expanded
+            if changed { _lastOpenDirectory = expanded }
+            lock.unlock()
+            if changed { save() }
+        }
+    }
+
+    /// Get the directory URL to use for the open panel.
+    func getOpenPanelDirectory() -> URL? {
+        let mode = openPanelDirectoryMode
+        if mode == "custom" {
+            let custom = customOpenDirectory
+            if !custom.isEmpty, FileManager.default.fileExists(atPath: custom) {
+                return URL(fileURLWithPath: custom)
+            }
+        }
+        let last = lastOpenDirectory
+        if !last.isEmpty, FileManager.default.fileExists(atPath: last) {
+            return URL(fileURLWithPath: last)
+        }
+        return nil
+    }
+
     static func normalizeLanguage(_ value: String) -> String {
         switch value {
         case "zh": return "zh"
@@ -580,6 +658,15 @@ final class AppConfig {
             _cropLivePhotoConfirm = Defaults.cropLivePhotoConfirm
             changed = true
         }
+        if _openPanelDirectoryMode != Defaults.openPanelDirectoryMode {
+            _openPanelDirectoryMode = Defaults.openPanelDirectoryMode
+            changed = true
+        }
+        if _customOpenDirectory != Defaults.customOpenDirectory() {
+            _customOpenDirectory = Defaults.customOpenDirectory()
+            changed = true
+        }
+        // Don't reset lastOpenDirectory - it's always remembered
         lock.unlock()
         if changed { save(); notifyChange() }
     }
@@ -628,6 +715,10 @@ final class AppConfig {
         if let v = payload.imageTransitionDuration { _imageTransitionDuration = Self.clampTransitionDuration(v) }
         if let v = payload.modelCheckPromptEnabled { _modelCheckPromptEnabled = v }
         if let v = payload.cropLivePhotoConfirm { _cropLivePhotoConfirm = v }
+        // Open panel directory
+        if let v = payload.openPanelDirectoryMode { _openPanelDirectoryMode = (v == "custom") ? "custom" : "last" }
+        if let v = payload.customOpenDirectory, !v.isEmpty { _customOpenDirectory = (v as NSString).expandingTildeInPath }
+        if let v = payload.lastOpenDirectory, !v.isEmpty { _lastOpenDirectory = (v as NSString).expandingTildeInPath }
         lock.unlock()
     }
 
@@ -654,7 +745,10 @@ final class AppConfig {
             uiLanguage: _uiLanguage,
             imageTransitionDuration: _imageTransitionDuration,
             modelCheckPromptEnabled: _modelCheckPromptEnabled,
-            cropLivePhotoConfirm: _cropLivePhotoConfirm
+            cropLivePhotoConfirm: _cropLivePhotoConfirm,
+            openPanelDirectoryMode: _openPanelDirectoryMode,
+            customOpenDirectory: _customOpenDirectory,
+            lastOpenDirectory: _lastOpenDirectory
         )
         lock.unlock()
         do {

@@ -397,9 +397,16 @@ class ImageWindow {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = true
         panel.allowedContentTypes = [.image, .folder]
+        // Set initial directory from config
+        panel.directoryURL = AppConfig.shared.getOpenPanelDirectory()
         panel.begin { response in
             if response == .OK {
                 Logger.shared.log("Open panel selected \(panel.urls.count) items")
+                // Remember the directory for next time (from first selected URL)
+                if let firstUrl = panel.urls.first {
+                    let dir = firstUrl.isFileURL && firstUrl.pathExtension.isEmpty ? firstUrl : firstUrl.deletingLastPathComponent()
+                    AppConfig.shared.lastOpenDirectory = dir.path
+                }
                 self.loadImages(from: panel.urls)
             } else {
                 Logger.shared.log("Open panel cancelled")
@@ -1269,7 +1276,7 @@ class ImageWindow {
         // ── Phase 1: dedup (skipped when mode == "watermarkOnly") ─────────
         if mode != "watermarkOnly" {
             setBatchProgress(0, indeterminate: true)
-            let observations = await DuplicateDetector.featurePrints(for: urls) { p in
+            let observations = await DuplicateDetector.featurePrints(for: urls) { [weak self] p in
                 DispatchQueue.main.async { [weak self] in
                     self?.setBatchProgress(p * 0.4, indeterminate: false)
                 }
