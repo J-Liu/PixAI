@@ -9,7 +9,7 @@ import AppKit
 /// Every control writes straight to `AppConfig.shared`, which persists the
 /// new value to `~/.pixai/config.json` immediately and posts a change
 /// notification — so edits take effect at once without restarting.
-final class PreferencesWindow {
+final class PreferencesWindow: NSObject {
     static let shared = PreferencesWindow()
 
     private var window: NSWindow?
@@ -47,7 +47,9 @@ final class PreferencesWindow {
     private var changeObserver: NSObjectProtocol?
     private var l10nObserver: NSObjectProtocol?
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
     func show() {
         if window == nil {
@@ -57,6 +59,8 @@ final class PreferencesWindow {
         guard let window = window else { return }
         window.center()
         window.makeKeyAndOrderFront(nil)
+        // Don't give focus to text fields; give focus to the tab view itself
+        window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -141,6 +145,9 @@ final class PreferencesWindow {
             self?.syncModelRows()
         }
 
+        // Clear focus when switching tabs
+        tabView.delegate = self
+
         self.window = win
     }
 
@@ -166,7 +173,7 @@ final class PreferencesWindow {
         languagePopup.action = #selector(languageChanged(_:))
 
         let transitionLabel = makeLabel(box.contentView!, text: t("Image transition duration (0–2 s, 0 = off):"), x: 14, y: 96)
-        transitionField = NSTextField(frame: NSRect(x: 14 + transitionLabel.frame.width + 10, y: 93, width: 56, height: 24))
+        transitionField = NoAutoFocusTextField(frame: NSRect(x: 14 + transitionLabel.frame.width + 10, y: 93, width: 56, height: 24))
         transitionField.font = NSFont.systemFont(ofSize: 13)
         transitionField.alignment = .center
         transitionField.target = self
@@ -217,7 +224,10 @@ final class PreferencesWindow {
 
         let box = makeSection(root, title: t("Slideshow"), x: 14, y: y, width: contentWidth, contentHeight: 36)
         let intervalLabel = makeLabel(box.contentView!, text: t("Interval per slide (1–600 s):"), x: 14, y: 8)
-        intervalField = makeNumberField(box.contentView!, x: 14 + intervalLabel.frame.width + 10, y: 5, width: 64)
+        intervalField = NoAutoFocusNumberField(frame: NSRect(x: 14 + intervalLabel.frame.width + 10, y: 5, width: 64, height: 24))
+        intervalField.font = NSFont.systemFont(ofSize: 13)
+        intervalField.alignment = .center
+        box.contentView!.addSubview(intervalField)
         intervalField.target = self
         intervalField.action = #selector(intervalFieldChanged(_:))
         intervalStepper = NSStepper(frame: NSRect(x: 14 + intervalLabel.frame.width + 82, y: 4, width: 19, height: 27))
@@ -321,7 +331,7 @@ final class PreferencesWindow {
         proxyTypePopup.action = #selector(proxyTypeChanged(_:))
 
         _ = makeLabel(proxyBox.contentView!, text: t("Host:"), x: 162, y: 42)
-        proxyHostField = NSTextField(frame: NSRect(x: 202, y: 39, width: 150, height: 24))
+        proxyHostField = NoAutoFocusTextField(frame: NSRect(x: 202, y: 39, width: 150, height: 24))
         proxyHostField.font = NSFont.systemFont(ofSize: 13)
         proxyHostField.placeholderString = "127.0.0.1"
         proxyHostField.target = self
@@ -329,10 +339,17 @@ final class PreferencesWindow {
         proxyBox.contentView!.addSubview(proxyHostField)
 
         _ = makeLabel(proxyBox.contentView!, text: t("Port:"), x: 366, y: 42)
-        proxyPortField = makeNumberField(proxyBox.contentView!, x: 408, y: 39, width: 44)
+        proxyPortField = NoAutoFocusNumberField(frame: NSRect(x: 408, y: 39, width: 60, height: 24))
+        proxyPortField.font = NSFont.systemFont(ofSize: 13)
+        proxyPortField.alignment = .center
+        // Use plain number format (no thousands separator)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        proxyPortField.formatter = formatter
+        proxyBox.contentView!.addSubview(proxyPortField)
         proxyPortField.target = self
         proxyPortField.action = #selector(proxyPortFieldChanged(_:))
-        proxyPortStepper = NSStepper(frame: NSRect(x: 456, y: 38, width: 19, height: 27))
+        proxyPortStepper = NSStepper(frame: NSRect(x: 474, y: 38, width: 19, height: 27))
         proxyPortStepper.minValue = 1
         proxyPortStepper.maxValue = 65535
         proxyPortStepper.increment = 1
@@ -345,7 +362,10 @@ final class PreferencesWindow {
 
         let cacheBox = makeSection(root, title: t("Image Cache"), x: 14, y: y, width: contentWidth, contentHeight: 36)
         let cacheLabel = makeLabel(cacheBox.contentView!, text: t("Cached images (1–20):"), x: 14, y: 8)
-        cacheField = makeNumberField(cacheBox.contentView!, x: 14 + cacheLabel.frame.width + 10, y: 5, width: 64)
+        cacheField = NoAutoFocusNumberField(frame: NSRect(x: 14 + cacheLabel.frame.width + 10, y: 5, width: 64, height: 24))
+        cacheField.font = NSFont.systemFont(ofSize: 13)
+        cacheField.alignment = .center
+        cacheBox.contentView!.addSubview(cacheField)
         cacheField.target = self
         cacheField.action = #selector(cacheFieldChanged(_:))
         cacheStepper = NSStepper(frame: NSRect(x: 14 + cacheLabel.frame.width + 82, y: 4, width: 19, height: 27))
@@ -369,7 +389,7 @@ final class PreferencesWindow {
         let browseWidth: CGFloat = 70
         let fieldX = 14 + pathLabel.frame.width + 10
         let fieldW = contentWidth - (fieldX) - browseWidth - 8 - 14
-        logPathField = NSTextField(frame: NSRect(x: fieldX, y: 39, width: fieldW, height: 24))
+        logPathField = NoAutoFocusTextField(frame: NSRect(x: fieldX, y: 39, width: fieldW, height: 24))
         logPathField.font = NSFont.systemFont(ofSize: 12)
         logPathField.placeholderString = AppConfig.Defaults.logPath()
         logPathField.target = self
@@ -420,14 +440,6 @@ final class PreferencesWindow {
         label.frame = NSRect(x: x, y: y, width: label.frame.width, height: label.frame.height)
         parent.addSubview(label)
         return label
-    }
-
-    private func makeNumberField(_ parent: NSView, x: CGFloat, y: CGFloat, width: CGFloat) -> NSTextField {
-        let field = NSTextField(frame: NSRect(x: x, y: y, width: width, height: 24))
-        field.font = NSFont.systemFont(ofSize: 13)
-        field.alignment = .center
-        parent.addSubview(field)
-        return field
     }
 
     private func makePopup(_ parent: NSView, items: [String], x: CGFloat, y: CGFloat, width: CGFloat) -> NSPopUpButton {
@@ -771,4 +783,49 @@ private final class FlippedView: NSView {
 
 private final class FlippedBox: NSBox {
     override var isFlipped: Bool { true }
+}
+
+/// A text field that doesn't accept keyboard focus by default (tab navigation skips it).
+/// Focus is only gained when the user clicks directly on it.
+private final class NoAutoFocusTextField: NSTextField {
+    private var allowFocus = false
+
+    func enableFocus() {
+        allowFocus = true
+        window?.makeFirstResponder(self)
+        allowFocus = false
+    }
+
+    override var acceptsFirstResponder: Bool { allowFocus }
+
+    override func mouseDown(with event: NSEvent) {
+        enableFocus()
+        super.mouseDown(with: event)
+    }
+}
+
+private final class NoAutoFocusNumberField: NSTextField {
+    private var allowFocus = false
+
+    func enableFocus() {
+        allowFocus = true
+        window?.makeFirstResponder(self)
+        allowFocus = false
+    }
+
+    override var acceptsFirstResponder: Bool { allowFocus }
+
+    override func mouseDown(with event: NSEvent) {
+        enableFocus()
+        super.mouseDown(with: event)
+    }
+}
+
+// MARK: - NSTabViewDelegate
+
+extension PreferencesWindow: NSTabViewDelegate {
+    func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        // Clear focus when switching tabs
+        window?.makeFirstResponder(nil)
+    }
 }

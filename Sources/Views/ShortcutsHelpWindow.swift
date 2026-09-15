@@ -24,13 +24,13 @@ final class ShortcutsHelpWindow {
             ("Space", t("Play / Pause slideshow")),
             ("P", t("Start / Stop slideshow")),
             ("F", t("Toggle full screen")),
-            ("Esc / Enter", t("Exit slideshow / full screen")),
+            ("Esc/Enter", t("Exit slideshow / full screen")),
             ("⌘S", t("Save (overwrite)")),
             ("⌘⇧S", t("Save As...")),
             ("⌘⌫", t("Delete (move to Trash)")),
             ("?", t("Show this help")),
             ("Double-click", t("Fit / 100% (double-click image)")),
-            ("Wheel / Pinch", t("Zoom (mouse wheel / trackpad pinch)")),
+            ("Wheel/Pinch", t("Zoom (mouse wheel / trackpad pinch)")),
         ]
     }
 
