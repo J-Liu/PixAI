@@ -112,6 +112,12 @@ final class L10n {
         "Enter Full Screen": "进入全屏",
         "Toggle Full Screen": "切换全屏",
 
+        // ── Context menu navigation ──────────────────────────────
+        "Previous Image": "上一张",
+        "Next Image": "下一张",
+        "First Image": "第一张",
+        "Last Image": "最后一张",
+
         // ── AI menu ──────────────────────────────────────────────────
         "AI Super-Resolution": "AI 超分辨率",
         "AI Watermark Removal": "AI 去水印",
@@ -310,6 +316,12 @@ final class L10n {
         "Start/Stop Slideshow": "開始/停止幻燈片",
         "Enter Full Screen": "進入全螢幕",
         "Toggle Full Screen": "切換全螢幕",
+
+        // ── Context menu navigation ──────────────────────────────
+        "Previous Image": "上一張",
+        "Next Image": "下一張",
+        "First Image": "第一張",
+        "Last Image": "最後一張",
 
         // ── AI menu ──────────────────────────────────────────────────
         "AI Super-Resolution": "AI 超解析度",

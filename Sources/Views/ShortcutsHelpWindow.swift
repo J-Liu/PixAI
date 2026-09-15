@@ -17,8 +17,8 @@ final class ShortcutsHelpWindow {
     private static func rows() -> [(String, String)] {
         let t = L10n.shared.t
         return [
-            ("← / ↑ / W / A / H / J", t("Previous image")),
-            ("→ / ↓ / S / D / L / K", t("Next image")),
+            ("←/↑/W/A/H/J", t("Previous image")),
+            ("→/↓/S/D/L/K", t("Next image")),
             ("R", t("Rotate 90° clockwise")),
             ("⌘R", t("Rotate 90° counterclockwise")),
             ("Space", t("Play / Pause slideshow")),
@@ -39,6 +39,8 @@ final class ShortcutsHelpWindow {
         guard let window = window else { return }
         window.center()
         window.makeKeyAndOrderFront(nil)
+        // Make the content view first responder so it can handle ESC key
+        window.makeFirstResponder(window.contentView)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -96,4 +98,13 @@ final class ShortcutsHelpWindow {
 /// Simple flipped container so the help rows can be placed top-to-bottom.
 private final class FlippedContainer: NSView {
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func keyDown(with event: NSEvent) {
+        // ESC key closes the window
+        if event.keyCode == 53 {
+            self.window?.close()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
 }

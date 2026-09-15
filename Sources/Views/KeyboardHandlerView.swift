@@ -208,8 +208,8 @@ class KeyboardHandlerView: NSView {
                 super.keyDown(with: event)
             }
             return
-        // ?: show the keyboard-shortcuts help window.
-        case ("?", _):
+        // ?: show the keyboard-shortcuts help window (both English and Chinese full-width question mark).
+        case ("?", _), ("？", _):
             onShowShortcuts()
             return
         default:
