@@ -18,7 +18,7 @@ A lightweight, fast, AI-powered image viewer for macOS.
 - Auto AI enhance on image load
 
 **Image Viewing**
-- Support for JPEG, PNG, HEIC, HEIF, GIF, WebP, BMP, TIFF, and Live Photos
+- Support for JPEG, PNG, HEIC, HEIF, GIF, WebP, BMP, TIFF
 - Zoom, pan, rotate, crop
 - Slideshow mode
 - Duplicate detection and comparison
@@ -76,7 +76,7 @@ Settings are stored in `~/.pixai/config.json`.
 
 Open Preferences with `Cmd+,` to configure:
 
-- General: language, transition animations, Live Photo settings
+- General: language, transition animations
 - Slideshow: interval timing
 - AI: auto-enhance options, one-click mode
 - Advanced: proxy settings, image cache, logging
