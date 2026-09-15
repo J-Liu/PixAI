@@ -29,6 +29,10 @@ class KeyboardHandlerView: NSView {
     private let isCropModeActive: () -> Bool
     /// Called on Esc while cropping: exit crop mode without saving.
     private let onCancelCrop: () -> Void
+    /// Live query for whether a single AI operation (upscale/dewatermark) is running.
+    private let isAIOperationActive: () -> Bool
+    /// Called on Esc during a single AI operation: cancel it.
+    private let onCancelAIOperation: () -> Void
     /// Called when "?" is pressed: show the keyboard-shortcuts help window.
     private let onShowShortcuts: () -> Void
     init(onPrevious: @escaping () -> Void,
@@ -47,6 +51,8 @@ class KeyboardHandlerView: NSView {
          onCancelBatch: @escaping () -> Void,
          isCropModeActive: @escaping () -> Bool,
          onCancelCrop: @escaping () -> Void,
+         isAIOperationActive: @escaping () -> Bool,
+         onCancelAIOperation: @escaping () -> Void,
          onShowShortcuts: @escaping () -> Void) {
         self.onPrevious = onPrevious
         self.onNext = onNext
@@ -64,6 +70,8 @@ class KeyboardHandlerView: NSView {
         self.onCancelBatch = onCancelBatch
         self.isCropModeActive = isCropModeActive
         self.onCancelCrop = onCancelCrop
+        self.isAIOperationActive = isAIOperationActive
+        self.onCancelAIOperation = onCancelAIOperation
         self.onShowShortcuts = onShowShortcuts
         super.init(frame: .zero)
 
@@ -198,6 +206,8 @@ class KeyboardHandlerView: NSView {
         case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
             if isCropModeActive() {
                 onCancelCrop()
+            } else if isAIOperationActive() {
+                onCancelAIOperation()
             } else if isBatchActive() {
                 onCancelBatch()
             } else if isSlideshowActive() {

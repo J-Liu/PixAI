@@ -19,6 +19,9 @@ final class U2NetEngine {
 
     private let lock = NSLock()
     private var module: Module?
+    
+    /// Cancellation flag checked during inference.
+    var isCancelled: Bool = false
 
     var isAvailable: Bool {
         return PluginManager.shared.isEnabled(ModelPlugin.u2net)
@@ -56,8 +59,14 @@ final class U2NetEngine {
 
     /// Detect and remove a watermark. Returns the cleaned image and the fraction
     /// of pixels that were masked (0 when nothing was detected).
+    /// Throws `CancellationError` if `isCancelled` is set to true during execution.
     func removeWatermark(from cgImage: CGImage) throws -> (image: CGImage, removedFraction: Double) {
+        isCancelled = false  // Reset at start
         try ensureLoaded()
+        guard !isCancelled else {
+            Logger.shared.log("U2Net: cancelled before mask prediction")
+            throw CancellationError()
+        }
         let w = cgImage.width, h = cgImage.height
         guard w > 8, h > 8 else {
             throw PluginManager.PluginError.downloadFailed("image too small")
@@ -69,6 +78,11 @@ final class U2NetEngine {
 
         // 1) Saliency mask at 320×320.
         let maskSmall = try predictMask(cgImage)
+        
+        guard !isCancelled else {
+            Logger.shared.log("U2Net: cancelled after mask prediction")
+            throw CancellationError()
+        }
 
         // 2) Min-max normalize (the model output range is often narrow).
         var lo = Float.greatestFiniteMagnitude, hi = -Float.greatestFiniteMagnitude

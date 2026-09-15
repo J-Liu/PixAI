@@ -50,6 +50,14 @@ class ImageWindow {
     /// Progress indicator + label inside the batch overlay.
     private var batchProgressIndicator: NSProgressIndicator?
     private var batchStatusLabel: NSTextField?
+    /// AI operation overlay (spinner + progress)
+    private var aiOperationOverlay: NSView?
+    private var aiOperationSpinner: NSProgressIndicator?
+    private var aiOperationLabel: NSTextField?
+    /// Flag to cancel current AI operation
+    private var aiOperationCancelled = false
+    /// True while a single AI operation (upscale/dewatermark) is running.
+    private var aiOperationRunning = false
 
     private var pluginObserver: NSObjectProtocol?
 
@@ -296,6 +304,13 @@ class ImageWindow {
             onCancelCrop: { [weak self] in
                 Logger.shared.log("Keyboard handler: cancel crop (Esc)")
                 self?.exitCropMode()
+            },
+            isAIOperationActive: { [weak self] in
+                self?.aiOperationRunning ?? false
+            },
+            onCancelAIOperation: { [weak self] in
+                Logger.shared.log("Keyboard handler: cancel AI operation (Esc)")
+                self?.cancelAIOperation()
             },
             onShowShortcuts: {
                 Logger.shared.log("Keyboard handler: show shortcuts help (?)")
@@ -1113,7 +1128,7 @@ class ImageWindow {
 
     /// Toggle CIAutoEnhance quality enhancement on the current image.
     func toggleAIEnhance() {
-        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
         let state = aiState(for: url)
         if state.isEnhanced {
@@ -1131,13 +1146,21 @@ class ImageWindow {
             return
         }
         aiBusy.insert(url)
+        showAIOperationOverlay(message: L10n.shared.t("AI enhancing…"))
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            defer { self.aiBusy.remove(url) }
+            defer {
+                self.aiBusy.remove(url)
+                self.hideAIOperationOverlay()
+            }
             // Fast, but still kept off the main thread.
             let out = await Task.detached(priority: .userInitiated) {
                 AutoEnhance.enhance(cg)
             }.value
+            guard !self.aiOperationCancelled else {
+                Logger.shared.log("AI enhance cancelled by user")
+                return
+            }
             if let out = out {
                 let state = self.aiState(for: url)
                 state.enhancedImage = Self.nsImage(from: out)
@@ -1155,7 +1178,7 @@ class ImageWindow {
 
     /// Toggle Real-ESRGAN 4x super-resolution on the current image.
     func toggleAIUpscale() {
-        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
         let state = aiState(for: url)
         if state.isUpscaled {
@@ -1174,19 +1197,27 @@ class ImageWindow {
         }
         guard let cg = baseImage?.sourceCGImage else { return }
         aiBusy.insert(url)
+        showAIOperationOverlay(message: L10n.shared.t("AI upscaling…"))
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            defer { self.aiBusy.remove(url) }
-            self.showStatusBarHint(L10n.shared.t("AI upscaling…"), for: 2.0)
+            defer {
+                self.aiBusy.remove(url)
+                self.hideAIOperationOverlay()
+            }
             // Synchronous heavy work: run off the main thread.
             let out = await Task.detached(priority: .userInitiated) { [weak self] () -> CGImage? in
                 guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
                 return try? RealESRGANEngine.shared.upscale(cg) { p in
                     DispatchQueue.main.async {
-                        self?.showStatusBarHint(L10n.shared.tf("AI upscaling… %.0f%%", p * 100), for: 1.0)
+                        guard let self = self, !self.aiOperationCancelled else { return }
+                        self.aiOperationLabel?.stringValue = L10n.shared.tf("AI upscaling… %.0f%%", p * 100)
                     }
                 }
             }.value
+            guard !self.aiOperationCancelled else {
+                Logger.shared.log("AI upscale cancelled by user")
+                return
+            }
             if let out = out {
                 let state = self.aiState(for: url)
                 state.upscaledImage = Self.nsImage(from: out)
@@ -1204,7 +1235,7 @@ class ImageWindow {
 
     /// Toggle U2Net watermark removal on the current image.
     func toggleAIDewatermark() {
-        guard !batchRunning, imageURLs.indices.contains(currentIndex) else { return }
+        guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
         let state = aiState(for: url)
         if state.isDewatermarked {
@@ -1223,15 +1254,22 @@ class ImageWindow {
         }
         guard let cg = baseImage?.sourceCGImage else { return }
         aiBusy.insert(url)
+        showAIOperationOverlay(message: L10n.shared.t("AI dewatermarking…"))
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            defer { self.aiBusy.remove(url) }
-            self.showStatusBarHint(L10n.shared.t("AI dewatermarking…"), for: 2.0)
+            defer {
+                self.aiBusy.remove(url)
+                self.hideAIOperationOverlay()
+            }
             // Synchronous heavy work: run off the main thread.
             let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
                 guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
                 return try? U2NetEngine.shared.removeWatermark(from: cg)
             }.value
+            guard !self.aiOperationCancelled else {
+                Logger.shared.log("AI dewatermark cancelled by user")
+                return
+            }
             if let (out, fraction) = result {
                 if fraction <= 0 {
                     self.showStatusMessage(L10n.shared.t("No watermark detected"))
@@ -1462,6 +1500,76 @@ class ImageWindow {
             bar.stopAnimation(nil)
             bar.doubleValue = min(max(value, 0), 1)
         }
+    }
+
+    // MARK: - AI Operation Overlay
+
+    /// Show a full-window overlay with spinner during AI upscale/dewatermark.
+    private func showAIOperationOverlay(message: String) {
+        guard let contentView = window.contentView else { return }
+        let overlay = NSView(frame: contentView.bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
+
+        let spinner = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 48, height: 48))
+        spinner.style = .spinning
+        spinner.isIndeterminate = true
+        spinner.controlSize = .large
+        spinner.sizeToFit()
+        let spinnerSize = spinner.frame.size
+        spinner.frame = NSRect(x: (contentView.bounds.width - spinnerSize.width) / 2,
+                               y: contentView.bounds.midY,
+                               width: spinnerSize.width, height: spinnerSize.height)
+        spinner.startAnimation(nil)
+
+        let label = NSTextField(labelWithString: message)
+        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.sizeToFit()
+        let labelW = max(label.frame.width, 200)
+        label.frame = NSRect(x: (contentView.bounds.width - labelW) / 2,
+                             y: contentView.bounds.midY - 32,
+                             width: labelW, height: label.frame.height)
+
+        let hint = NSTextField(labelWithString: L10n.shared.t("Press Esc to cancel"))
+        hint.font = NSFont.systemFont(ofSize: 12)
+        hint.textColor = NSColor(white: 0.7, alpha: 1)
+        hint.alignment = .center
+        hint.sizeToFit()
+        let hintW = max(hint.frame.width, 150)
+        hint.frame = NSRect(x: (contentView.bounds.width - hintW) / 2,
+                            y: contentView.bounds.midY - 56,
+                            width: hintW, height: hint.frame.height)
+
+        overlay.addSubview(spinner)
+        overlay.addSubview(label)
+        overlay.addSubview(hint)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        aiOperationOverlay = overlay
+        aiOperationSpinner = spinner
+        aiOperationLabel = label
+        aiOperationCancelled = false
+        aiOperationRunning = true
+    }
+
+    private func hideAIOperationOverlay() {
+        aiOperationSpinner?.stopAnimation(nil)
+        aiOperationOverlay?.removeFromSuperview()
+        aiOperationOverlay = nil
+        aiOperationSpinner = nil
+        aiOperationLabel = nil
+        aiOperationRunning = false
+    }
+
+    /// Cancel the current AI operation (Esc key).
+    func cancelAIOperation() {
+        guard aiOperationRunning else { return }
+        Logger.shared.log("AI operation cancelled by user (Esc)")
+        aiOperationCancelled = true
+        RealESRGANEngine.shared.isCancelled = true
+        U2NetEngine.shared.isCancelled = true
     }
 
     // MARK: - Delete (move to Trash)

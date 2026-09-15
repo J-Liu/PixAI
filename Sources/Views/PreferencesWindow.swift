@@ -871,7 +871,7 @@ final class PreferencesWindow: NSObject {
             // Super resolution settings
             let smallThreshold = AppConfig.shared.smallImageMaxSide
             if let field = self.smallImageThresholdField, field.integerValue != smallThreshold {
-                field.integerValue = smallThreshold
+                field.stringValue = String(smallThreshold)
             }
             if let stepper = self.smallImageThresholdStepper, stepper.integerValue != smallThreshold {
                 stepper.integerValue = smallThreshold
@@ -1160,17 +1160,17 @@ final class PreferencesWindow: NSObject {
 
     @objc private func smallImageThresholdStepperChanged(_ sender: NSStepper) {
         let value = sender.integerValue
-        smallImageThresholdField.integerValue = value
+        smallImageThresholdField.stringValue = String(value)
         AppConfig.shared.smallImageMaxSide = value
     }
 
     @objc private func smallImageThresholdFieldChanged(_ sender: NSTextField) {
-        guard let value = Int(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+        guard let value = Int(sender.stringValue.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ",", with: "")) else {
             syncControlsFromConfig()
             return
         }
         let clamped = min(max(value, 64), 8192)
-        sender.integerValue = clamped
+        sender.stringValue = String(clamped)
         smallImageThresholdStepper.integerValue = clamped
         AppConfig.shared.smallImageMaxSide = clamped
     }
