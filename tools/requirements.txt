@@ -1,0 +1,12 @@
+# Python version: 3.10 - 3.11
+# Platform: macOS only (CoreML conversion requires macOS)
+
+# Core dependencies
+torch==2.1.0
+coremltools==7.1
+pillow==10.1.0
+numpy==1.26.0
+pyyaml==6.0.1
+
+# Optional for ONNX export
+onnx==1.15.0
