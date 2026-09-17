@@ -45,10 +45,13 @@ final class PreferencesWindow: NSObject {
 
     // AI - Dewatermark tab
     private var aiAutoDewatermarkCheckbox: NSButton!
+    private var watermarkModePopup: NSPopUpButton!
     private var watermarkThresholdField: NSTextField!
     private var watermarkThresholdStepper: NSStepper!
     private var watermarkMinFractionField: NSTextField!
     private var watermarkMinFractionStepper: NSStepper!
+    private var watermarkFeatherField: NSTextField!
+    private var watermarkFeatherStepper: NSStepper!
 
     // AI - One-click tab
     private var enhanceModePopup: NSPopUpButton!
@@ -97,7 +100,7 @@ final class PreferencesWindow: NSObject {
     // MARK: - Building
 
     private func buildWindow() {
-        let contentSize = NSSize(width: 600, height: 520)
+        let contentSize = NSSize(width: 600, height: 580)
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
@@ -524,60 +527,111 @@ final class PreferencesWindow: NSObject {
 
         // Section fills remaining space
         let sectionHeight = rootHeight - 54
-        let box = makeSection(root, title: t("Watermark Removal (U2Net)"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+        let box = makeSection(root, title: t("Watermark Removal (U2Net + LaMa)"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
 
         // Content view height is sectionHeight - 28 (title space)
+        // Add padding from the box's border (8px for corner radius + border)
         let boxHeight = sectionHeight - 28
-        let topPadding: CGFloat = 10
-        var rowY = boxHeight - topPadding
+        let padding: CGFloat = 12  // Padding from box edges
+        var rowY = boxHeight - padding
 
-        let modelReady = PluginManager.shared.isReady(.u2net)
-        if modelReady {
-            aiAutoDewatermarkCheckbox = makeCheck(box, title: t("Auto AI dewatermark on load"), x: 14, y: rowY - 18)
+        // Check both models: U2Net for detection, LaMa for inpainting
+        let u2netReady = PluginManager.shared.isReady(.u2net)
+        let lamaReady = PluginManager.shared.isReady(.lama)
+        let autoReady = u2netReady && lamaReady
+        let manualReady = lamaReady
+
+        if autoReady || manualReady {
+            // Mode selection
+            let modeLabel = makeLabel(box, text: t("Mode:"), x: padding, y: rowY - 16)
+            watermarkModePopup = makePopup(box, items: [t("Auto (detect watermark automatically)"), t("Manual (select region manually)")],
+                                           x: modeLabel.frame.maxX + 10, y: rowY - 18, width: 260)
+            watermarkModePopup.target = self
+            watermarkModePopup.action = #selector(watermarkModeChanged(_:))
+            let savedMode = AppConfig.shared.watermarkMode
+            if savedMode == "manual" {
+                watermarkModePopup.selectItem(at: 1)
+            } else {
+                watermarkModePopup.selectItem(at: 0)
+            }
+            // Disable auto mode if U2Net not ready
+            if !u2netReady {
+                watermarkModePopup.item(at: 0)?.isEnabled = false
+                watermarkModePopup.selectItem(at: 1)
+            }
+            rowY -= 32
+
+            // Auto mode on load
+            aiAutoDewatermarkCheckbox = makeCheck(box, title: t("Auto remove watermark on image load"), x: padding, y: rowY - 18)
             aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
             aiAutoDewatermarkCheckbox.target = self
             aiAutoDewatermarkCheckbox.action = #selector(toggleAutoDewatermark(_:))
             rowY -= 32
 
-            // Detection threshold
-            let thresholdLabel = makeLabel(box, text: t("Detection sensitivity (0.1–0.9, lower = more sensitive):"), x: 14, y: rowY - 16)
-            watermarkThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
-            watermarkThresholdField.font = NSFont.systemFont(ofSize: 13)
-            watermarkThresholdField.alignment = .center
-            watermarkThresholdField.target = self
-            watermarkThresholdField.action = #selector(watermarkThresholdFieldChanged(_:))
-            box.addSubview(watermarkThresholdField)
-            watermarkThresholdStepper = NSStepper(frame: NSRect(x: watermarkThresholdField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
-            watermarkThresholdStepper.minValue = 0.1
-            watermarkThresholdStepper.maxValue = 0.9
-            watermarkThresholdStepper.increment = 0.05
-            watermarkThresholdStepper.valueWraps = false
-            watermarkThresholdStepper.doubleValue = AppConfig.shared.watermarkMaskThreshold
-            watermarkThresholdStepper.target = self
-            watermarkThresholdStepper.action = #selector(watermarkThresholdStepperChanged(_:))
-            box.addSubview(watermarkThresholdStepper)
-            rowY -= 32
+            // Detection threshold (U2Net, auto mode only)
+            if u2netReady {
+                let thresholdLabel = makeLabel(box, text: t("Detection sensitivity (0.1–0.9, lower = more sensitive):"), x: padding, y: rowY - 16)
+                watermarkThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
+                watermarkThresholdField.font = NSFont.systemFont(ofSize: 13)
+                watermarkThresholdField.alignment = .center
+                watermarkThresholdField.target = self
+                watermarkThresholdField.action = #selector(watermarkThresholdFieldChanged(_:))
+                box.addSubview(watermarkThresholdField)
+                watermarkThresholdStepper = NSStepper(frame: NSRect(x: watermarkThresholdField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+                watermarkThresholdStepper.minValue = 0.1
+                watermarkThresholdStepper.maxValue = 0.9
+                watermarkThresholdStepper.increment = 0.05
+                watermarkThresholdStepper.valueWraps = false
+                watermarkThresholdStepper.doubleValue = AppConfig.shared.watermarkMaskThreshold
+                watermarkThresholdStepper.target = self
+                watermarkThresholdStepper.action = #selector(watermarkThresholdStepperChanged(_:))
+                box.addSubview(watermarkThresholdStepper)
+                rowY -= 34
 
-            // Minimum fraction
-            let minFractionLabel = makeLabel(box, text: t("Min. watermark size (0.0001–0.1, lower = detect smaller):"), x: 14, y: rowY - 16)
-            watermarkMinFractionField = NSTextField(frame: NSRect(x: minFractionLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
-            watermarkMinFractionField.font = NSFont.systemFont(ofSize: 13)
-            watermarkMinFractionField.alignment = .center
-            watermarkMinFractionField.target = self
-            watermarkMinFractionField.action = #selector(watermarkMinFractionFieldChanged(_:))
-            box.addSubview(watermarkMinFractionField)
-            watermarkMinFractionStepper = NSStepper(frame: NSRect(x: watermarkMinFractionField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
-            watermarkMinFractionStepper.minValue = 0.0001
-            watermarkMinFractionStepper.maxValue = 0.1
-            watermarkMinFractionStepper.increment = 0.0001
-            watermarkMinFractionStepper.valueWraps = false
-            watermarkMinFractionStepper.doubleValue = AppConfig.shared.watermarkMinMaskFraction
-            watermarkMinFractionStepper.target = self
-            watermarkMinFractionStepper.action = #selector(watermarkMinFractionStepperChanged(_:))
-            box.addSubview(watermarkMinFractionStepper)
+                // Minimum fraction
+                let minFractionLabel = makeLabel(box, text: t("Min. watermark size (0.0001–0.1, lower = detect smaller):"), x: padding, y: rowY - 16)
+                watermarkMinFractionField = NSTextField(frame: NSRect(x: minFractionLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
+                watermarkMinFractionField.font = NSFont.systemFont(ofSize: 13)
+                watermarkMinFractionField.alignment = .center
+                watermarkMinFractionField.target = self
+                watermarkMinFractionField.action = #selector(watermarkMinFractionFieldChanged(_:))
+                box.addSubview(watermarkMinFractionField)
+                watermarkMinFractionStepper = NSStepper(frame: NSRect(x: watermarkMinFractionField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+                watermarkMinFractionStepper.minValue = 0.0001
+                watermarkMinFractionStepper.maxValue = 0.1
+                watermarkMinFractionStepper.increment = 0.0001
+                watermarkMinFractionStepper.valueWraps = false
+                watermarkMinFractionStepper.doubleValue = AppConfig.shared.watermarkMinMaskFraction
+                watermarkMinFractionStepper.target = self
+                watermarkMinFractionStepper.action = #selector(watermarkMinFractionStepperChanged(_:))
+                box.addSubview(watermarkMinFractionStepper)
+                rowY -= 34
+            }
+
+            // Feather radius (LaMa, both modes)
+            let featherLabel = makeLabel(box, text: t("Mask edge feather (0–10 px, for smoother blending):"), x: padding, y: rowY - 16)
+            watermarkFeatherField = NSTextField(frame: NSRect(x: featherLabel.frame.maxX + 10, y: rowY - 20, width: 40, height: 24))
+            watermarkFeatherField.font = NSFont.systemFont(ofSize: 13)
+            watermarkFeatherField.alignment = .center
+            watermarkFeatherField.target = self
+            watermarkFeatherField.action = #selector(watermarkFeatherFieldChanged(_:))
+            box.addSubview(watermarkFeatherField)
+            watermarkFeatherStepper = NSStepper(frame: NSRect(x: watermarkFeatherField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+            watermarkFeatherStepper.minValue = 0
+            watermarkFeatherStepper.maxValue = 10
+            watermarkFeatherStepper.increment = 1
+            watermarkFeatherStepper.valueWraps = false
+            watermarkFeatherStepper.integerValue = AppConfig.shared.watermarkFeatherRadius
+            watermarkFeatherStepper.target = self
+            watermarkFeatherStepper.action = #selector(watermarkFeatherStepperChanged(_:))
+            box.addSubview(watermarkFeatherStepper)
         } else {
-            let statusLabel = NSTextField(frame: NSRect(x: 14, y: rowY - 20, width: contentWidth - 28, height: 20))
-            statusLabel.stringValue = t("Model not downloaded. Please download in AI Models tab.")
+            let statusLabel = NSTextField(frame: NSRect(x: padding, y: rowY - 20, width: contentWidth - padding * 2 - 28, height: 40))
+            var msg = t("Models not downloaded. Please download in AI Models tab.")
+            if !lamaReady {
+                msg = t("LaMa model required. Please download in AI Models tab.")
+            }
+            statusLabel.stringValue = msg
             statusLabel.font = NSFont.systemFont(ofSize: 12)
             statusLabel.textColor = NSColor.secondaryLabelColor
             statusLabel.isBezeled = false
@@ -661,12 +715,25 @@ final class PreferencesWindow: NSObject {
         modelRows = []
         var rowY = boxHeight - topPadding - 54
         for plugin in ModelPlugin.all {
-            let funcText = plugin == .realesrgan ? t("Super Resolution") : t("Remove Watermark")
+            let funcText: String
+            let nameText: String
+            switch plugin {
+            case .realesrgan:
+                funcText = t("Super Resolution")
+                nameText = "Real-ESRGAN 4x"
+            case .u2net:
+                funcText = t("Watermark Detection")
+                nameText = "U2Net Saliency"
+            case .lama:
+                funcText = t("Watermark Inpainting")
+                nameText = "LaMa"
+            default:
+                funcText = plugin.displayName
+                nameText = plugin.displayName
+            }
             let funcLabel = makeLabel(box, text: funcText, x: 14, y: rowY)
             funcLabel.font = NSFont.systemFont(ofSize: 12)
             funcLabel.textColor = NSColor.secondaryLabelColor
-
-            let nameText = plugin == .realesrgan ? "Real-ESRGAN 4x" : "U2Net"
             let nameLabel = makeLabel(box, text: nameText, x: 14, y: rowY - 18)
             nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
 
@@ -893,6 +960,21 @@ final class PreferencesWindow: NSObject {
             }
             if let stepper = self.watermarkMinFractionStepper, abs(stepper.doubleValue - minFraction) > 0.00001 {
                 stepper.doubleValue = minFraction
+            }
+
+            // Watermark mode
+            let watermarkModeIdx = AppConfig.shared.watermarkMode == "manual" ? 1 : 0
+            if let popup = self.watermarkModePopup, popup.indexOfSelectedItem != watermarkModeIdx {
+                popup.selectItem(at: watermarkModeIdx)
+            }
+
+            // Feather radius
+            let feather = AppConfig.shared.watermarkFeatherRadius
+            if let field = self.watermarkFeatherField, field.integerValue != feather {
+                field.stringValue = String(feather)
+            }
+            if let stepper = self.watermarkFeatherStepper, stepper.integerValue != feather {
+                stepper.integerValue = feather
             }
 
             let modeIdx: Int
@@ -1154,6 +1236,28 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.watermarkMinMaskFraction = clamped
     }
 
+    @objc private func watermarkModeChanged(_ sender: NSPopUpButton) {
+        let mode = sender.indexOfSelectedItem == 1 ? "manual" : "auto"
+        AppConfig.shared.watermarkMode = mode
+    }
+
+    @objc private func watermarkFeatherStepperChanged(_ sender: NSStepper) {
+        let value = sender.integerValue
+        watermarkFeatherField.stringValue = String(value)
+        AppConfig.shared.watermarkFeatherRadius = value
+    }
+
+    @objc private func watermarkFeatherFieldChanged(_ sender: NSTextField) {
+        guard let value = Int(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0), 10)
+        sender.stringValue = String(clamped)
+        watermarkFeatherStepper.integerValue = clamped
+        AppConfig.shared.watermarkFeatherRadius = clamped
+    }
+
     @objc private func toggleAutoUpscale(_ sender: NSButton) {
         AppConfig.shared.aiAutoUpscaleEnabled = (sender.state == .on)
     }
@@ -1253,6 +1357,8 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.aiAutoDewatermarkEnabled = AppConfig.Defaults.aiAutoDewatermarkEnabled
         AppConfig.shared.watermarkMaskThreshold = AppConfig.Defaults.watermarkMaskThreshold
         AppConfig.shared.watermarkMinMaskFraction = AppConfig.Defaults.watermarkMinMaskFraction
+        AppConfig.shared.watermarkMode = AppConfig.Defaults.watermarkMode
+        AppConfig.shared.watermarkFeatherRadius = AppConfig.Defaults.watermarkFeatherRadius
     }
 
     @objc private func restoreOneClickDefaults(_ sender: Any?) {
@@ -1318,7 +1424,17 @@ final class PreferencesWindow: NSObject {
 
     @objc private func modelUninstallTapped(_ sender: NSButton) {
         guard let row = modelRow(forControl: sender) else { return }
-        let nameText = row.plugin == .realesrgan ? L10n.shared.t("Super Resolution (Real-ESRGAN 4x)") : L10n.shared.t("Watermark Removal (U2Net)")
+        let nameText: String
+        switch row.plugin {
+        case .realesrgan:
+            nameText = L10n.shared.t("Super Resolution (Real-ESRGAN 4x)")
+        case .u2net:
+            nameText = L10n.shared.t("Watermark Detection (U2Net)")
+        case .lama:
+            nameText = L10n.shared.t("Watermark Inpainting (LaMa)")
+        default:
+            nameText = row.plugin.displayName
+        }
         let alert = NSAlert()
         alert.messageText = L10n.shared.tf("Uninstall %@?", nameText)
         alert.informativeText = L10n.shared.t("The downloaded model files will be deleted. You can download them again later.")

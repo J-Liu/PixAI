@@ -13,7 +13,14 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PixAI",
-            path: "Sources"
+            path: "Sources",
+            linkerSettings: [
+                .linkedFramework("CoreML"),
+                .linkedFramework("Vision"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("CoreVideo"),
+            ]
         )
     ]
 )

@@ -43,6 +43,7 @@ final class PluginManager {
     private var isInitializing = false
     private var states: [String: PluginState] = [:]
     private var activeTasks: [String: URLSessionTask] = [:]
+    private var activeSessions: [String: URLSession] = [:]  // Keep sessions alive during download
     private var cancelled: Set<String> = []
     private var progressCallbacks: [String: (Double) -> Void] = [:]
 
@@ -66,12 +67,18 @@ final class PluginManager {
 
     private static func scanState(for plugin: ModelPlugin) -> PluginState {
         let fm = FileManager.default
-        for file in plugin.files {
+        // Use verifyFiles for checking if model is ready (after extraction)
+        for file in plugin.verifyFiles {
             let url = plugin.localURL(forPath: file.path)
-            guard fm.fileExists(atPath: url.path),
-                  let actual = sha256Hex(ofFile: url),
-                  actual.lowercased() == file.sha256.lowercased() else {
+            guard fm.fileExists(atPath: url.path) else {
                 return .notDownloaded
+            }
+            // Empty SHA256 means directory package (e.g. .mlpackage), just check existence
+            if !file.sha256.isEmpty {
+                guard let actual = sha256Hex(ofFile: url),
+                      actual.lowercased() == file.sha256.lowercased() else {
+                    return .notDownloaded
+                }
             }
         }
         return .ready
@@ -195,6 +202,7 @@ final class PluginManager {
             states[plugin.id] = .ready
         }
         activeTasks.removeValue(forKey: plugin.id)
+        activeSessions.removeValue(forKey: plugin.id)
         cancelled.remove(plugin.id)
         progressCallbacks.removeValue(forKey: plugin.id)
         lock.unlock()
@@ -216,6 +224,7 @@ final class PluginManager {
         }
         cancelled.insert(plugin.id)
         activeTasks.removeValue(forKey: plugin.id)
+        activeSessions.removeValue(forKey: plugin.id)
         progressCallbacks.removeValue(forKey: plugin.id)
         states[plugin.id] = .notDownloaded
         lock.unlock()
@@ -242,7 +251,8 @@ final class PluginManager {
         try? fm.removeItem(at: destURL)
         try fm.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        let remoteURL = URL(string: "https://huggingface.co/\(plugin.repo)/resolve/main/\(file.path)")!
+        let remoteURL = URL(string: "\(plugin.downloadBaseURL)/\(file.path)")!
+        Logger.shared.log("PluginManager: downloading from \(remoteURL.absoluteString)")
 
         // Download with progress via delegate.
         let delegate = DownloadDelegate()
@@ -252,10 +262,14 @@ final class PluginManager {
             self.setDownloadProgress(plugin, baseProgress + frac * fileFraction)
         }
 
-        let task = session.downloadTask(with: remoteURL)
-        task.delegate = delegate
+        // Create a session with the delegate for progress callbacks
+        let cfg = Self.makeProxyConfiguration()
+        let delegateSession = URLSession(configuration: cfg, delegate: delegate, delegateQueue: nil)
+
+        let task = delegateSession.downloadTask(with: remoteURL)
         lock.lock()
         activeTasks[plugin.id] = task
+        activeSessions[plugin.id] = delegateSession  // Keep session alive
         lock.unlock()
         task.resume()
 
@@ -264,11 +278,16 @@ final class PluginManager {
             RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.2))
         }
 
+        // Clean up session reference
         lock.lock()
+        activeSessions.removeValue(forKey: plugin.id)
         let wasCancelled = cancelled.contains(plugin.id)
         lock.unlock()
-        if wasCancelled || task.error != nil {
-            if let error = task.error, (error as NSError).code != NSURLErrorCancelled {
+
+        let taskError = task.error
+        if wasCancelled || taskError != nil {
+            if let error = taskError, (error as NSError).code != NSURLErrorCancelled {
+                Logger.shared.log("PluginManager: download error: \(error.localizedDescription)")
                 throw PluginError.downloadFailed(error.localizedDescription)
             } else {
                 throw PluginError.downloadFailed("cancelled")
@@ -276,17 +295,34 @@ final class PluginManager {
         }
 
         guard let location = delegate.location else {
+            Logger.shared.log("PluginManager: no temporary file delivered")
             throw PluginError.downloadFailed("no temporary file delivered")
         }
 
         // Verify SHA256 of the downloaded bytes before moving into place.
-        let actual = Self.sha256Hex(ofFile: location) ?? ""
-        if actual.lowercased() != file.sha256.lowercased() {
-            try? fm.removeItem(at: location)
-            throw PluginError.shaMismatch(pluginID: plugin.id, path: file.path,
-                                          expected: file.sha256, actual: actual)
+        // Empty SHA256 means directory package - just check existence after move.
+        if !file.sha256.isEmpty {
+            let actual = Self.sha256Hex(ofFile: location) ?? ""
+            if actual.lowercased() != file.sha256.lowercased() {
+                try? fm.removeItem(at: location)
+                throw PluginError.shaMismatch(pluginID: plugin.id, path: file.path,
+                                              expected: file.sha256, actual: actual)
+            }
         }
         try fm.moveItem(at: location, to: destURL)
+
+        // Extract .zip files automatically
+        if destURL.pathExtension.lowercased() == "zip" {
+            let parentDir = destURL.deletingLastPathComponent()
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            task.arguments = ["-o", destURL.path, "-d", parentDir.path]
+            try task.run()
+            task.waitUntilExit()
+            // Delete the zip after extraction
+            try? fm.removeItem(at: destURL)
+        }
+
         setDownloadProgress(plugin, baseProgress + fileFraction)
     }
 
@@ -324,7 +360,20 @@ final class PluginManager {
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-            // Task state transitions to .completed; the pumping loop notices.
+            if let error = error {
+                Logger.shared.log("PluginManager: download task completed with error: \(error.localizedDescription)")
+            } else {
+                Logger.shared.log("PluginManager: download task completed successfully")
+            }
+        }
+
+        // Handle redirects for ModelScope CDN
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            Logger.shared.log("PluginManager: redirecting to \(request.url?.absoluteString ?? "unknown")")
+            completionHandler(request)
         }
     }
 

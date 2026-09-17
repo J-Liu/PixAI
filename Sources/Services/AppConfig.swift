@@ -67,10 +67,14 @@ final class AppConfig {
         /// Enhance sharpness amount (0.0 - 1.0, default 0.1)
         static let enhanceSharpness: Double = 0.1
         // ── Watermark removal defaults ──────────────────────────────
-        /// Saliency threshold for watermark detection (0.1 - 0.9, default 0.5)
-        static let watermarkMaskThreshold: Double = 0.5
+        /// Saliency threshold for watermark detection (0.1 - 0.9, default 0.7, higher = more conservative)
+        static let watermarkMaskThreshold: Double = 0.7
         /// Minimum mask fraction to treat as watermark (0.0001 - 0.1, default 0.001)
         static let watermarkMinMaskFraction: Double = 0.001
+        /// Watermark removal mode: "auto" (U2Net detects, LaMa inpaints) or "manual" (user selects region, LaMa inpaints)
+        static let watermarkMode: String = "auto"
+        /// Feather radius for mask edges (0 - 10 pixels, default 3, for smoother blending)
+        static let watermarkFeatherRadius: Int = 3
     }
 
     /// Allowed range for the image cache count.
@@ -114,6 +118,8 @@ final class AppConfig {
         // Watermark removal
         var watermarkMaskThreshold: Double?
         var watermarkMinMaskFraction: Double?
+        var watermarkMode: String?
+        var watermarkFeatherRadius: Int?
     }
 
     private let fileURL: URL
@@ -155,6 +161,8 @@ final class AppConfig {
     // Watermark removal
     private var _watermarkMaskThreshold: Double = Defaults.watermarkMaskThreshold
     private var _watermarkMinMaskFraction: Double = Defaults.watermarkMinMaskFraction
+    private var _watermarkMode: String = Defaults.watermarkMode
+    private var _watermarkFeatherRadius: Int = Defaults.watermarkFeatherRadius
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -665,6 +673,45 @@ final class AppConfig {
         }
     }
 
+    /// Watermark removal mode: "auto" (U2Net detects, LaMa inpaints) or "manual" (user selects region, LaMa inpaints).
+    var watermarkMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _watermarkMode
+        }
+        set {
+            let normalized = Self.normalizeWatermarkMode(newValue)
+            lock.lock()
+            let changed = _watermarkMode != normalized
+            if changed { _watermarkMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Feather radius for mask edges (0 - 10 pixels, default 3, for smoother blending).
+    var watermarkFeatherRadius: Int {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _watermarkFeatherRadius
+        }
+        set {
+            let clamped = min(max(newValue, 0), 10)
+            lock.lock()
+            let changed = _watermarkFeatherRadius != clamped
+            if changed { _watermarkFeatherRadius = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeWatermarkMode(_ value: String) -> String {
+        switch value {
+        case "manual": return "manual"
+        default: return "auto"
+        }
+    }
+
     static func normalizeLanguage(_ value: String) -> String {
         switch value {
         case "zh": return "zh"
@@ -838,6 +885,8 @@ final class AppConfig {
         // Watermark removal
         if let v = payload.watermarkMaskThreshold { _watermarkMaskThreshold = min(max(v, 0.1), 0.9) }
         if let v = payload.watermarkMinMaskFraction { _watermarkMinMaskFraction = min(max(v, 0.0001), 0.1) }
+        if let v = payload.watermarkMode { _watermarkMode = Self.normalizeWatermarkMode(v) }
+        if let v = payload.watermarkFeatherRadius { _watermarkFeatherRadius = min(max(v, 0), 10) }
         lock.unlock()
     }
 
@@ -872,7 +921,9 @@ final class AppConfig {
             enhanceContrast: _enhanceContrast,
             enhanceSharpness: _enhanceSharpness,
             watermarkMaskThreshold: _watermarkMaskThreshold,
-            watermarkMinMaskFraction: _watermarkMinMaskFraction
+            watermarkMinMaskFraction: _watermarkMinMaskFraction,
+            watermarkMode: _watermarkMode,
+            watermarkFeatherRadius: _watermarkFeatherRadius
         )
         lock.unlock()
         do {
