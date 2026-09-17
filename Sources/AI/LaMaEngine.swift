@@ -207,7 +207,7 @@ final class LaMaEngine {
             data: basePtr, width: width, height: height,
             bitsPerComponent: 8, bytesPerRow: bytesPerRow,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
             Logger.shared.log("LaMa: failed to create CGContext")
             return nil
@@ -261,7 +261,7 @@ final class LaMaEngine {
             data: basePtr, width: width, height: height,
             bitsPerComponent: 8, bytesPerRow: bytesPerRow,
             space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
         ) else {
             return nil
         }
@@ -394,7 +394,7 @@ final class LaMaEngine {
             data: &pixels, width: width, height: height,
             bitsPerComponent: 8, bytesPerRow: width,
             space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 

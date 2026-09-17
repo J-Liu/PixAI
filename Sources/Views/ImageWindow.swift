@@ -1994,6 +1994,10 @@ class ImageWindow: NSObject, NSWindowDelegate {
         aiBusy.insert(url)
         showAIOperationOverlay(message: L10n.shared.t("AI dewatermarking…"))
 
+        // Copy to immutable values for concurrent execution
+        let cgImage = cg
+        let maskCopy = mask
+
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             defer {
@@ -2004,7 +2008,7 @@ class ImageWindow: NSObject, NSWindowDelegate {
             let result = await Task.detached(priority: .userInitiated) { () -> CGImage? in
                 do {
                     try LaMaEngine.shared.ensureLoaded()
-                    return try LaMaEngine.shared.inpaint(image: cg, mask: mask)
+                    return try LaMaEngine.shared.inpaint(image: cgImage, mask: maskCopy)
                 } catch {
                     Logger.shared.log("Manual watermark removal error: \(error.localizedDescription)")
                     return nil
