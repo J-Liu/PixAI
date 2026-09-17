@@ -16,12 +16,12 @@
     <string>PixAI</string>
     <key>CFBundleIconFile</key>
     <string>PixAI</string>
+    <key>CFBundleIconName</key>
+    <string>PixAI</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSUIElement</key>
     <false/>
-    <key>NSMainNibFile</key>
-    <string></string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>CFBundleDocumentTypes</key>

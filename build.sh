@@ -55,6 +55,16 @@ else
     echo "      Run ./build_icon.sh locally to compile the icon, then commit the result."
 fi
 
+# Copy legacy .icns for older macOS versions
+if [ -f "$SCRIPT_DIR/Resources/Compiled/PixAI.icns" ]; then
+    cp "$SCRIPT_DIR/Resources/Compiled/PixAI.icns" "$APP_BUNDLE/Contents/Resources/PixAI.icns"
+    echo "   📌 Legacy icon copied: PixAI.icns"
+else
+    echo "   ⚠️ Warning: PixAI.icns not found at Resources/Compiled/PixAI.icns"
+    echo "      Older macOS versions may not display the app icon."
+fi
+
+
 # Copy Info.plist
 if [ -f "$SCRIPT_DIR/Resources/Info.plist" ]; then
     cp "$SCRIPT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
