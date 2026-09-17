@@ -52,7 +52,29 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
         // New Window (Cmd+N): always a blank window.
         MenuBuilder.newWindowCallback = { [weak self] in
-            self?.makeNewWindow(paths: [])
+            // Check if clipboard has an image
+            let pasteboard = NSPasteboard.general
+            if let image = NSImage(pasteboard: pasteboard) {
+                // Save clipboard image to temp file and open it
+                let tempDir = FileManager.default.temporaryDirectory
+                let tempURL = tempDir.appendingPathComponent("clipboard_\(UUID().uuidString).png")
+
+                if let tiffData = image.tiffRepresentation,
+                   let bitmap = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmap.representation(using: .png, properties: [:]) {
+                    do {
+                        try pngData.write(to: tempURL)
+                        Logger.shared.log("New window: opening clipboard image as file")
+                        _ = self?.makeNewWindow(paths: [tempURL])
+                        return
+                    } catch {
+                        Logger.shared.log("Failed to save clipboard image: \(error)")
+                    }
+                }
+            }
+
+            // No image in clipboard, create empty window
+            _ = self?.makeNewWindow(paths: [])
         }
 
         // Check for Updates: open the GitHub releases page (hardcoded URL, no
@@ -162,6 +184,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
     /// Handle file open from Finder (double-click or "Open With").
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        Logger.shared.log("openFile called: \(filename)")
         let url = URL(fileURLWithPath: filename)
         if let win = activeWindow() {
             win.loadImages(from: [url])
@@ -173,6 +196,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
     /// Handle multiple files opened from Finder.
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        Logger.shared.log("openFiles called: \(filenames.count) files")
         let urls = filenames.map { URL(fileURLWithPath: $0) }
         if let win = activeWindow() {
             win.loadImages(from: urls)

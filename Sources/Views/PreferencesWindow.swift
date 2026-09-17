@@ -21,6 +21,7 @@ final class PreferencesWindow: NSObject {
     private var cropLivePhotoConfirmCheckbox: NSButton!
     private var liveAutoPlayCheckbox: NSButton!
     private var liveMutedCheckbox: NSButton!
+    private var cropModePopup: NSPopUpButton!
     private var openDirModePopup: NSPopUpButton!
     private var openDirField: NSTextField!
     private var intervalField: NSTextField!
@@ -335,6 +336,19 @@ final class PreferencesWindow: NSObject {
         liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
         liveMutedCheckbox.target = self
         liveMutedCheckbox.action = #selector(toggleLiveMuted(_:))
+        rowY -= 28
+
+        // Crop mode
+        let cropModeLabel = makeLabel(box, text: t("Crop region selection:"), x: 14, y: rowY - 16)
+        cropModePopup = makePopup(box, items: [t("Full image"), t("Drag to select")], x: cropModeLabel.frame.maxX + 10, y: rowY - 18, width: 140)
+        cropModePopup.target = self
+        cropModePopup.action = #selector(cropModeChanged(_:))
+        let savedCropMode = AppConfig.shared.cropMode
+        if savedCropMode == "select" {
+            cropModePopup.selectItem(at: 1)
+        } else {
+            cropModePopup.selectItem(at: 0)
+        }
     }
 
     // MARK: - AI Tab
@@ -909,6 +923,11 @@ final class PreferencesWindow: NSObject {
             self.cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
             self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
             self.liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
+
+            let cropMode = AppConfig.shared.cropMode
+            let cropModeIdx = (cropMode == "select") ? 1 : 0
+            if self.cropModePopup.indexOfSelectedItem != cropModeIdx { self.cropModePopup.selectItem(at: cropModeIdx) }
+
             let openDirMode = AppConfig.shared.openPanelDirectoryMode
             let openDirModeIdx = (openDirMode == "custom") ? 1 : 0
             if self.openDirModePopup.indexOfSelectedItem != openDirModeIdx { self.openDirModePopup.selectItem(at: openDirModeIdx) }
@@ -1012,6 +1031,11 @@ final class PreferencesWindow: NSObject {
 
     @objc private func toggleLiveMuted(_ sender: NSButton) {
         AppConfig.shared.livePhotoMuted = (sender.state == .on)
+    }
+
+    @objc private func cropModeChanged(_ sender: NSPopUpButton) {
+        let mode = sender.indexOfSelectedItem == 1 ? "select" : "full"
+        AppConfig.shared.cropMode = mode
     }
 
     @objc private func openDirModeChanged(_ sender: NSPopUpButton) {
@@ -1340,6 +1364,7 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.openPanelDirectoryMode = AppConfig.Defaults.openPanelDirectoryMode
         AppConfig.shared.customOpenDirectory = AppConfig.Defaults.customOpenDirectory()
         AppConfig.shared.slideshowInterval = AppConfig.Defaults.slideshowInterval
+        AppConfig.shared.cropMode = AppConfig.Defaults.cropMode
     }
 
     @objc private func restoreEnhanceDefaults(_ sender: Any?) {

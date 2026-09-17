@@ -77,6 +77,7 @@ final class L10n {
     private static let zh: [String: String] = [
         // ── Menu bar titles ──────────────────────────────────────────
         "File": "文件",
+        "Edit": "编辑",
         "View": "显示",
         "Window": "窗口",
         "Help": "帮助",
@@ -98,6 +99,8 @@ final class L10n {
         "Save As...": "另存为...",
         "Rename...": "重命名...",
         "Delete": "删除",
+        "Copy": "拷贝",
+        "Paste": "粘贴",
         "Close Window": "关闭窗口",
 
         // ── View menu ────────────────────────────────────────────────
@@ -156,6 +159,15 @@ final class L10n {
         "Save failed: unsupported format": "保存失败：不支持的格式",
         "Saved": "已保存",
         "Saved as %@": "已另存为 %@",
+        "Copied": "已复制",
+        "Pasted": "已粘贴",
+        "Delete Overlay": "删除贴图",
+        "Save Changes?": "保存更改？",
+        "You have unsaved changes. Do you want to save them?": "您有未保存的更改。是否保存？",
+        "Don't Save": "不保存",
+        "Save All": "全部保存",
+        "Discard All": "全部丢弃",
+        "Cancel": "取消",
         "AI upscaling…": "AI 超分中…",
         "AI dewatermarking…": "AI 去水印中…",
         "AI enhance failed": "AI 增强失败",
@@ -171,7 +183,6 @@ final class L10n {
         "AI One-Click Enhance": "一键 AI 增强",
         "Run AI dedup and dewatermark on the current image queue? Duplicate files will be moved to the Trash.": "是否在当前图片队列上执行 AI 去重和去水印？重复文件将被移到废纸篓。",
         "Run": "运行",
-        "Cancel": "取消",
         "Continue?": "继续？",
         "More duplicate groups remain. Continue deduplicating?": "仍有重复组待处理。是否继续去重？",
         "Yes": "是",
@@ -306,6 +317,7 @@ final class L10n {
     private static let zhHant: [String: String] = [
         // ── Menu bar titles ──────────────────────────────────────────
         "File": "檔案",
+        "Edit": "編輯",
         "View": "顯示",
         "Window": "視窗",
         "Help": "說明",
@@ -327,6 +339,8 @@ final class L10n {
         "Save As...": "另存為...",
         "Rename...": "重新命名...",
         "Delete": "刪除",
+        "Copy": "拷貝",
+        "Paste": "貼上",
         "Close Window": "關閉視窗",
 
         // ── View menu ────────────────────────────────────────────────
@@ -385,6 +399,15 @@ final class L10n {
         "Save failed: unsupported format": "儲存失敗：不支援的格式",
         "Saved": "已儲存",
         "Saved as %@": "已另存為 %@",
+        "Copied": "已複製",
+        "Pasted": "已貼上",
+        "Delete Overlay": "刪除貼圖",
+        "Save Changes?": "儲存變更？",
+        "You have unsaved changes. Do you want to save them?": "您有未儲存的變更。是否儲存？",
+        "Don't Save": "不儲存",
+        "Save All": "全部儲存",
+        "Discard All": "全部捨棄",
+        "Cancel": "取消",
         "AI upscaling…": "AI 超分中…",
         "AI dewatermarking…": "AI 去浮水印中…",
         "AI enhance failed": "AI 增強失敗",
@@ -400,7 +423,6 @@ final class L10n {
         "AI One-Click Enhance": "一鍵 AI 增強",
         "Run AI dedup and dewatermark on the current image queue? Duplicate files will be moved to the Trash.": "是否在目前圖片佇列上執行 AI 去重和去浮水印？重複檔案將被移到垃圾桶。",
         "Run": "執行",
-        "Cancel": "取消",
         "Continue?": "繼續？",
         "More duplicate groups remain. Continue deduplicating?": "仍有重複組待處理。是否繼續去重？",
         "Yes": "是",

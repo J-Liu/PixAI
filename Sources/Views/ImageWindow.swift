@@ -8,9 +8,9 @@ import ImageIO
 /// A single image viewer window: light-gray image area with centered proportional
 /// scaling, a bottom status bar (filename / size / zoom ratio / index-total),
 /// a floating auto-hide toolbar, an empty-state placeholder, and keyboard navigation.
-class ImageWindow {
+class ImageWindow: NSObject, NSWindowDelegate {
     /// The underlying window.
-    let window: NSWindow
+    var window: NSWindow!
 
     /// Called when this window is closed (used by the app delegate to drop its reference).
     var onClose: ((ImageWindow) -> Void)?
@@ -59,6 +59,35 @@ class ImageWindow {
     /// True while a single AI operation (upscale/dewatermark) is running.
     private var aiOperationRunning = false
 
+    /// Pasted image overlays for the current image.
+    private var pastedOverlays: [PastedImageOverlay] = []
+    /// Whether each image's overlays have been saved to disk.
+    private var overlaysSaved: [URL: Bool] = [:]
+    /// Overlay data stored per image URL (image data, frame, etc.)
+    private struct OverlayData {
+        let imageData: Data
+        // Position as ratio (0.0 - 1.0) of image dimensions
+        let xRatio: CGFloat
+        let yRatio: CGFloat
+        let widthRatio: CGFloat
+        let heightRatio: CGFloat
+    }
+    /// Per-image overlay storage.
+    private var overlayStorage: [URL: [OverlayData]] = [:]
+    /// History of paste/delete/transform operations for undo.
+    private enum PasteAction {
+        case paste(overlay: PastedImageOverlay)
+        case delete(overlay: PastedImageOverlay, frame: CGRect)
+        case transform(overlay: PastedImageOverlay, oldFrame: CGRect)
+    }
+    private var pasteHistory: [PasteAction] = []
+
+    /// Track if window should prompt for save on close
+    private var shouldPromptForSave = true
+    /// Track discarded temp files (so they don't show in unsaved list)
+    private var discardedTempURLs: Set<URL> = []
+    private var savedTempURLs: Set<URL> = []
+
     private var pluginObserver: NSObjectProtocol?
 
     /// Format of the currently displayed file (set on decode; used to reject
@@ -100,7 +129,8 @@ class ImageWindow {
 
     private var closeObserver: NSObjectProtocol?
 
-    init() {
+    override init() {
+        super.init()
         let windowRect = CGRect(x: 0, y: 0, width: 1200, height: 900)
         let window = NSWindow(
             contentRect: windowRect,
@@ -110,6 +140,7 @@ class ImageWindow {
         )
         window.isReleasedWhenClosed = false
         window.title = "PixAI"
+        window.delegate = self  // Set delegate for windowShouldClose
         self.window = window
 
         // Container (light gray background) that accepts dropped images/folders.
@@ -319,6 +350,14 @@ class ImageWindow {
                 Logger.shared.log("Keyboard handler: undo AI operation (Cmd+Z)")
                 self?.undoAI()
             },
+            onCopy: { [weak self] in
+                Logger.shared.log("Keyboard handler: copy image (Cmd+C)")
+                self?.copyImage()
+            },
+            onPaste: { [weak self] in
+                Logger.shared.log("Keyboard handler: paste image (Cmd+V)")
+                self?.pasteImage()
+            },
             onShowShortcuts: {
                 Logger.shared.log("Keyboard handler: show shortcuts help (?)")
                 ShortcutsHelpWindow.shared.show()
@@ -387,6 +426,7 @@ class ImageWindow {
             }
             self.blinkTimer?.invalidate()
             self.blinkTimer = nil
+
             self.onClose?(self)
         }
 
@@ -410,6 +450,22 @@ class ImageWindow {
     @objc private func windowDidResize() {
         updateStatusBar()
         positionLoadSpinner()
+    }
+
+    // MARK: - NSWindowDelegate
+
+    /// Called when the user tries to close the window. Return false to prevent closing.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Check for unsaved changes
+        if shouldPromptForSave {
+            let unsavedURLs = getUnsavedImageURLs()
+            if !unsavedURLs.isEmpty {
+                // Show save dialog and prevent closing for now
+                promptForUnsavedChanges(urls: unsavedURLs)
+                return false
+            }
+        }
+        return true
     }
 
     /// Open a file selection panel and load the chosen items.
@@ -471,10 +527,17 @@ class ImageWindow {
         Logger.shared.log("loadImages: \(files.count) files, \(directories.count) directories")
 
         // Case 1: Single file -> find all images in the same directory (non-recursive), dragged file first
+        // Exception: temp files (clipboard images from Cmd+N) should NOT trigger directory scanning
         if files.count == 1, directories.isEmpty {
             let file = files[0]
-            let parentDir = file.deletingLastPathComponent()
-            if FileManager.default.fileExists(atPath: parentDir.path) {
+            let isTempFile = file.path.contains("/var/folders/") || file.lastPathComponent.hasPrefix("clipboard_")
+
+            if isTempFile {
+                // Don't scan temp directory - just use this single file
+                imageUrls = [file]
+                Logger.shared.log("Temp file opened: skipping directory scan, using single file only")
+            } else if FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path) {
+                let parentDir = file.deletingLastPathComponent()
                 // Scan the directory for all photo files (excluding the dragged file)
                 let allImages = scanDirectoryOnly(parentDir)
                 var otherImages: [URL] = []
@@ -515,8 +578,18 @@ class ImageWindow {
 
         Logger.shared.log("loadImages: total \(imageUrls.count) files in array")
 
+        // Save overlays for current image BEFORE changing the URL list
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            saveCurrentOverlays()
+        }
+
         imageURLs = imageUrls
         currentIndex = 0
+
+        // Clear overlay state for new images
+        pastedOverlays.removeAll()
+        overlaysSaved = [:]
+        overlayStorage = [:]
 
         if !imageURLs.isEmpty {
             loadImage(at: 0)
@@ -557,10 +630,12 @@ class ImageWindow {
     }
 
     /// Load and display the image at the given index.
+    /// Note: Callers should call saveCurrentOverlays() before calling this to save overlays for the previous image.
     private func loadImage(at index: Int) {
         guard index >= 0, index < imageURLs.count else { return }
         // Navigating to a different image discards the active crop rectangle.
         if cropMode { exitCropMode() }
+
         currentIndex = index
         let url = imageURLs[index]
 
@@ -585,6 +660,7 @@ class ImageWindow {
             self.hideLoadSpinner()
             self.hideUnsupportedView()
             self.displayImage(cached, at: url)
+            self.loadOverlays(for: url)  // Load overlays after image is set in view
             self.updateWindowTitle()
             self.container?.placeholder?.isHidden = true
             Logger.shared.log("Image cache hit for index \(index)")
@@ -633,6 +709,7 @@ class ImageWindow {
                 self.hideLoadSpinner()
                 self.hideUnsupportedView()
                 self.displayImage(decoded.image, at: url)
+                self.loadOverlays(for: url)  // Load overlays after image is set in view
 
                 // Window title shows the current file name (+ active AI mark).
                 self.updateWindowTitle()
@@ -916,6 +993,14 @@ class ImageWindow {
         guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
 
+        // Check if this is a temp file (from clipboard) - prompt for save location
+        let isTempFile = url.path.contains("/var/folders/") || url.lastPathComponent.hasPrefix("clipboard_")
+        if isTempFile {
+            Logger.shared.log("Temp file detected, opening save panel")
+            saveAsImage()
+            return
+        }
+
         // Crop mode: apply the crop rectangle to the base image first so the
         // file being saved contains the cropped result.
         if cropMode { applyCropToBaseImage() }
@@ -926,19 +1011,75 @@ class ImageWindow {
         let hasRotation = (netDegrees % 360) != 0
         let hasAITransform = aiStates[url]?.activeKind != nil
         let hadAIOperation = aiStates[url]?.hasComputedResult ?? false
+        let hasPastedOverlays = !pastedOverlays.isEmpty
 
-        // Allow save if there's rotation, active AI transform, OR any AI operation was done (even if undone)
-        if !hasRotation && !hasAITransform && !cropMode && !hadAIOperation {
+        // Allow save if there's rotation, active AI transform, any AI operation, or pasted overlays
+        if !hasRotation && !hasAITransform && !cropMode && !hadAIOperation && !hasPastedOverlays {
             Logger.shared.log("Save ignored: no rotation and no AI transform")
             showStatusMessage(L10n.shared.t("Nothing to save"))
             return
         }
 
         let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
-        guard let cgImage = toSave.sourceCGImage else {
+        guard var cgImage = toSave.sourceCGImage else {
             Logger.shared.log("Save failed: could not produce image for \(url)")
             showStatusMessage(L10n.shared.t("Save failed"))
             return
+        }
+
+        // If we have pasted overlays, flatten them onto the image
+        if hasPastedOverlays {
+            let w = cgImage.width
+            let h = cgImage.height
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                Logger.shared.log("Save failed: could not create context for overlay flattening")
+                showStatusMessage(L10n.shared.t("Save failed"))
+                return
+            }
+
+            // Draw base image (no flip - CGContext and CGImage use same coordinate system with y=0 at bottom)
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+            // Draw overlays - need to convert from view coordinates to image pixel coordinates
+            for overlay in pastedOverlays {
+                if let overlayImage = overlay.image, let cgOverlay = overlayImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                   let imageView = container?.imageView {
+                    let viewFrame = overlay.frame
+
+                    // Convert view coordinates to image pixel coordinates
+                    let topLeft = imageView.pixelPoint(forViewPoint: NSPoint(x: viewFrame.minX, y: viewFrame.maxY))
+                    let bottomRight = imageView.pixelPoint(forViewPoint: NSPoint(x: viewFrame.maxX, y: viewFrame.minY))
+
+                    // pixelPoint returns y from top, CGContext expects y from bottom
+                    // Convert to CGContext coordinates (y=0 at bottom)
+                    let pixelRect = CGRect(
+                        x: topLeft.x,
+                        y: CGFloat(h) - bottomRight.y,
+                        width: bottomRight.x - topLeft.x,
+                        height: bottomRight.y - topLeft.y
+                    )
+
+                    ctx.draw(cgOverlay, in: pixelRect)
+                }
+            }
+
+            guard let flattened = ctx.makeImage() else {
+                Logger.shared.log("Save failed: could not flatten overlays")
+                showStatusMessage(L10n.shared.t("Save failed"))
+                return
+            }
+            cgImage = flattened
+            Logger.shared.log("Flattened \(pastedOverlays.count) overlay(s) onto image")
+
+            // Mark overlays as saved so close-window prompt won't ask again
+            overlaysSaved[url] = true
+
+            // Clear overlay storage for this URL since they're now saved
+            overlayStorage[url] = nil
+
+            // Note: We keep overlays after save so user can continue adjusting them
+            // The flattened image is saved, but overlays remain for further editing
         }
 
         var ext = url.pathExtension.lowercased()
@@ -972,6 +1113,12 @@ class ImageWindow {
                     if let state = aiStates.removeValue(forKey: url) {
                         aiStates[saveURL] = state
                     }
+                }
+
+                // Reload the image from the new PNG file
+                if let newImage = NSImage(contentsOf: saveURL) {
+                    baseImage = newImage
+                    Logger.shared.log("Reloaded image from new PNG file")
                 }
             }
 
@@ -1643,6 +1790,11 @@ class ImageWindow {
     /// Whether the current image has an AI operation that can be undone.
     func canUndoAI() -> Bool {
         guard imageURLs.indices.contains(currentIndex) else { return false }
+
+        // Check for paste history first
+        if !pasteHistory.isEmpty { return true }
+
+        // Then check AI state
         let url = imageURLs[currentIndex]
         return aiStates[url]?.canUndo ?? false
     }
@@ -1651,6 +1803,14 @@ class ImageWindow {
     func undoAI() {
         guard !batchRunning, !aiOperationRunning, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
+
+        // First try to undo paste actions
+        if !pasteHistory.isEmpty {
+            undoPasteAction()
+            return
+        }
+
+        // Then try to undo AI operations
         guard let state = aiStates[url], state.canUndo else { return }
 
         let undone = state.undo()
@@ -1661,6 +1821,792 @@ class ImageWindow {
         }
 
         refreshCurrentDisplay()
+    }
+
+    // MARK: - Copy / Paste
+
+    /// Copy the current image to the clipboard.
+    /// If AI transform is active, copies the transformed image.
+    /// If crop mode is active, copies the cropped region.
+    /// Includes any pasted overlays in the copied image.
+    func copyImage() {
+        guard let source = currentSourceImage else { return }
+        guard let cgImage = source.sourceCGImage else { return }
+
+        // If we have pasted overlays, flatten them onto the image
+        let finalImage: CGImage
+        if !pastedOverlays.isEmpty {
+            // Create a context and draw base image + overlays
+            let w = cgImage.width
+            let h = cgImage.height
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                finalImage = cgImage
+                return
+            }
+
+            // Draw base image (flip y because CGContext has y=0 at bottom)
+            ctx.translateBy(x: 0, y: CGFloat(h))
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+            // Draw overlays
+            for overlay in pastedOverlays {
+                if let overlayImage = overlay.image {
+                    let rect = overlay.frame
+                    ctx.draw(overlayImage.cgImage(forProposedRect: nil, context: nil, hints: nil)!, in: rect)
+                }
+            }
+
+            guard let flattened = ctx.makeImage() else {
+                finalImage = cgImage
+                return
+            }
+            finalImage = flattened
+        } else if cropMode, cropRectPixels != .zero {
+            // If crop mode is active, copy the cropped region
+            let cropped = cgImage.cropping(to: cropRectPixels)
+            finalImage = cropped ?? cgImage
+        } else {
+            finalImage = cgImage
+        }
+
+        // Copy to pasteboard
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let nsImage = NSImage(cgImage: finalImage, size: NSSize(width: finalImage.width, height: finalImage.height))
+        pasteboard.writeObjects([nsImage])
+
+        showStatusMessage(L10n.shared.t("Copied"))
+        Logger.shared.log("Copied image to clipboard (\(finalImage.width)x\(finalImage.height))")
+    }
+
+    /// Paste image from clipboard into the current window.
+    func pasteImage() {
+        let pasteboard = NSPasteboard.general
+
+        // Check for image in pasteboard
+        guard let image = NSImage(pasteboard: pasteboard) else {
+            Logger.shared.log("No image in clipboard")
+            return
+        }
+
+        // If window is empty (no base image), load the pasted image as a new image
+        if baseImage == nil {
+            // Create a temporary URL for the pasted image
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempURL = tempDir.appendingPathComponent("clipboard_\(UUID().uuidString).png")
+
+            // Save image to temp file
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                Logger.shared.log("Failed to create image data from clipboard")
+                return
+            }
+
+            do {
+                try pngData.write(to: tempURL)
+                loadImages(from: [tempURL])
+                Logger.shared.log("Loaded pasted image as new image")
+                showStatusMessage(L10n.shared.t("Pasted"))
+            } catch {
+                Logger.shared.log("Failed to save pasted image: \(error)")
+            }
+            return
+        }
+
+        // If there's already an image, paste as overlay
+        // Create overlay for pasted image
+        let overlay = PastedImageOverlay(image: image)
+        overlay.onDelete = { [weak self, weak overlay] in
+            guard let self = self, let overlay = overlay else { return }
+            self.deletePastedOverlay(overlay)
+        }
+        overlay.onSelect = { [weak self] in
+            self?.deselectAllPastedOverlays(except: overlay)
+        }
+        overlay.onTransform = { [weak self, weak overlay] oldFrame in
+            guard let self = self, let overlay = overlay else { return }
+            self.recordOverlayTransform(overlay, oldFrame: oldFrame)
+        }
+
+        // Center the overlay in the image view
+        if let cgImage = currentSourceImage?.sourceCGImage {
+            let imgW = CGFloat(cgImage.width)
+            let imgH = CGFloat(cgImage.height)
+            let overlayW = image.size.width
+            let overlayH = image.size.height
+
+            // Position at center of image
+            let centerX = (imgW - overlayW) / 2
+            let centerY = (imgH - overlayH) / 2
+            overlay.frame = CGRect(x: centerX, y: centerY, width: overlayW, height: overlayH)
+        }
+
+        // Add to image view
+        container?.imageView?.addSubview(overlay)
+        pastedOverlays.append(overlay)
+        pasteHistory.append(.paste(overlay: overlay))
+
+        // Mark current image as having unsaved overlays
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            overlaysSaved[imageURLs[currentIndex]] = false
+        }
+
+        overlay.select()
+        Logger.shared.log("Pasted image from clipboard as overlay")
+        showStatusMessage(L10n.shared.t("Pasted"))
+    }
+
+    /// Delete a pasted overlay.
+    private func deletePastedOverlay(_ overlay: PastedImageOverlay) {
+        let frame = overlay.frame
+        overlay.removeFromSuperview()
+        pastedOverlays.removeAll { $0 === overlay }
+        pasteHistory.append(.delete(overlay: overlay, frame: frame))
+
+        // Mark current image as having unsaved overlays
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            overlaysSaved[imageURLs[currentIndex]] = false
+        }
+
+        Logger.shared.log("Deleted pasted overlay")
+    }
+
+    /// Record an overlay transform for undo.
+    private func recordOverlayTransform(_ overlay: PastedImageOverlay, oldFrame: CGRect) {
+        pasteHistory.append(.transform(overlay: overlay, oldFrame: oldFrame))
+
+        // Mark current image as having unsaved overlays
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            overlaysSaved[imageURLs[currentIndex]] = false
+        }
+    }
+
+    /// Deselect all pasted overlays except the specified one.
+    private func deselectAllPastedOverlays(except selected: PastedImageOverlay) {
+        for overlay in pastedOverlays {
+            if overlay !== selected {
+                overlay.deselect()
+            }
+        }
+    }
+
+    /// Undo the last paste/delete/transform operation.
+    private func undoPasteAction() {
+        guard let action = pasteHistory.popLast() else { return }
+
+        switch action {
+        case .paste(let overlay):
+            // Undo paste: remove the overlay
+            overlay.removeFromSuperview()
+            pastedOverlays.removeAll { $0 === overlay }
+            Logger.shared.log("Undid paste")
+
+        case .delete(let overlay, let frame):
+            // Undo delete: restore the overlay
+            overlay.frame = frame
+            container?.imageView?.addSubview(overlay)
+            pastedOverlays.append(overlay)
+            Logger.shared.log("Undid delete")
+
+        case .transform(let overlay, let oldFrame):
+            // Undo transform: restore the old frame
+            overlay.frame = oldFrame
+            overlay.updateHandlePositions()
+            Logger.shared.log("Undid transform")
+        }
+    }
+
+    /// Save current image's overlays to storage (called when switching images)
+    private func saveCurrentOverlays() {
+        guard currentIndex >= 0, currentIndex < imageURLs.count else {
+            Logger.shared.log("saveCurrentOverlays: invalid index")
+            return
+        }
+        let currentURL = imageURLs[currentIndex]
+
+        Logger.shared.log("saveCurrentOverlays: currentIndex=\(currentIndex), URL=\(currentURL.lastPathComponent), \(pastedOverlays.count) overlay(s) in view")
+
+        // Get image view for coordinate conversion
+        guard let imageView = container?.imageView,
+              let imageSize = imageView.cgPixelSize else {
+            Logger.shared.log("saveCurrentOverlays: no image view or image size")
+            return
+        }
+
+        // Remove overlays from view and save to storage with ratio coordinates
+        var overlayDataArray: [OverlayData] = []
+        for overlay in pastedOverlays {
+            if let image = overlay.image,
+               let tiffData = image.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+
+                // Convert view coordinates to image pixel coordinates
+                let viewFrame = overlay.frame
+                let topLeft = imageView.pixelPoint(forViewPoint: NSPoint(x: viewFrame.minX, y: viewFrame.maxY))
+                let bottomRight = imageView.pixelPoint(forViewPoint: NSPoint(x: viewFrame.maxX, y: viewFrame.minY))
+
+                // Calculate ratio coordinates (0.0 - 1.0)
+                let xRatio = topLeft.x / imageSize.width
+                let yRatio = topLeft.y / imageSize.height
+                let widthRatio = (bottomRight.x - topLeft.x) / imageSize.width
+                let heightRatio = (bottomRight.y - topLeft.y) / imageSize.height
+
+                overlayDataArray.append(OverlayData(
+                    imageData: pngData,
+                    xRatio: xRatio,
+                    yRatio: yRatio,
+                    widthRatio: widthRatio,
+                    heightRatio: heightRatio
+                ))
+                Logger.shared.log("saveCurrentOverlays: saved overlay with ratio x=\(xRatio), y=\(yRatio), w=\(widthRatio), h=\(heightRatio)")
+            } else {
+                Logger.shared.log("saveCurrentOverlays: failed to convert overlay image to PNG")
+            }
+            // Always remove from superview, even if conversion fails
+            overlay.removeFromSuperview()
+            Logger.shared.log("saveCurrentOverlays: removed overlay from superview")
+        }
+        pastedOverlays.removeAll()
+
+        if !overlayDataArray.isEmpty || overlayStorage[currentURL] != nil {
+            overlayStorage[currentURL] = overlayDataArray
+            Logger.shared.log("Saved \(overlayDataArray.count) overlay(s) for \(currentURL.lastPathComponent)")
+        } else {
+            Logger.shared.log("No overlays to save for \(currentURL.lastPathComponent)")
+        }
+    }
+
+    /// Load overlays for the given URL from storage
+    private func loadOverlays(for url: URL) {
+        Logger.shared.log("loadOverlays: called for \(url.lastPathComponent)")
+
+        // Clear any existing overlays first
+        for overlay in pastedOverlays {
+            overlay.removeFromSuperview()
+            Logger.shared.log("loadOverlays: cleared existing overlay from view")
+        }
+        pastedOverlays.removeAll()
+
+        // Load saved overlays
+        guard let overlayDataArray = overlayStorage[url], !overlayDataArray.isEmpty else {
+            Logger.shared.log("loadOverlays: No saved overlays for \(url.lastPathComponent)")
+            return
+        }
+
+        // Get image view for coordinate conversion
+        guard let imageView = container?.imageView,
+              let imageSize = imageView.cgPixelSize else {
+            Logger.shared.log("loadOverlays: no image view or image size")
+            return
+        }
+
+        Logger.shared.log("loadOverlays: Found \(overlayDataArray.count) saved overlay(s)")
+
+        for overlayData in overlayDataArray {
+            if let image = NSImage(data: overlayData.imageData) {
+                let overlay = PastedImageOverlay(image: image)
+
+                // Calculate pixel coordinates from ratio
+                let pixelX = overlayData.xRatio * imageSize.width
+                let pixelY = overlayData.yRatio * imageSize.height
+                let pixelWidth = overlayData.widthRatio * imageSize.width
+                let pixelHeight = overlayData.heightRatio * imageSize.height
+                let pixelRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight)
+
+                // Convert pixel coordinates to view coordinates
+                let viewFrame = imageView.viewRect(forPixelRect: pixelRect)
+                overlay.frame = viewFrame
+                Logger.shared.log("loadOverlays: converted ratio to pixel rect \(pixelRect), then to view frame \(viewFrame)")
+
+                overlay.onDelete = { [weak self, weak overlay] in
+                    guard let self = self, let overlay = overlay else { return }
+                    self.deletePastedOverlay(overlay)
+                }
+                overlay.onSelect = { [weak self] in
+                    self?.deselectAllPastedOverlays(except: overlay)
+                }
+                overlay.onTransform = { [weak self, weak overlay] oldFrame in
+                    guard let self = self, let overlay = overlay else { return }
+                    self.recordOverlayTransform(overlay, oldFrame: oldFrame)
+                }
+                container?.imageView?.addSubview(overlay)
+                pastedOverlays.append(overlay)
+                Logger.shared.log("loadOverlays: added overlay to view")
+            }
+        }
+        Logger.shared.log("Loaded \(pastedOverlays.count) overlay(s) for \(url.lastPathComponent)")
+    }
+
+    // MARK: - Unsaved Changes Check
+
+    /// Get list of URLs with unsaved changes
+    private func getUnsavedImageURLs() -> [URL] {
+        var unsavedURLs: [URL] = []
+
+        for url in imageURLs {
+            var hasChanges = false
+
+            // Check if AI operations were done
+            if let state = aiStates[url], state.hasComputedResult {
+                hasChanges = true
+            }
+
+            // Check if file is in temp directory (from clipboard) and not discarded/saved
+            let isTempFile = url.path.contains("/var/folders/") || url.lastPathComponent.hasPrefix("clipboard_")
+            if isTempFile && !discardedTempURLs.contains(url) && !savedTempURLs.contains(url) {
+                hasChanges = true
+            }
+
+            // Check if this image has unsaved overlays
+            let isSaved = overlaysSaved[url] ?? true  // Default to true (no overlays = saved)
+            if !isSaved {
+                hasChanges = true
+            }
+
+            if hasChanges {
+                unsavedURLs.append(url)
+            }
+        }
+
+        return unsavedURLs
+    }
+
+    /// Prompt user to save unsaved changes
+    private func promptForUnsavedChanges(urls: [URL]) {
+        guard !urls.isEmpty else {
+            // No unsaved changes, close the window
+            shouldPromptForSave = false
+            window.close()
+            return
+        }
+
+        // Switch to the first modified image
+        if let firstURL = urls.first, let idx = imageURLs.firstIndex(of: firstURL) {
+            saveCurrentOverlays()
+            loadImage(at: idx)
+        }
+
+        // Create custom sheet
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 450, height: 180),
+                             styleMask: [.titled, .closable],
+                             backing: .buffered,
+                             defer: false)
+        sheet.title = ""
+
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 180))
+
+        // Message label
+        let t = L10n.shared.t
+        let messageLabel = NSTextField(wrappingLabelWithString: t("The following images have unsaved changes:"))
+        messageLabel.frame = NSRect(x: 20, y: 140, width: 410, height: 20)
+        messageLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        contentView.addSubview(messageLabel)
+
+        // File names
+        let fileNames = urls.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
+        let more = urls.count > 5 ? "..." : ""
+        let filesLabel = NSTextField(wrappingLabelWithString: fileNames + more)
+        filesLabel.frame = NSRect(x: 20, y: 90, width: 410, height: 40)
+        filesLabel.font = NSFont.systemFont(ofSize: 12)
+        filesLabel.textColor = .secondaryLabelColor
+        contentView.addSubview(filesLabel)
+
+        // Buttons - Row 1: Save All, Discard All, Cancel
+        let buttonHeight: CGFloat = 24
+        let row1Y: CGFloat = 50
+        let row2Y: CGFloat = 15
+        let buttonWidth: CGFloat = 90
+        let gap: CGFloat = 10
+
+        let saveAllBtn = NSButton(frame: NSRect(x: 20, y: row1Y, width: buttonWidth, height: buttonHeight))
+        saveAllBtn.title = t("Save All")
+        saveAllBtn.bezelStyle = .rounded
+        saveAllBtn.target = self
+        saveAllBtn.action = #selector(handleSaveAll)
+        contentView.addSubview(saveAllBtn)
+
+        let discardAllBtn = NSButton(frame: NSRect(x: 20 + buttonWidth + gap, y: row1Y, width: buttonWidth, height: buttonHeight))
+        discardAllBtn.title = t("Discard All")
+        discardAllBtn.bezelStyle = .rounded
+        discardAllBtn.target = self
+        discardAllBtn.action = #selector(handleDiscardAll)
+        contentView.addSubview(discardAllBtn)
+
+        let cancelBtn = NSButton(frame: NSRect(x: 20 + (buttonWidth + gap) * 2, y: row1Y, width: buttonWidth, height: buttonHeight))
+        cancelBtn.title = t("Cancel")
+        cancelBtn.bezelStyle = .rounded
+        cancelBtn.target = self
+        cancelBtn.action = #selector(handleSaveCancel)
+        contentView.addSubview(cancelBtn)
+
+        // Buttons - Row 2: Save, Discard
+        let saveBtn = NSButton(frame: NSRect(x: 20, y: row2Y, width: buttonWidth, height: buttonHeight))
+        saveBtn.title = t("Save")
+        saveBtn.bezelStyle = .rounded
+        saveBtn.target = self
+        saveBtn.action = #selector(handleSave)
+        contentView.addSubview(saveBtn)
+
+        let discardBtn = NSButton(frame: NSRect(x: 20 + buttonWidth + gap, y: row2Y, width: buttonWidth, height: buttonHeight))
+        discardBtn.title = t("Discard")
+        discardBtn.bezelStyle = .rounded
+        discardBtn.target = self
+        discardBtn.action = #selector(handleDiscard)
+        contentView.addSubview(discardBtn)
+
+        sheet.contentView = contentView
+
+        // Store URLs for button handlers
+        unsavedURLs = urls
+        saveSheet = sheet
+
+        window.beginSheet(sheet) { [weak self] _ in
+            self?.saveSheet = nil
+        }
+    }
+
+    private var unsavedURLs: [URL] = []
+    private var saveSheet: NSWindow?
+
+    @objc private func handleSaveAll() {
+        guard let sheet = saveSheet else { return }
+
+        // Check if any URLs are temp files
+        let tempFiles = unsavedURLs.filter { $0.path.contains("/var/folders/") || $0.lastPathComponent.hasPrefix("clipboard_") }
+        let regularFiles = unsavedURLs.filter { !$0.path.contains("/var/folders/") && !$0.lastPathComponent.hasPrefix("clipboard_") }
+
+        if !tempFiles.isEmpty && regularFiles.isEmpty {
+            // Only temp files - use async save with completion
+            window.endSheet(sheet)
+            saveAllTempFilesSequentially(tempFiles, index: 0) { [weak self] in
+                self?.shouldPromptForSave = false
+                self?.window.close()
+            }
+        } else if !tempFiles.isEmpty {
+            // Mixed temp and regular files - save regular first, then temp files
+            window.endSheet(sheet)
+            // Save regular files (sync)
+            for url in regularFiles {
+                if let idx = imageURLs.firstIndex(of: url) {
+                    saveCurrentOverlays()
+                    loadImage(at: idx)
+                    saveCurrentRotation()
+                }
+            }
+            // Then save temp files (async)
+            saveAllTempFilesSequentially(tempFiles, index: 0) { [weak self] in
+                self?.shouldPromptForSave = false
+                self?.window.close()
+            }
+        } else {
+            // Only regular files - use existing sync logic
+            window.endSheet(sheet)
+            saveAllImages(urls: unsavedURLs)
+            shouldPromptForSave = false
+            window.close()
+        }
+    }
+
+    /// Save temp files sequentially, calling completion when all done
+    private func saveAllTempFilesSequentially(_ urls: [URL], index: Int, completion: @escaping () -> Void) {
+        guard index < urls.count else {
+            // All done
+            completion()
+            return
+        }
+
+        let url = urls[index]
+        if let idx = imageURLs.firstIndex(of: url) {
+            saveCurrentOverlays()
+            loadImage(at: idx)
+
+            saveTempFileWithPanel(url) { [weak self] _ in
+                // Continue to next file regardless of success/failure
+                self?.saveAllTempFilesSequentially(urls, index: index + 1, completion: completion)
+            }
+        } else {
+            // URL not found, skip to next
+            saveAllTempFilesSequentially(urls, index: index + 1, completion: completion)
+        }
+    }
+
+    @objc private func handleDiscardAll() {
+        guard let sheet = saveSheet else { return }
+        window.endSheet(sheet)
+        shouldPromptForSave = false
+        window.close()
+    }
+
+    @objc private func handleSave() {
+        guard let sheet = saveSheet else { return }
+
+        // Check if current file is a temp file (needs async save panel)
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            let currentURL = imageURLs[currentIndex]
+            let isTempFile = currentURL.path.contains("/var/folders/") || currentURL.lastPathComponent.hasPrefix("clipboard_")
+
+            if isTempFile {
+                // For temp files, we need to end the sheet first, then show save panel
+                window.endSheet(sheet)
+                saveTempFileWithPanel(currentURL) { [weak self] saved in
+                    guard let self = self else { return }
+                    if saved {
+                        self.shouldPromptForSave = false
+                        self.window.close()
+                    } else {
+                        // Save cancelled, re-check unsaved and prompt again if needed
+                        let remaining = self.getUnsavedImageURLs()
+                        if remaining.isEmpty {
+                            self.shouldPromptForSave = false
+                            self.window.close()
+                        } else {
+                            self.promptForUnsavedChanges(urls: remaining)
+                        }
+                    }
+                }
+                return
+            }
+        }
+
+        // Regular file save (sync)
+        saveCurrentRotation()
+        let remaining = getUnsavedImageURLs()
+        if remaining.isEmpty {
+            window.endSheet(sheet)
+            shouldPromptForSave = false
+            window.close()
+        } else {
+            // Update the sheet content for next image
+            unsavedURLs = remaining
+            if let firstURL = remaining.first, let idx = imageURLs.firstIndex(of: firstURL), idx != currentIndex {
+                saveCurrentOverlays()
+                loadImage(at: idx)
+            }
+            // Update the file names label
+            if let contentView = sheet.contentView,
+               let filesLabel = contentView.subviews.first(where: { ($0 as? NSTextField)?.font == NSFont.systemFont(ofSize: 12) }) as? NSTextField {
+                let fileNames = remaining.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
+                let more = remaining.count > 5 ? "..." : ""
+                filesLabel.stringValue = fileNames + more
+            }
+        }
+    }
+
+    /// Save a temp file with a save panel, calling completion when done
+    private func saveTempFileWithPanel(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let source = currentSourceImage else {
+            completion(false)
+            return
+        }
+
+        // Crop mode: apply the crop rectangle before encoding.
+        if cropMode { applyCropToBaseImage() }
+
+        let netDegrees = rotationSteps * 90
+        let hasRotation = (netDegrees % 360) != 0
+        let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
+        guard let cgImage = toSave.sourceCGImage else {
+            showStatusMessage(L10n.shared.t("Save failed"))
+            completion(false)
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = url.lastPathComponent
+        panel.canCreateDirectories = true
+        panel.message = L10n.shared.t("Save the current image (including any AI transform)")
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            if response == .OK, let dest = panel.url {
+                let ext = dest.pathExtension.lowercased()
+                guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
+                    self.showStatusMessage(L10n.shared.t("Save failed: unsupported format"))
+                    completion(false)
+                    return
+                }
+                do {
+                    try data.write(to: dest, options: .atomic)
+                    Logger.shared.log("Saved temp file to \(dest.path)")
+                    self.showStatusMessage(L10n.shared.tf("Saved as %@", dest.lastPathComponent))
+                    if self.cropMode { self.exitCropMode() }
+                    // Mark as saved
+                    self.savedTempURLs.insert(url)
+                    self.overlaysSaved[url] = true
+                    completion(true)
+                } catch {
+                    Logger.shared.log("Save failed for \(dest.path): \(error)")
+                    self.showStatusMessage("Save failed: \(error.localizedDescription)")
+                    completion(false)
+                }
+            } else {
+                // User cancelled
+                completion(false)
+            }
+        }
+    }
+
+    @objc private func handleDiscard() {
+        guard let sheet = saveSheet else { return }
+        if currentIndex >= 0, currentIndex < imageURLs.count {
+            let currentURL = imageURLs[currentIndex]
+            overlaysSaved[currentURL] = true
+            overlayStorage[currentURL] = nil
+            discardedTempURLs.insert(currentURL)  // Mark temp file as discarded
+            if let state = aiStates[currentURL] {
+                state.discardComputedResult()
+            }
+        }
+        let remaining = getUnsavedImageURLs()
+        if remaining.isEmpty {
+            window.endSheet(sheet)
+            shouldPromptForSave = false
+            window.close()
+        } else {
+            unsavedURLs = remaining
+            if let firstURL = remaining.first, let idx = imageURLs.firstIndex(of: firstURL), idx != currentIndex {
+                saveCurrentOverlays()
+                loadImage(at: idx)
+            }
+            if let contentView = sheet.contentView,
+               let filesLabel = contentView.subviews.first(where: { ($0 as? NSTextField)?.font == NSFont.systemFont(ofSize: 12) }) as? NSTextField {
+                let fileNames = remaining.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
+                let more = remaining.count > 5 ? "..." : ""
+                filesLabel.stringValue = fileNames + more
+            }
+        }
+    }
+
+    @objc private func handleSaveCancel() {
+        guard let sheet = saveSheet else { return }
+        window.endSheet(sheet)
+    }
+
+    /// Save the current image
+    private func saveCurrentImage() {
+        saveCurrentRotation()
+    }
+
+    /// Save all images with unsaved changes
+    private func saveAllImages(urls: [URL]) {
+        let savedIndex = currentIndex
+
+        // Save overlays for current image first
+        saveCurrentOverlays()
+
+        for url in urls {
+            // Get image from cache, or load from file
+            var cachedImage = ImageCache.shared.image(for: url)
+            if cachedImage == nil {
+                // Try to load from file directly
+                if let data = try? Data(contentsOf: url),
+                   let image = NSImage(data: data) {
+                    cachedImage = image
+                    Logger.shared.log("saveAllImages: loaded image from file for \(url)")
+                } else {
+                    Logger.shared.log("saveAllImages: could not load image for \(url)")
+                    continue
+                }
+            }
+
+            guard let sourceImage = cachedImage else { continue }
+
+            // Load overlays for this URL
+            let overlays = overlayStorage[url] ?? []
+
+            // Get AI state if any
+            let aiState = aiStates[url]
+            let finalSourceImage: NSImage
+            if let state = aiState, let kind = state.activeKind, let aiImage = state.image(for: kind) {
+                finalSourceImage = aiImage
+            } else {
+                finalSourceImage = sourceImage
+            }
+
+            // Save this image
+            saveImageToFile(url: url, image: finalSourceImage, overlays: overlays)
+        }
+
+        // Restore to original index
+        loadImage(at: savedIndex)
+    }
+
+    /// Save image to file synchronously
+    private func saveImageToFile(url: URL, image: NSImage, overlays: [OverlayData]) {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            Logger.shared.log("saveImageToFile: could not get CGImage for \(url)")
+            return
+        }
+
+        // If there are overlays, flatten them onto the image
+        let finalImage: CGImage
+        if !overlays.isEmpty {
+            let w = cgImage.width
+            let h = cgImage.height
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                finalImage = cgImage
+                Logger.shared.log("saveImageToFile: could not create context for overlay flattening")
+                return
+            }
+
+            // Draw base image (CGContext and CGImage use same coordinate system with y=0 at bottom)
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+            // Draw overlays - convert ratio coords to pixel coords
+            for overlay in overlays {
+                if let overlayImage = NSImage(data: overlay.imageData),
+                   let overlayCGImage = overlayImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    // Convert ratio to pixel coordinates
+                    let pixelRect = CGRect(
+                        x: overlay.xRatio * CGFloat(w),
+                        y: overlay.yRatio * CGFloat(h),
+                        width: overlay.widthRatio * CGFloat(w),
+                        height: overlay.heightRatio * CGFloat(h)
+                    )
+                    // Convert y from top to y from bottom
+                    let cgRect = CGRect(
+                        x: pixelRect.minX,
+                        y: CGFloat(h) - pixelRect.maxY,
+                        width: pixelRect.width,
+                        height: pixelRect.height
+                    )
+                    ctx.draw(overlayCGImage, in: cgRect)
+                }
+            }
+
+            guard let flattened = ctx.makeImage() else {
+                finalImage = cgImage
+                return
+            }
+            finalImage = flattened
+            Logger.shared.log("saveImageToFile: flattened \(overlays.count) overlay(s) for \(url)")
+        } else {
+            finalImage = cgImage
+        }
+
+        // Encode and save
+        let ext = url.pathExtension.lowercased()
+        guard let data = Self.encodeImage(finalImage, fileExtension: ext) else {
+            Logger.shared.log("saveImageToFile: could not encode image for \(url)")
+            return
+        }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            Logger.shared.log("saveImageToFile: saved \(url)")
+
+            // Mark overlays as saved
+            overlaysSaved[url] = true
+        } catch {
+            Logger.shared.log("saveImageToFile: failed to save \(url): \(error)")
+        }
     }
 
     // MARK: - Delete (move to Trash)
@@ -1861,6 +2807,8 @@ class ImageWindow {
             blinkStatusBarHint(L10n.shared.t("First image, wrapping to last"))
         }
 
+        // Save overlays before changing index
+        saveCurrentOverlays()
         currentIndex = (currentIndex - 1 + imageURLs.count) % imageURLs.count
         loadImage(at: currentIndex)
         // Manual jump during playback: keep playing with a fresh interval.
@@ -1874,12 +2822,17 @@ class ImageWindow {
     private func goNext() {
         guard !batchRunning, imageURLs.count > 1 else { return }
 
+        Logger.shared.log("goNext: currentIndex before=\(currentIndex)")
+
         if currentIndex == imageURLs.count - 1 {
             Logger.shared.log("At last image, showing wrap-around message")
             blinkStatusBarHint(L10n.shared.t("Last image, wrapping to first"))
         }
 
+        // Save overlays before changing index
+        saveCurrentOverlays()
         currentIndex = (currentIndex + 1) % imageURLs.count
+        Logger.shared.log("goNext: currentIndex after=\(currentIndex)")
         loadImage(at: currentIndex)
         // Manual jump during playback: keep playing with a fresh interval.
         if slideshow.isPlaying {
@@ -1890,6 +2843,8 @@ class ImageWindow {
     /// Go to first image.
     private func goFirst() {
         guard !batchRunning, imageURLs.count > 1, currentIndex != 0 else { return }
+        // Save overlays before changing index
+        saveCurrentOverlays()
         currentIndex = 0
         loadImage(at: 0)
         if slideshow.isPlaying {
@@ -1900,6 +2855,8 @@ class ImageWindow {
     /// Go to last image.
     private func goLast() {
         guard !batchRunning, imageURLs.count > 1, currentIndex != imageURLs.count - 1 else { return }
+        // Save overlays before changing index
+        saveCurrentOverlays()
         currentIndex = imageURLs.count - 1
         loadImage(at: currentIndex)
         if slideshow.isPlaying {
@@ -1965,8 +2922,15 @@ class ImageWindow {
         guard let imageView = container?.imageView, let psize = imageView.cgPixelSize else { return }
         // Stop any running Live Photo playback while the user adjusts the rect.
         imageView.livePhotoURL = nil
-        cropRectPixels = CGRect(origin: .zero, size: psize)
-        let overlay = CropOverlayView(imagePixelSize: psize)
+
+        let startWithFull = AppConfig.shared.cropMode == "full"
+        if startWithFull {
+            cropRectPixels = CGRect(origin: .zero, size: psize)
+        } else {
+            cropRectPixels = .zero
+        }
+
+        let overlay = CropOverlayView(imagePixelSize: psize, startWithFull: startWithFull)
         overlay.toViewRect = { [weak imageView] r in imageView?.viewRect(forPixelRect: r) ?? .zero }
         overlay.toPixelPoint = { [weak imageView] p in imageView?.pixelPoint(forViewPoint: p) ?? .zero }
         overlay.onCropChanged = { [weak self] rect in
@@ -2139,6 +3103,16 @@ class ImageWindow {
         _ = item(t("Rename..."), #selector(contextRename))
         _ = item(t("Delete"), #selector(contextDelete))
         menu.addItem(.separator())
+        _ = item(t("Copy"), #selector(contextCopy))
+        _ = item(t("Paste"), #selector(contextPaste))
+
+        // Delete overlay option (only show when there are overlays)
+        if !pastedOverlays.isEmpty {
+            let deleteOverlayItem = item(t("Delete Overlay"), #selector(contextDeleteOverlay))
+            deleteOverlayItem.isEnabled = pastedOverlays.contains { $0.isSelected }
+        }
+
+        menu.addItem(.separator())
         let cropItem = item(t("Crop"), #selector(contextCrop))
         cropItem.isEnabled = (currentFormat ?? MagicNumberDetector.detect(url: imageURLs[currentIndex])) != .gif
         menu.addItem(.separator())
@@ -2169,6 +3143,14 @@ class ImageWindow {
     @objc private func contextSaveAs() { saveAsImage() }
     @objc private func contextRename() { renameCurrentImage() }
     @objc private func contextDelete() { deleteCurrentImage() }
+    @objc private func contextCopy() { copyImage() }
+    @objc private func contextPaste() { pasteImage() }
+    @objc private func contextDeleteOverlay() {
+        // Delete the selected overlay
+        if let selectedOverlay = pastedOverlays.first(where: { $0.isSelected }) {
+            deletePastedOverlay(selectedOverlay)
+        }
+    }
     @objc private func contextCrop() { toggleCropMode() }
     @objc private func contextRotateCW() { rotateClockwise() }
     @objc private func contextRotateCCW() { rotateCounterclockwise() }

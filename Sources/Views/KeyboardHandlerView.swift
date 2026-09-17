@@ -37,6 +37,10 @@ class KeyboardHandlerView: NSView {
     private let canUndoAI: () -> Bool
     /// Called on Cmd+Z: undo last AI operation.
     private let onUndo: () -> Void
+    /// Called on Cmd+C: copy current image to clipboard.
+    private let onCopy: () -> Void
+    /// Called on Cmd+V: paste image from clipboard.
+    private let onPaste: () -> Void
     /// Called when "?" is pressed: show the keyboard-shortcuts help window.
     private let onShowShortcuts: () -> Void
     init(onPrevious: @escaping () -> Void,
@@ -59,6 +63,8 @@ class KeyboardHandlerView: NSView {
          onCancelAIOperation: @escaping () -> Void,
          canUndoAI: @escaping () -> Bool,
          onUndo: @escaping () -> Void,
+         onCopy: @escaping () -> Void,
+         onPaste: @escaping () -> Void,
          onShowShortcuts: @escaping () -> Void) {
         self.onPrevious = onPrevious
         self.onNext = onNext
@@ -80,6 +86,8 @@ class KeyboardHandlerView: NSView {
         self.onCancelAIOperation = onCancelAIOperation
         self.canUndoAI = canUndoAI
         self.onUndo = onUndo
+        self.onCopy = onCopy
+        self.onPaste = onPaste
         self.onShowShortcuts = onShowShortcuts
         super.init(frame: .zero)
 
@@ -143,6 +151,20 @@ class KeyboardHandlerView: NSView {
         if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
            (key == "z" || keyCode == 6) {
             onUndo()
+            return
+        }
+
+        // Cmd+C: copy current image to clipboard.
+        if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
+           (key == "c" || keyCode == 8) {
+            onCopy()
+            return
+        }
+
+        // Cmd+V: paste image from clipboard.
+        if mods.contains(.command), !mods.contains(.shift), !mods.contains(.control), !mods.contains(.option),
+           (key == "v" || keyCode == 9) {
+            onPaste()
             return
         }
 

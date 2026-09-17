@@ -75,6 +75,9 @@ final class AppConfig {
         static let watermarkMode: String = "auto"
         /// Feather radius for mask edges (0 - 10 pixels, default 3, for smoother blending)
         static let watermarkFeatherRadius: Int = 3
+        // ── Crop mode defaults ─────────────────────────────────────
+        /// Crop mode: "full" (start with full image) or "select" (drag to select region)
+        static let cropMode: String = "full"
     }
 
     /// Allowed range for the image cache count.
@@ -120,6 +123,8 @@ final class AppConfig {
         var watermarkMinMaskFraction: Double?
         var watermarkMode: String?
         var watermarkFeatherRadius: Int?
+        // Crop mode
+        var cropMode: String?
     }
 
     private let fileURL: URL
@@ -163,6 +168,8 @@ final class AppConfig {
     private var _watermarkMinMaskFraction: Double = Defaults.watermarkMinMaskFraction
     private var _watermarkMode: String = Defaults.watermarkMode
     private var _watermarkFeatherRadius: Int = Defaults.watermarkFeatherRadius
+    // Crop mode
+    private var _cropMode: String = Defaults.cropMode
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -705,6 +712,31 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Crop mode settings
+
+    /// Crop mode: "full" (start with full image) or "select" (drag to select region).
+    var cropMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _cropMode
+        }
+        set {
+            let normalized = Self.normalizeCropMode(newValue)
+            lock.lock()
+            let changed = _cropMode != normalized
+            if changed { _cropMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeCropMode(_ value: String) -> String {
+        switch value {
+        case "select": return "select"
+        default: return "full"
+        }
+    }
+
     static func normalizeWatermarkMode(_ value: String) -> String {
         switch value {
         case "manual": return "manual"
@@ -825,6 +857,10 @@ final class AppConfig {
             _customOpenDirectory = Defaults.customOpenDirectory()
             changed = true
         }
+        if _cropMode != Defaults.cropMode {
+            _cropMode = Defaults.cropMode
+            changed = true
+        }
         // Don't reset lastOpenDirectory - it's always remembered
         lock.unlock()
         if changed { save(); notifyChange() }
@@ -887,6 +923,7 @@ final class AppConfig {
         if let v = payload.watermarkMinMaskFraction { _watermarkMinMaskFraction = min(max(v, 0.0001), 0.1) }
         if let v = payload.watermarkMode { _watermarkMode = Self.normalizeWatermarkMode(v) }
         if let v = payload.watermarkFeatherRadius { _watermarkFeatherRadius = min(max(v, 0), 10) }
+        if let v = payload.cropMode { _cropMode = Self.normalizeCropMode(v) }
         lock.unlock()
     }
 
@@ -923,7 +960,8 @@ final class AppConfig {
             watermarkMaskThreshold: _watermarkMaskThreshold,
             watermarkMinMaskFraction: _watermarkMinMaskFraction,
             watermarkMode: _watermarkMode,
-            watermarkFeatherRadius: _watermarkFeatherRadius
+            watermarkFeatherRadius: _watermarkFeatherRadius,
+            cropMode: _cropMode
         )
         lock.unlock()
         do {

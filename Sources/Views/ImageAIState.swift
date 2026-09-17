@@ -66,6 +66,11 @@ final class ImageAIState {
     /// This stays true even after undo, to allow saving the reverted state.
     private(set) var hasComputedResult = false
 
+    /// Reset hasComputedResult (for discarding changes)
+    func discardComputedResult() {
+        hasComputedResult = false
+    }
+
     /// Whether undo is possible.
     var canUndo: Bool {
         return !appliedHistory.isEmpty

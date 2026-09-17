@@ -102,6 +102,16 @@ class MenuBuilder {
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
+        // ─── Edit Menu ───────────────────────────────────────────────
+        let editMenu = NSMenu(title: t("Edit"))
+        actionItem(editMenu, t("Copy"), #selector(MenuActions.copy(_:)), key: "c")
+        actionItem(editMenu, t("Paste"), #selector(MenuActions.paste(_:)), key: "v")
+
+        let editMenuItem = NSMenuItem()
+        editMenuItem.title = t("Edit")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
         // ─── View Menu ───────────────────────────────────────────────
         let viewMenu = NSMenu(title: t("View"))
 
@@ -252,6 +262,8 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     @objc func aiDewatermark(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleAIDewatermark() }
     @objc func aiEnhance(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleAIEnhance() }
     @objc func aiOneClick(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.runAIOneClickEnhance() }
+    @objc func copy(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.copyImage() }
+    @objc func paste(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.pasteImage() }
 
     // MARK: - NSMenuItemValidation
 
