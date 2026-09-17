@@ -24,6 +24,8 @@ final class CropOverlayView: NSView {
     let imagePixelSize: NSSize
     /// Minimum crop edge length in image pixels.
     static let minCropPixels: CGFloat = 16
+    /// Whether we start with full image or drag to select
+    var startWithFullImage: Bool = true
 
     // MARK: - Coordinate conversion (provided by the host)
 
@@ -45,13 +47,20 @@ final class CropOverlayView: NSView {
 
     private var activeHandle: Handle?
     private var isMoving = false
+    private var isSelecting = false
     private var cropAtDragStart: CGRect = .zero
+    private var selectStartPixel: CGPoint = .zero
 
     // MARK: - Init
 
-    init(imagePixelSize: NSSize) {
+    init(imagePixelSize: NSSize, startWithFull: Bool = true) {
         self.imagePixelSize = imagePixelSize
-        self.cropRectPixels = CGRect(origin: .zero, size: imagePixelSize)
+        self.startWithFullImage = startWithFull
+        if startWithFull {
+            self.cropRectPixels = CGRect(origin: .zero, size: imagePixelSize)
+        } else {
+            self.cropRectPixels = .zero
+        }
         super.init(frame: .zero)
         wantsLayer = true
     }
@@ -108,6 +117,17 @@ final class CropOverlayView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
+
+        // If in select mode with no rect yet, start selection
+        if !startWithFullImage && cropRectPixels.isEmpty {
+            isSelecting = true
+            if let pixel = toPixelPoint?(p) {
+                selectStartPixel = pixel
+            }
+            NSCursor.crosshair.set()
+            return
+        }
+
         if let handle = hitTestHandle(p) {
             activeHandle = handle
             cropAtDragStart = cropRectPixels
@@ -125,10 +145,34 @@ final class CropOverlayView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         let pixel = toPixelPoint(p)
 
-        if isMoving {
+        if isSelecting {
+            updateSelect(with: pixel)
+        } else if isMoving {
             updateMove(with: pixel)
         } else if let handle = activeHandle {
             updateResize(handle: handle, with: pixel)
+        }
+    }
+
+    private func updateSelect(with pixel: CGPoint) {
+        let full = fullRect
+        let minSide = Self.minCropPixels
+
+        // Clamp pixel to image bounds
+        let px = min(max(0, pixel.x), full.width)
+        let py = min(max(0, pixel.y), full.height)
+        let sx = min(max(0, selectStartPixel.x), full.width)
+        let sy = min(max(0, selectStartPixel.y), full.height)
+
+        // Calculate rect from start to current
+        let x = min(sx, px)
+        let y = min(sy, py)
+        let w = abs(px - sx)
+        let h = abs(py - sy)
+
+        // Only update if above minimum size
+        if w >= minSide && h >= minSide {
+            setCrop(CGRect(x: x, y: y, width: w, height: h))
         }
     }
 
@@ -148,7 +192,9 @@ final class CropOverlayView: NSView {
     override func mouseUp(with event: NSEvent) {
         activeHandle = nil
         isMoving = false
+        isSelecting = false
         dragStartPixel = nil
+        selectStartPixel = .zero
         NSCursor.arrow.set()
     }
 
@@ -191,6 +237,13 @@ final class CropOverlayView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
+
+        // If in select mode with no rect, show crosshair
+        if !startWithFullImage && cropRectPixels.isEmpty {
+            NSCursor.crosshair.set()
+            return
+        }
+
         if hitTestHandle(p) != nil {
             NSCursor.crosshair.set()
         } else if cropViewRect.contains(p) {
@@ -214,6 +267,30 @@ final class CropOverlayView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        // If in select mode with no rect, show instruction
+        if !startWithFullImage && cropRectPixels.isEmpty {
+            // Dim the entire image
+            NSColor(white: 0, alpha: 0.3).setFill()
+            bounds.fill()
+
+            // Show instruction text
+            let instruction = "Drag to select crop region" as NSString
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 16),
+                .foregroundColor: NSColor.white,
+            ]
+            let size = instruction.size(withAttributes: attrs)
+            let textRect = CGRect(x: bounds.midX - size.width/2, y: bounds.midY - size.height/2, width: size.width, height: size.height)
+
+            // Draw text background
+            NSColor(calibratedRed: 0, green: 0, blue: 0, alpha: 0.7).setFill()
+            let bgRect = textRect.insetBy(dx: -12, dy: -8)
+            bgRect.fill()
+
+            instruction.draw(in: textRect, withAttributes: attrs)
+            return
+        }
+
         let r = cropViewRect
         guard r.width > 0, r.height > 0 else {
             NSColor(white: 0, alpha: 0.45).setFill()
