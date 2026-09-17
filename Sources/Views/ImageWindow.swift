@@ -925,8 +925,10 @@ class ImageWindow {
         let netDegrees = rotationSteps * 90
         let hasRotation = (netDegrees % 360) != 0
         let hasAITransform = aiStates[url]?.activeKind != nil
+        let hadAIOperation = aiStates[url]?.hasComputedResult ?? false
 
-        if !hasRotation && !hasAITransform && !cropMode {
+        // Allow save if there's rotation, active AI transform, OR any AI operation was done (even if undone)
+        if !hasRotation && !hasAITransform && !cropMode && !hadAIOperation {
             Logger.shared.log("Save ignored: no rotation and no AI transform")
             showStatusMessage(L10n.shared.t("Nothing to save"))
             return
@@ -939,7 +941,16 @@ class ImageWindow {
             return
         }
 
-        let ext = url.pathExtension.lowercased()
+        var ext = url.pathExtension.lowercased()
+        var saveURL = url
+
+        // WebP: macOS doesn't support encoding, save as PNG with .png extension
+        if ext == "webp" {
+            ext = "png"
+            saveURL = url.deletingPathExtension().appendingPathExtension("png")
+            Logger.shared.log("WebP not supported for encoding, saving as PNG: \(saveURL.lastPathComponent)")
+        }
+
         guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
             Logger.shared.log("Save failed: unsupported format '\(ext)' for \(url)")
             showStatusMessage(L10n.shared.t("Save failed: unsupported format"))
@@ -947,7 +958,23 @@ class ImageWindow {
         }
 
         do {
-            try data.write(to: url, options: .atomic)
+            try data.write(to: saveURL, options: .atomic)
+
+            // If we saved as a new file (WebP -> PNG), update the URL in the list
+            if saveURL != url {
+                // Delete the old webp file
+                try? FileManager.default.removeItem(at: url)
+                Logger.shared.log("Deleted old WebP file: \(url.lastPathComponent)")
+
+                if let idx = imageURLs.firstIndex(of: url) {
+                    imageURLs[idx] = saveURL
+                    // Update aiStates key as well
+                    if let state = aiStates.removeValue(forKey: url) {
+                        aiStates[saveURL] = state
+                    }
+                }
+            }
+
             // The file now matches the displayed image.
             if hasRotation {
                 baseImage = toSave
@@ -955,8 +982,8 @@ class ImageWindow {
             }
             // Restore Live Photo support (suppressed while rotated). Cropped
             // Live Photos stay still (attachLivePhoto skips suppressed URLs).
-            attachLivePhoto(for: url)
-            Logger.shared.log("Saved image to \(url)")
+            attachLivePhoto(for: saveURL)
+            Logger.shared.log("Saved image to \(saveURL)")
             showStatusMessage(L10n.shared.t("Saved"))
             if cropMode { exitCropMode() }
         } catch {
@@ -1027,8 +1054,12 @@ class ImageWindow {
                 properties[.compressionFactor] = lossyQuality
             }
             return rep.representation(using: fileType, properties: properties)
+        case "webp":
+            // macOS ImageIO does not support WebP encoding, save as PNG instead
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            return rep.representation(using: .png, properties: [:])
         default:
-            // HEIC/HEIF/WebP/anything else: go through ImageIO with the UTI.
+            // HEIC/HEIF/anything else: go through ImageIO with the UTI.
             let type = UTType(filenameExtension: ext) ?? .png
             let mutableData = NSMutableData()
             guard let dest = CGImageDestinationCreateWithData(mutableData, type.identifier as CFString, 1, nil) else {
@@ -1117,8 +1148,12 @@ class ImageWindow {
             }
             if doDewatermark {
                 let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
-                    guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
-                    return try? U2NetEngine.shared.removeWatermark(from: cg)
+                    guard WatermarkRemovalService.shared.isAvailable else { return nil }
+                    _ = try? U2NetEngine.shared.ensureLoaded()
+                    if WatermarkRemovalService.shared.hasInpainting {
+                        _ = try? LaMaEngine.shared.ensureLoaded()
+                    }
+                    return try? WatermarkRemovalService.shared.removeWatermark(from: cg)
                 }.value
                 if let (out, fraction) = result, fraction > 0 {
                     let state = self.aiState(for: url)
@@ -1218,7 +1253,7 @@ class ImageWindow {
             let out = await Task.detached(priority: .userInitiated) { [weak self] () -> CGImage? in
                 guard (try? await RealESRGANEngine.shared.ensureLoaded()) != nil else { return nil }
                 return try? RealESRGANEngine.shared.upscale(cg) { p in
-                    DispatchQueue.main.async { [weak self] in
+                    Task { @MainActor [weak self] in
                         guard let self else { return }
                         if !self.aiOperationCancelled {
                             self.aiOperationLabel?.stringValue = L10n.shared.tf("AI upscaling… %.0f%%", p * 100)
@@ -1276,8 +1311,20 @@ class ImageWindow {
             }
             // Synchronous heavy work: run off the main thread.
             let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
-                guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
-                return try? U2NetEngine.shared.removeWatermark(from: cg)
+                guard WatermarkRemovalService.shared.isAvailable else {
+                    Logger.shared.log("Dewatermark: service not available")
+                    return nil
+                }
+                do {
+                    try U2NetEngine.shared.ensureLoaded()
+                    if WatermarkRemovalService.shared.hasInpainting {
+                        try LaMaEngine.shared.ensureLoaded()
+                    }
+                    return try WatermarkRemovalService.shared.removeWatermark(from: cg)
+                } catch {
+                    Logger.shared.log("Dewatermark error: \(error.localizedDescription)")
+                    return nil
+                }
             }.value
             guard !self.aiOperationCancelled else {
                 Logger.shared.log("AI dewatermark cancelled by user")
@@ -1423,8 +1470,12 @@ class ImageWindow {
                     guard let decoded = try? await DecoderManager.shared.decode(url: u),
                           let cg = decoded.image.sourceCGImage else { continue }
                     if let (out, fraction) = await Task.detached(priority: .userInitiated, operation: { () -> (CGImage, Double)? in
-                        guard (try? U2NetEngine.shared.ensureLoaded()) != nil else { return nil }
-                        return try? U2NetEngine.shared.removeWatermark(from: cg)
+                        guard WatermarkRemovalService.shared.isAvailable else { return nil }
+                        _ = try? U2NetEngine.shared.ensureLoaded()
+                        if WatermarkRemovalService.shared.hasInpainting {
+                            _ = try? LaMaEngine.shared.ensureLoaded()
+                        }
+                        return try? WatermarkRemovalService.shared.removeWatermark(from: cg)
                     }).value, fraction > 0 {
                         let state = aiState(for: u)
                         state.dewatermarkedImage = Self.nsImage(from: out)

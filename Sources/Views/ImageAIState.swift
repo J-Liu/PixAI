@@ -63,9 +63,8 @@ final class ImageAIState {
     }
 
     /// Whether any transform has been computed (used to decide save behavior).
-    var hasAnyResult: Bool {
-        return isUpscaled || isDewatermarked || isEnhanced
-    }
+    /// This stays true even after undo, to allow saving the reverted state.
+    private(set) var hasComputedResult = false
 
     /// Whether undo is possible.
     var canUndo: Bool {
@@ -75,6 +74,7 @@ final class ImageAIState {
     /// Record that a transform was applied (for undo history).
     func recordApplied(_ kind: AIKind) {
         appliedHistory.append(kind)
+        hasComputedResult = true
     }
 
     /// Undo the most recently applied transform. Returns the kind that was undone, or nil.
