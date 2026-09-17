@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -19,47 +19,6 @@ jobs:
 
       - name: Show Swift version
         run: swift --version
-
-      - name: Cache ExecuTorch
-        id: cache-executorch
-        uses: actions/cache@v4
-        with:
-          path: |
-            Vendor/ExecuTorch
-            .executorch_build
-          key: executorch-v0.6.0-macos-${{ runner.arch }}
-
-      - name: Setup Python
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        run: |
-          brew install zstd libomp
-
-      - name: Install buck2
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        run: |
-          curl -sLO "https://ossci-macos.s3.amazonaws.com/buck2-aarch64-apple-darwin-2024-05-15.zst"
-          zstd -d buck2-aarch64-apple-darwin-2024-05-15.zst -o buck2
-          chmod +x buck2
-          sudo mv buck2 /usr/local/bin/
-          buck2 --version
-
-      - name: Install Python dependencies
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        run: |
-          pip install zstd pyyaml cmake
-          pip install torch==2.7.0
-
-      - name: Build ExecuTorch xcframeworks
-        if: steps.cache-executorch.outputs.cache-hit != 'true'
-        run: |
-          chmod +x build_executorch.sh
-          ./build_executorch.sh
 
       - name: Build app bundle
         run: |
