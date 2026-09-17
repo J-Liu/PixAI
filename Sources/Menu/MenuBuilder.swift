@@ -148,7 +148,10 @@ class MenuBuilder {
 
         actionItem(aiMenu, t("AI Super-Resolution"), #selector(MenuActions.aiUpscale(_:)))
         actionItem(aiMenu, t("AI Watermark Removal"), #selector(MenuActions.aiDewatermark(_:)))
+        actionItem(aiMenu, t("AI Manual Watermark Removal"), #selector(MenuActions.aiManualDewatermark(_:)))
         actionItem(aiMenu, t("AI Quality Enhance"), #selector(MenuActions.aiEnhance(_:)))
+        aiMenu.addItem(NSMenuItem.separator())
+        actionItem(aiMenu, t("AI Dedup"), #selector(MenuActions.aiDedup(_:)))
         actionItem(aiMenu, t("One-Click AI Auto-Enhance"), #selector(MenuActions.aiOneClick(_:)))
 
         let aiMenuItem = NSMenuItem()
@@ -260,7 +263,9 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     @objc func toggleFullScreenAction(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleFullScreen() }
     @objc func aiUpscale(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleAIUpscale() }
     @objc func aiDewatermark(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleAIDewatermark() }
+    @objc func aiManualDewatermark(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.startManualWatermarkRemoval() }
     @objc func aiEnhance(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleAIEnhance() }
+    @objc func aiDedup(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.runAIDedup() }
     @objc func aiOneClick(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.runAIOneClickEnhance() }
     @objc func copy(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.copyImage() }
     @objc func paste(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.pasteImage() }
@@ -284,8 +289,10 @@ final class MenuActions: NSObject, NSMenuItemValidation {
         switch action {
         case #selector(aiUpscale(_:)):
             return win.hasCurrentImage && !win.isBatchRunning && RealESRGANEngine.shared.isAvailable
-        case #selector(aiDewatermark(_:)):
+        case #selector(aiDewatermark(_:)), #selector(aiManualDewatermark(_:)):
             return win.hasCurrentImage && !win.isBatchRunning && U2NetEngine.shared.isAvailable
+        case #selector(aiDedup(_:)):
+            return win.hasCurrentImage && !win.isBatchRunning && win.imageCount > 1
         default:
             break
         }

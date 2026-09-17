@@ -71,6 +71,9 @@ final class AppConfig {
         static let watermarkMaskThreshold: Double = 0.7
         /// Minimum mask fraction to treat as watermark (0.0001 - 0.1, default 0.001)
         static let watermarkMinMaskFraction: Double = 0.001
+        /// Maximum mask fraction to treat as watermark (0.01 - 0.5, default 0.2).
+        /// Masks covering more than this are likely false positives (faces, objects) and will be rejected.
+        static let watermarkMaxMaskFraction: Double = 0.2
         /// Watermark removal mode: "auto" (U2Net detects, LaMa inpaints) or "manual" (user selects region, LaMa inpaints)
         static let watermarkMode: String = "auto"
         /// Feather radius for mask edges (0 - 10 pixels, default 3, for smoother blending)
@@ -121,6 +124,7 @@ final class AppConfig {
         // Watermark removal
         var watermarkMaskThreshold: Double?
         var watermarkMinMaskFraction: Double?
+        var watermarkMaxMaskFraction: Double?
         var watermarkMode: String?
         var watermarkFeatherRadius: Int?
         // Crop mode
@@ -166,6 +170,7 @@ final class AppConfig {
     // Watermark removal
     private var _watermarkMaskThreshold: Double = Defaults.watermarkMaskThreshold
     private var _watermarkMinMaskFraction: Double = Defaults.watermarkMinMaskFraction
+    private var _watermarkMaxMaskFraction: Double = Defaults.watermarkMaxMaskFraction
     private var _watermarkMode: String = Defaults.watermarkMode
     private var _watermarkFeatherRadius: Int = Defaults.watermarkFeatherRadius
     // Crop mode
@@ -680,6 +685,23 @@ final class AppConfig {
         }
     }
 
+    /// Maximum fraction of image that can be masked to treat as watermark (0.01 - 0.5, default 0.2).
+    /// Masks larger than this are likely false positives (faces, objects) and will be skipped.
+    var watermarkMaxMaskFraction: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _watermarkMaxMaskFraction
+        }
+        set {
+            let clamped = min(max(newValue, 0.01), 0.5)
+            lock.lock()
+            let changed = _watermarkMaxMaskFraction != clamped
+            if changed { _watermarkMaxMaskFraction = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
     /// Watermark removal mode: "auto" (U2Net detects, LaMa inpaints) or "manual" (user selects region, LaMa inpaints).
     var watermarkMode: String {
         get {
@@ -921,6 +943,7 @@ final class AppConfig {
         // Watermark removal
         if let v = payload.watermarkMaskThreshold { _watermarkMaskThreshold = min(max(v, 0.1), 0.9) }
         if let v = payload.watermarkMinMaskFraction { _watermarkMinMaskFraction = min(max(v, 0.0001), 0.1) }
+        if let v = payload.watermarkMaxMaskFraction { _watermarkMaxMaskFraction = min(max(v, 0.01), 0.5) }
         if let v = payload.watermarkMode { _watermarkMode = Self.normalizeWatermarkMode(v) }
         if let v = payload.watermarkFeatherRadius { _watermarkFeatherRadius = min(max(v, 0), 10) }
         if let v = payload.cropMode { _cropMode = Self.normalizeCropMode(v) }
@@ -959,6 +982,7 @@ final class AppConfig {
             enhanceSharpness: _enhanceSharpness,
             watermarkMaskThreshold: _watermarkMaskThreshold,
             watermarkMinMaskFraction: _watermarkMinMaskFraction,
+            watermarkMaxMaskFraction: _watermarkMaxMaskFraction,
             watermarkMode: _watermarkMode,
             watermarkFeatherRadius: _watermarkFeatherRadius,
             cropMode: _cropMode

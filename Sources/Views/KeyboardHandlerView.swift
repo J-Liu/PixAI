@@ -29,6 +29,10 @@ class KeyboardHandlerView: NSView {
     private let isCropModeActive: () -> Bool
     /// Called on Esc while cropping: exit crop mode without saving.
     private let onCancelCrop: () -> Void
+    /// Live query for whether watermark selection mode is active.
+    private let isWatermarkSelectionModeActive: () -> Bool
+    /// Called on Esc while selecting watermark region: cancel selection.
+    private let onCancelWatermarkSelection: () -> Void
     /// Live query for whether a single AI operation (upscale/dewatermark) is running.
     private let isAIOperationActive: () -> Bool
     /// Called on Esc during a single AI operation: cancel it.
@@ -59,6 +63,8 @@ class KeyboardHandlerView: NSView {
          onCancelBatch: @escaping () -> Void,
          isCropModeActive: @escaping () -> Bool,
          onCancelCrop: @escaping () -> Void,
+         isWatermarkSelectionModeActive: @escaping () -> Bool,
+         onCancelWatermarkSelection: @escaping () -> Void,
          isAIOperationActive: @escaping () -> Bool,
          onCancelAIOperation: @escaping () -> Void,
          canUndoAI: @escaping () -> Bool,
@@ -82,6 +88,8 @@ class KeyboardHandlerView: NSView {
         self.onCancelBatch = onCancelBatch
         self.isCropModeActive = isCropModeActive
         self.onCancelCrop = onCancelCrop
+        self.isWatermarkSelectionModeActive = isWatermarkSelectionModeActive
+        self.onCancelWatermarkSelection = onCancelWatermarkSelection
         self.isAIOperationActive = isAIOperationActive
         self.onCancelAIOperation = onCancelAIOperation
         self.canUndoAI = canUndoAI
@@ -243,6 +251,8 @@ class KeyboardHandlerView: NSView {
         case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
             if isCropModeActive() {
                 onCancelCrop()
+            } else if isWatermarkSelectionModeActive() {
+                onCancelWatermarkSelection()
             } else if isAIOperationActive() {
                 onCancelAIOperation()
             } else if canUndoAI() {

@@ -72,6 +72,7 @@ final class U2NetEngine {
         // Get thresholds from config
         let maskThreshold = Float(AppConfig.shared.watermarkMaskThreshold)
         let minMaskFraction = AppConfig.shared.watermarkMinMaskFraction
+        let maxMaskFraction = AppConfig.shared.watermarkMaxMaskFraction
 
         // 1) Predict saliency mask at 320×320
         let maskSmall = try predictMask(cgImage)
@@ -102,7 +103,13 @@ final class U2NetEngine {
         let maskedCount = target.filter { $0 }.count
         let fraction = Double(maskedCount) / Double(w * h)
         if fraction < minMaskFraction {
-            Logger.shared.log("U2Net: no significant watermark detected (mask \(fraction), threshold \(minMaskFraction))")
+            Logger.shared.log("U2Net: no significant watermark detected (mask \(fraction), min threshold \(minMaskFraction))")
+            return [Bool](repeating: false, count: w * h)
+        }
+
+        // Check max mask fraction - if mask is too large, it's likely a false positive (face, object)
+        if fraction > maxMaskFraction {
+            Logger.shared.log("U2Net: mask too large (\(String(format: "%.2f%%", fraction * 100))), likely false positive, skipping (max threshold \(String(format: "%.2f%%", maxMaskFraction * 100)))")
             return [Bool](repeating: false, count: w * h)
         }
 

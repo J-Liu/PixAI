@@ -111,6 +111,17 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// (cropping a Live Photo turns it into a still image).
     private var livePhotoSuppressed: Set<URL> = []
 
+    // MARK: Manual watermark selection state
+
+    /// True while manual watermark selection mode is active.
+    private var watermarkSelectionMode = false
+    /// Selection rectangle in view coordinates.
+    private var watermarkSelectionRect: NSRect = .zero
+    /// Start point for selection drag.
+    private var watermarkSelectionStart: NSPoint = .zero
+    /// Selection overlay view.
+    private var watermarkSelectionOverlay: NSView?
+
     /// Set when the user presses Esc during the AI batch: the loop aborts and
     /// the window returns to browse mode.
     private var batchCancelled = false
@@ -335,6 +346,13 @@ class ImageWindow: NSObject, NSWindowDelegate {
             onCancelCrop: { [weak self] in
                 Logger.shared.log("Keyboard handler: cancel crop (Esc)")
                 self?.exitCropMode()
+            },
+            isWatermarkSelectionModeActive: { [weak self] in
+                self?.watermarkSelectionMode ?? false
+            },
+            onCancelWatermarkSelection: { [weak self] in
+                Logger.shared.log("Keyboard handler: cancel watermark selection (Esc)")
+                self?.exitWatermarkSelectionMode()
             },
             isAIOperationActive: { [weak self] in
                 self?.aiOperationRunning ?? false
@@ -1823,6 +1841,307 @@ class ImageWindow: NSObject, NSWindowDelegate {
         refreshCurrentDisplay()
     }
 
+    // MARK: - Manual Watermark Removal
+
+    /// Start manual watermark removal mode - show selection overlay for user to select region.
+    func startManualWatermarkRemoval() {
+        guard !batchRunning, !aiOperationRunning, !watermarkSelectionMode, !cropMode,
+              imageURLs.indices.contains(currentIndex) else { return }
+        guard U2NetEngine.shared.isAvailable, LaMaEngine.shared.isAvailable else {
+            showStatusMessage(L10n.shared.t("U2Net model not downloaded — see Preferences ▸ AI Models"))
+            return
+        }
+        guard baseImage?.sourceCGImage != nil else { return }
+
+        // Enter selection mode
+        watermarkSelectionMode = true
+        watermarkSelectionRect = .zero
+
+        // Set up selection mode on image view
+        guard let imageView = container?.imageView else { return }
+        imageView.isSelectionMode = true
+        imageView.onSelectionMouseDown = { [weak self] point in
+            self?.watermarkSelectionMouseDown(point)
+        }
+        imageView.onSelectionMouseDragged = { [weak self] point in
+            self?.watermarkSelectionMouseDragged(point)
+        }
+        imageView.onSelectionMouseUp = { [weak self] in
+            self?.watermarkSelectionMouseUp()
+        }
+
+        // Change cursor to crosshair
+        NSCursor.crosshair.set()
+
+        // Show hint in status bar
+        showStatusMessage(L10n.shared.t("Drag to select watermark region, Esc to cancel"))
+        Logger.shared.log("Manual watermark removal: entered selection mode")
+    }
+
+    /// Handle mouse down in selection mode - start selection.
+    func watermarkSelectionMouseDown(_ location: NSPoint) {
+        guard watermarkSelectionMode else { return }
+        watermarkSelectionStart = location
+        watermarkSelectionRect = NSRect(x: location.x, y: location.y, width: 0, height: 0)
+    }
+
+    /// Handle mouse drag in selection mode - update selection rectangle.
+    func watermarkSelectionMouseDragged(_ location: NSPoint) {
+        guard watermarkSelectionMode else { return }
+
+        let minX = min(watermarkSelectionStart.x, location.x)
+        let maxX = max(watermarkSelectionStart.x, location.x)
+        let minY = min(watermarkSelectionStart.y, location.y)
+        let maxY = max(watermarkSelectionStart.y, location.y)
+
+        watermarkSelectionRect = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+
+        // Update overlay
+        updateWatermarkSelectionOverlay()
+    }
+
+    /// Handle mouse up in selection mode - finalize selection.
+    func watermarkSelectionMouseUp() {
+        guard watermarkSelectionMode else { return }
+
+        // Check if selection is valid (minimum size)
+        guard watermarkSelectionRect.width > 10 && watermarkSelectionRect.height > 10 else {
+            showStatusMessage(L10n.shared.t("Selection too small"))
+            return
+        }
+
+        // Ask for confirmation
+        let alert = NSAlert()
+        alert.messageText = L10n.shared.t("Remove Watermark")
+        alert.informativeText = L10n.shared.t("Remove the selected region?")
+        alert.addButton(withTitle: L10n.shared.t("Clean"))
+        alert.addButton(withTitle: L10n.shared.t("Cancel"))
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self else { return }
+            if response == .alertFirstButtonReturn {
+                self.applyManualWatermarkRemoval()
+            } else {
+                self.exitWatermarkSelectionMode()
+            }
+        }
+    }
+
+    /// Update the visual overlay showing the selection rectangle.
+    private func updateWatermarkSelectionOverlay() {
+        // Remove old overlay
+        watermarkSelectionOverlay?.removeFromSuperview()
+
+        guard watermarkSelectionRect.width > 0, watermarkSelectionRect.height > 0,
+              let imageView = container?.imageView else { return }
+
+        // Create new overlay
+        let overlay = NSView(frame: imageView.bounds)
+        overlay.wantsLayer = true
+
+        // Draw dimmed background with selection cutout
+        let dimLayer = CAShapeLayer()
+        let path = NSBezierPath(rect: overlay.bounds)
+        path.append(NSBezierPath(rect: watermarkSelectionRect))
+        path.windingRule = .evenOdd
+        dimLayer.path = path.cgPath
+        dimLayer.fillColor = NSColor(white: 0, alpha: 0.5).cgColor
+        overlay.layer?.addSublayer(dimLayer)
+
+        // Draw selection border
+        let borderLayer = CAShapeLayer()
+        borderLayer.path = NSBezierPath(rect: watermarkSelectionRect).cgPath
+        borderLayer.strokeColor = NSColor.white.cgColor
+        borderLayer.fillColor = nil
+        borderLayer.lineWidth = 2
+        overlay.layer?.addSublayer(borderLayer)
+
+        imageView.addSubview(overlay)
+        watermarkSelectionOverlay = overlay
+    }
+
+    /// Apply manual watermark removal using the selected region.
+    private func applyManualWatermarkRemoval() {
+        guard watermarkSelectionMode,
+              let cg = baseImage?.sourceCGImage,
+              let imageView = container?.imageView else {
+            exitWatermarkSelectionMode()
+            return
+        }
+
+        // Convert view selection rect to pixel rect
+        let pixelRect = imageView.pixelRect(forViewRect: watermarkSelectionRect)
+
+        // Create binary mask from selection
+        let w = cg.width, h = cg.height
+        var mask = [Bool](repeating: false, count: w * h)
+
+        let x0 = max(0, Int(pixelRect.minX))
+        let x1 = min(w, Int(pixelRect.maxX))
+        let y0 = max(0, Int(pixelRect.minY))
+        let y1 = min(h, Int(pixelRect.maxY))
+
+        for y in y0..<y1 {
+            for x in x0..<x1 {
+                mask[y * w + x] = true
+            }
+        }
+
+        let url = imageURLs[currentIndex]
+        exitWatermarkSelectionMode()
+
+        // Run inpainting
+        aiBusy.insert(url)
+        showAIOperationOverlay(message: L10n.shared.t("AI dewatermarking…"))
+
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer {
+                self.aiBusy.remove(url)
+                self.hideAIOperationOverlay()
+            }
+
+            let result = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+                do {
+                    try LaMaEngine.shared.ensureLoaded()
+                    return try LaMaEngine.shared.inpaint(image: cg, mask: mask)
+                } catch {
+                    Logger.shared.log("Manual watermark removal error: \(error.localizedDescription)")
+                    return nil
+                }
+            }.value
+
+            guard !self.aiOperationCancelled else {
+                Logger.shared.log("Manual watermark removal cancelled by user")
+                return
+            }
+
+            if let out = result {
+                let state = self.aiState(for: url)
+                state.dewatermarkedImage = Self.nsImage(from: out)
+                state.isDewatermarked = true
+                state.lastApplied = .dewatermark
+                state.recordApplied(.dewatermark)
+                self.aiStates[url] = state
+                self.refreshCurrentDisplay()
+                self.showStatusMessage(L10n.shared.t("Watermark removed"))
+            } else {
+                self.showStatusMessage(L10n.shared.t("AI dewatermark failed"))
+            }
+        }
+    }
+
+    /// Exit manual watermark selection mode.
+    func exitWatermarkSelectionMode() {
+        guard watermarkSelectionMode else { return }
+        watermarkSelectionMode = false
+        watermarkSelectionRect = .zero
+        watermarkSelectionOverlay?.removeFromSuperview()
+        watermarkSelectionOverlay = nil
+
+        // Clear selection mode on image view
+        if let imageView = container?.imageView {
+            imageView.isSelectionMode = false
+            imageView.onSelectionMouseDown = nil
+            imageView.onSelectionMouseDragged = nil
+            imageView.onSelectionMouseUp = nil
+        }
+
+        NSCursor.arrow.set()
+        updateStatusBar()
+    }
+
+    // MARK: - AI Dedup
+
+    /// Run AI dedup on the current image queue.
+    func runAIDedup() {
+        guard !batchRunning, imageURLs.count > 1 else { return }
+
+        let alert = NSAlert()
+        alert.messageText = L10n.shared.t("AI Dedup")
+        alert.informativeText = L10n.shared.t("Find and remove duplicate images from the current queue?")
+        alert.addButton(withTitle: L10n.shared.t("Run"))
+        alert.addButton(withTitle: L10n.shared.t("Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Run only the dedup part of the one-click enhance
+        batchRunning = true
+        batchCancelled = false
+        showBatchOverlay()
+        let urls = imageURLs
+
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            defer {
+                self.batchRunning = false
+                self.hideBatchOverlay()
+            }
+
+            // Detect duplicates
+            self.setBatchProgress(0.1, indeterminate: true)
+            let observations = await DuplicateDetector.featurePrints(for: urls)
+            let groups = DuplicateDetector.findGroups(urls: urls, observations: observations)
+
+            if groups.isEmpty {
+                self.showStatusMessage(L10n.shared.t("No duplicates found"))
+                return
+            }
+
+            // Process each group
+            for (index, group) in groups.enumerated() {
+                if self.batchCancelled { break }
+                self.setBatchProgress(0.1 + 0.8 * Double(index) / Double(groups.count), indeterminate: true)
+
+                let live = group.indices.compactMap { i in urls.indices.contains(i) ? urls[i] : nil }
+                guard live.count >= 2 else { continue }
+
+                var toTrash: [URL] = []
+                if live.count == 2 {
+                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
+                    let defaultSide: Int = (group.indices[1] == best) ? 1 : 0
+                    let keepURL: URL? = await withCheckedContinuation { cont in
+                        DedupComparisonWindow.present(
+                            over: self.window,
+                            leftURL: live[0],
+                            rightURL: live[1],
+                            initialSelection: defaultSide,
+                            onConfirm: { side in
+                                cont.resume(returning: side == 0 ? live[0] : live[1])
+                            },
+                            onCancelAll: {
+                                self.batchCancelled = true
+                                cont.resume(returning: nil)
+                            }
+                        )
+                    }
+                    if let keep = keepURL {
+                        toTrash = live.filter { $0 != keep }
+                    }
+                } else {
+                    // Auto-select best for groups > 2
+                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
+                    if let bestURL = urls.indices.contains(best) ? urls[best] : nil {
+                        toTrash = live.filter { $0 != bestURL }
+                    }
+                }
+
+                for trashURL in toTrash {
+                    try? FileManager.default.trashItem(at: trashURL, resultingItemURL: nil)
+                    if let idx = self.imageURLs.firstIndex(of: trashURL) {
+                        self.imageURLs.remove(at: idx)
+                        if self.currentIndex >= idx, self.currentIndex > 0 {
+                            self.currentIndex -= 1
+                        }
+                    }
+                }
+            }
+
+            self.setBatchProgress(1.0, indeterminate: false)
+            self.loadImage(at: min(self.currentIndex, max(0, self.imageURLs.count - 1)))
+            self.showStatusMessage(L10n.shared.t("AI dedup complete"))
+        }
+    }
+
     // MARK: - Copy / Paste
 
     /// Copy the current image to the clipboard.
@@ -2215,43 +2534,51 @@ class ImageWindow: NSObject, NSWindowDelegate {
         filesLabel.textColor = .secondaryLabelColor
         contentView.addSubview(filesLabel)
 
-        // Buttons - Row 1: Save All, Discard All, Cancel
+        // Buttons - Row 1: Save All, Discard All, Cancel (centered)
         let buttonHeight: CGFloat = 24
         let row1Y: CGFloat = 50
         let row2Y: CGFloat = 15
         let buttonWidth: CGFloat = 90
         let gap: CGFloat = 10
+        let sheetWidth: CGFloat = 450
 
-        let saveAllBtn = NSButton(frame: NSRect(x: 20, y: row1Y, width: buttonWidth, height: buttonHeight))
+        // Row 1: 3 buttons, centered
+        let row1Width = buttonWidth * 3 + gap * 2
+        let row1StartX = (sheetWidth - row1Width) / 2
+
+        let saveAllBtn = NSButton(frame: NSRect(x: row1StartX, y: row1Y, width: buttonWidth, height: buttonHeight))
         saveAllBtn.title = t("Save All")
         saveAllBtn.bezelStyle = .rounded
         saveAllBtn.target = self
         saveAllBtn.action = #selector(handleSaveAll)
         contentView.addSubview(saveAllBtn)
 
-        let discardAllBtn = NSButton(frame: NSRect(x: 20 + buttonWidth + gap, y: row1Y, width: buttonWidth, height: buttonHeight))
+        let discardAllBtn = NSButton(frame: NSRect(x: row1StartX + buttonWidth + gap, y: row1Y, width: buttonWidth, height: buttonHeight))
         discardAllBtn.title = t("Discard All")
         discardAllBtn.bezelStyle = .rounded
         discardAllBtn.target = self
         discardAllBtn.action = #selector(handleDiscardAll)
         contentView.addSubview(discardAllBtn)
 
-        let cancelBtn = NSButton(frame: NSRect(x: 20 + (buttonWidth + gap) * 2, y: row1Y, width: buttonWidth, height: buttonHeight))
+        let cancelBtn = NSButton(frame: NSRect(x: row1StartX + (buttonWidth + gap) * 2, y: row1Y, width: buttonWidth, height: buttonHeight))
         cancelBtn.title = t("Cancel")
         cancelBtn.bezelStyle = .rounded
         cancelBtn.target = self
         cancelBtn.action = #selector(handleSaveCancel)
         contentView.addSubview(cancelBtn)
 
-        // Buttons - Row 2: Save, Discard
-        let saveBtn = NSButton(frame: NSRect(x: 20, y: row2Y, width: buttonWidth, height: buttonHeight))
+        // Buttons - Row 2: Save, Discard (centered)
+        let row2Width = buttonWidth * 2 + gap
+        let row2StartX = (sheetWidth - row2Width) / 2
+
+        let saveBtn = NSButton(frame: NSRect(x: row2StartX, y: row2Y, width: buttonWidth, height: buttonHeight))
         saveBtn.title = t("Save")
         saveBtn.bezelStyle = .rounded
         saveBtn.target = self
         saveBtn.action = #selector(handleSave)
         contentView.addSubview(saveBtn)
 
-        let discardBtn = NSButton(frame: NSRect(x: 20 + buttonWidth + gap, y: row2Y, width: buttonWidth, height: buttonHeight))
+        let discardBtn = NSButton(frame: NSRect(x: row2StartX + buttonWidth + gap, y: row2Y, width: buttonWidth, height: buttonHeight))
         discardBtn.title = t("Discard")
         discardBtn.bezelStyle = .rounded
         discardBtn.target = self
@@ -3130,7 +3457,12 @@ class ImageWindow: NSObject, NSWindowDelegate {
         upscaleItem.isEnabled = RealESRGANEngine.shared.isAvailable
         let dewatermarkItem = item(t("AI Watermark Removal"), #selector(contextAIDewatermark))
         dewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable
+        let manualDewatermarkItem = item(t("AI Manual Watermark Removal"), #selector(contextAIManualDewatermark))
+        manualDewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
         _ = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
+        menu.addItem(.separator())
+        let dedupItem = item(t("AI Dedup"), #selector(contextAIDedup))
+        dedupItem.isEnabled = imageURLs.count > 1
         _ = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
         return menu
     }
@@ -3161,7 +3493,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
     @objc private func contextSlideshow() { startOrStopSlideshow() }
     @objc private func contextAIUpscale() { toggleAIUpscale() }
     @objc private func contextAIDewatermark() { toggleAIDewatermark() }
+    @objc private func contextAIManualDewatermark() { startManualWatermarkRemoval() }
     @objc private func contextAIEnhance() { toggleAIEnhance() }
+    @objc private func contextAIDedup() { runAIDedup() }
     @objc private func contextAIOneClick() { runAIOneClickEnhance() }
 
     // MARK: - Rename
@@ -3224,6 +3558,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
     var hasCurrentImage: Bool {
         return !imageURLs.isEmpty && imageURLs.indices.contains(currentIndex) && baseImage != nil
     }
+
+    /// Number of images in the queue (for dedup availability check).
+    var imageCount: Int { imageURLs.count }
 
     /// True while the AI one-click batch runs (locks most actions).
     var isBatchRunning: Bool { batchRunning }

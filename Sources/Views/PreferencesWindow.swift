@@ -1413,6 +1413,24 @@ final class PreferencesWindow: NSObject {
     @objc private func modelDownloadTapped(_ sender: NSButton) {
         guard let row = modelRow(forControl: sender) else { return }
         if case .downloading = PluginManager.shared.state(for: row.plugin) { return }
+
+        // For Real-ESRGAN (no mirror), check if user is in China and suggest proxy
+        if row.plugin.id == "realesrgan-x4" && ModelPlugin.isInChina && !AppConfig.shared.proxyEnabled {
+            let t = L10n.shared.t
+            let alert = NSAlert()
+            alert.messageText = t("Proxy Recommended")
+            alert.informativeText = t("Super-Resolution model is hosted on HuggingFace. Download may be slow or fail in mainland China. Enable proxy?")
+            alert.addButton(withTitle: t("Enable Proxy"))
+            alert.addButton(withTitle: t("Cancel"))
+            alert.beginSheetModal(for: window!) { [weak self] response in
+                if response == .alertFirstButtonReturn {
+                    // Switch to Advanced tab and focus on proxy settings
+                    self?.switchToProxySettings()
+                }
+            }
+            return
+        }
+
         row.statusLabel.stringValue = L10n.shared.t("Downloading…")
         row.downloadButton.isEnabled = false
         PluginManager.shared.download(row.plugin, progress: { p in
@@ -1434,6 +1452,17 @@ final class PreferencesWindow: NSObject {
                 }
             }
         })
+    }
+
+    /// Switch to Advanced tab and scroll to proxy settings
+    private func switchToProxySettings() {
+        // Select the Advanced tab in main tab view (0=General, 1=AI, 2=Advanced)
+        mainTabView?.selectTabViewItem(at: 2)
+        // Enable proxy
+        proxyEnabledCheckbox?.state = .on
+        toggleProxyEnabled(proxyEnabledCheckbox!)
+        // Focus on host field
+        proxyHostField?.becomeFirstResponder()
     }
 
     @objc private func modelEnableToggled(_ sender: NSButton) {
@@ -1464,7 +1493,7 @@ final class PreferencesWindow: NSObject {
         alert.messageText = L10n.shared.tf("Uninstall %@?", nameText)
         alert.informativeText = L10n.shared.t("The downloaded model files will be deleted. You can download them again later.")
         alert.addButton(withTitle: L10n.shared.t("Uninstall"))
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.shared.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         PluginManager.shared.uninstall(row.plugin)
     }

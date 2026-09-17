@@ -101,7 +101,7 @@ struct ModelPlugin: Equatable {
         files: [
             // Download zip file
             ("U2Net-CoreML.zip",
-             "dd2df9fe014fd2842aa2137f22afe0ebba7fb565fe3ed1a8577c319c10b309a4")
+             "040a3b466bba867607cbb1e40e8dd2b6e275f9f71c1b81a498aec08199d503cb")
         ],
         verifyFiles: [
             // After extraction, check for mlpackage (empty SHA256 = just check existence)
@@ -119,7 +119,7 @@ struct ModelPlugin: Equatable {
         files: [
             // Download zip file
             ("big-lama-coreml.zip",
-             "81f366800bd53744d6baa749a88a8e8b58c1557e43a7f89a22695a26a8ec940d")
+             "8e1fb17d1f21233c350524453a6f58fe986f919eead26067afb2f3814f5e5adf")
         ],
         verifyFiles: [
             // After extraction, check for mlpackage (empty SHA256 = just check existence)

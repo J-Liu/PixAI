@@ -404,6 +404,13 @@ class ZoomableImageView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard image != nil else { return }
 
+        // Selection mode: forward to callback
+        if isSelectionMode {
+            let point = convert(event.locationInWindow, from: nil)
+            onSelectionMouseDown?(point)
+            return
+        }
+
         // Double-click: toggle between "fit to window" and 100% (first use fits,
         // next switches to 100%, alternating).
         if event.clickCount == 2 {
@@ -420,6 +427,13 @@ class ZoomableImageView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        // Selection mode: forward to callback
+        if isSelectionMode {
+            let point = convert(event.locationInWindow, from: nil)
+            onSelectionMouseDragged?(point)
+            return
+        }
+
         guard isPanning else { return }
         let point = convert(event.locationInWindow, from: nil)
         imageOrigin = NSPoint(
@@ -432,6 +446,12 @@ class ZoomableImageView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // Selection mode: forward to callback
+        if isSelectionMode {
+            onSelectionMouseUp?()
+            return
+        }
+
         if isPanning {
             isPanning = false
             updateCursor()
@@ -439,6 +459,16 @@ class ZoomableImageView: NSView {
     }
 
     // MARK: - Cursor feedback (hand when zoomed in, closed hand while dragging)
+
+    // MARK: - Selection mode (for manual watermark removal)
+
+    /// When true, mouse events are used for selection instead of panning.
+    var isSelectionMode: Bool = false
+
+    /// Callbacks for selection mode events.
+    var onSelectionMouseDown: ((NSPoint) -> Void)?
+    var onSelectionMouseDragged: ((NSPoint) -> Void)?
+    var onSelectionMouseUp: (() -> Void)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -643,6 +673,14 @@ class ZoomableImageView: NSView {
         let x = (p.x - imageOrigin.x) / zoomScale
         let yTop = psize.height - (p.y - imageOrigin.y) / zoomScale
         return CGPoint(x: x, y: yTop)
+    }
+
+    /// Convert a rect in this view's coordinates to an image-pixel rect
+    /// (CG coords, y from the TOP).
+    func pixelRect(forViewRect r: NSRect) -> CGRect {
+        let topLeft = pixelPoint(forViewPoint: NSPoint(x: r.minX, y: r.maxY))
+        let bottomRight = pixelPoint(forViewPoint: NSPoint(x: r.maxX, y: r.minY))
+        return CGRect(x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y)
     }
 
     // MARK: - Context menu (right-click)
