@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
 /// Layout (left → right):
-/// [◀] | [↻] [↺] | [+] [−] [fit/100%] [crop] | [▶/⏸] | [enhance] [dewatermark] [upscale] [one-click] | [save] [delete] | [▶]
+/// [◀] | [↻] [↺] | [+] [−] [fit/100%] [crop] | [▶/⏸] | [enhance] [dewatermark] [upscale] [dedup] | [save] [delete] | [▶]
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
@@ -17,7 +17,7 @@ class AutoHideToolbar: NSView {
     let aiEnhanceQualityButton: NSButton
     let aiDewatermarkButton: NSButton
     let aiUpscaleButton: NSButton
-    let aiOneClickButton: NSButton
+    let aiDedupButton: NSButton
     let playPauseButton: NSButton
     let rotateClockwiseButton: NSButton
     let rotateCounterclockwiseButton: NSButton
@@ -40,7 +40,7 @@ class AutoHideToolbar: NSView {
     private let onAIEnhanceQualityTap: () -> Void
     private let onAIDewatermarkTap: () -> Void
     private let onAIUpscaleTap: () -> Void
-    private let onAIOneClickTap: () -> Void
+    private let onAIDedupTap: () -> Void
     private let onPlayPauseTap: () -> Void
     private let onRotateClockwiseTap: () -> Void
     private let onRotateCounterclockwiseTap: () -> Void
@@ -73,7 +73,7 @@ class AutoHideToolbar: NSView {
     static let aiDewatermarkIconName = "eraser.fill"
     static let aiUpscaleIconName = "arrow.up.left.and.arrow.down.right"
     static let aiDeUpscaleIconName = "arrow.down.right.and.arrow.up.left"
-    static let aiOneClickIconName = "wand.and.stars"
+    static let aiDedupIconName = "rectangle.stack.badge.minus"
 
     init(onLeftTap: @escaping () -> Void,
          onRightTap: @escaping () -> Void,
@@ -84,7 +84,7 @@ class AutoHideToolbar: NSView {
          onAIEnhanceQualityTap: @escaping () -> Void,
          onAIDewatermarkTap: @escaping () -> Void,
          onAIUpscaleTap: @escaping () -> Void,
-         onAIOneClickTap: @escaping () -> Void,
+         onAIDedupTap: @escaping () -> Void,
          onPlayPauseTap: @escaping () -> Void,
          onRotateClockwiseTap: @escaping () -> Void,
          onRotateCounterclockwiseTap: @escaping () -> Void,
@@ -99,7 +99,7 @@ class AutoHideToolbar: NSView {
         self.onAIEnhanceQualityTap = onAIEnhanceQualityTap
         self.onAIDewatermarkTap = onAIDewatermarkTap
         self.onAIUpscaleTap = onAIUpscaleTap
-        self.onAIOneClickTap = onAIOneClickTap
+        self.onAIDedupTap = onAIDedupTap
         self.onPlayPauseTap = onPlayPauseTap
         self.onRotateClockwiseTap = onRotateClockwiseTap
         self.onRotateCounterclockwiseTap = onRotateCounterclockwiseTap
@@ -114,7 +114,7 @@ class AutoHideToolbar: NSView {
         aiEnhanceQualityButton = NSButton()
         aiDewatermarkButton = NSButton()
         aiUpscaleButton = NSButton()
-        aiOneClickButton = NSButton()
+        aiDedupButton = NSButton()
         playPauseButton = NSButton()
         rotateClockwiseButton = NSButton()
         rotateCounterclockwiseButton = NSButton()
@@ -144,7 +144,7 @@ class AutoHideToolbar: NSView {
         configureButton(aiEnhanceQualityButton, symbolName: Self.aiEnhanceQualityIconName)
         configureButton(aiDewatermarkButton, symbolName: Self.aiDewatermarkIconName)
         configureButton(aiUpscaleButton, symbolName: Self.aiUpscaleIconName)
-        configureButton(aiOneClickButton, symbolName: Self.aiOneClickIconName)
+        configureButton(aiDedupButton, symbolName: Self.aiDedupIconName)
         configureButton(playPauseButton, symbolName: Self.playIconName)
         configureButton(rotateClockwiseButton, symbolName: "arrow.clockwise")
         configureButton(rotateCounterclockwiseButton, symbolName: "arrow.counterclockwise")
@@ -166,7 +166,7 @@ class AutoHideToolbar: NSView {
         addSubview(aiEnhanceQualityButton)
         addSubview(aiDewatermarkButton)
         addSubview(aiUpscaleButton)
-        addSubview(aiOneClickButton)
+        addSubview(aiDedupButton)
         addSubview(aiGroupLeftDivider)
         addSubview(saveButton)
         addSubview(deleteButton)
@@ -213,7 +213,7 @@ class AutoHideToolbar: NSView {
         aiEnhanceQualityButton.toolTip = t("AI quality enhance")
         aiDewatermarkButton.toolTip = t("AI dewatermark")
         aiUpscaleButton.toolTip = t("AI super-resolution")
-        aiOneClickButton.toolTip = t("One-click AI auto-enhance")
+        aiDedupButton.toolTip = t("AI dedup")
         saveButton.toolTip = t("Save (overwrite)")
         deleteButton.toolTip = t("Delete (move to Trash)")
     }
@@ -347,7 +347,7 @@ class AutoHideToolbar: NSView {
         x += buttonSize + gap
         aiUpscaleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
-        aiOneClickButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        aiDedupButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         aiGroupLeftDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
@@ -387,8 +387,8 @@ class AutoHideToolbar: NSView {
         } else if sender == aiUpscaleButton {
             guard sender.isEnabled else { return }
             onAIUpscaleTap()
-        } else if sender == aiOneClickButton {
-            onAIOneClickTap()
+        } else if sender == aiDedupButton {
+            onAIDedupTap()
         } else if sender == playPauseButton {
             onPlayPauseTap()
         } else if sender == rotateClockwiseButton {

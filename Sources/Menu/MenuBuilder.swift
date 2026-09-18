@@ -150,8 +150,8 @@ class MenuBuilder {
         actionItem(aiMenu, t("AI Watermark Removal"), #selector(MenuActions.aiDewatermark(_:)))
         actionItem(aiMenu, t("AI Manual Watermark Removal"), #selector(MenuActions.aiManualDewatermark(_:)))
         actionItem(aiMenu, t("AI Quality Enhance"), #selector(MenuActions.aiEnhance(_:)))
-        aiMenu.addItem(NSMenuItem.separator())
         actionItem(aiMenu, t("AI Dedup"), #selector(MenuActions.aiDedup(_:)))
+        aiMenu.addItem(NSMenuItem.separator())
         actionItem(aiMenu, t("One-Click AI Auto-Enhance"), #selector(MenuActions.aiOneClick(_:)))
 
         let aiMenuItem = NSMenuItem()

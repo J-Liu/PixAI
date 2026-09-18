@@ -241,9 +241,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
                 Logger.shared.log("Toolbar AI upscale button tapped")
                 self?.toggleAIUpscale()
             },
-            onAIOneClickTap: { [weak self] in
-                Logger.shared.log("Toolbar AI one-click enhance button tapped")
-                self?.runAIOneClickEnhance()
+            onAIDedupTap: { [weak self] in
+                Logger.shared.log("Toolbar AI dedup button tapped")
+                self?.runAIDedup()
             },
             onPlayPauseTap: { [weak self] in
                 Logger.shared.log("Toolbar play/pause button tapped")
@@ -3481,9 +3481,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
         let manualDewatermarkItem = item(t("AI Manual Watermark Removal"), #selector(contextAIManualDewatermark))
         manualDewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
         _ = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
-        menu.addItem(.separator())
         let dedupItem = item(t("AI Dedup"), #selector(contextAIDedup))
         dedupItem.isEnabled = imageURLs.count > 1
+        menu.addItem(.separator())
         _ = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
         return menu
     }

@@ -57,6 +57,8 @@ final class PreferencesWindow: NSObject {
     // AI - One-click tab
     private var enhanceModePopup: NSPopUpButton!
     private var dedupAskContinueCheckbox: NSButton!
+    private var dedupThresholdField: NSTextField!
+    private var dedupThresholdStepper: NSStepper!
     private var oneClickStatusLabel: NSTextField!
 
     // Proxy
@@ -379,6 +381,12 @@ final class PreferencesWindow: NSObject {
         buildDewatermarkTab(dewatermarkTab.view!, t: t)
         aiTabView.addTabViewItem(dewatermarkTab)
 
+        let dedupTab = NSTabViewItem(identifier: "dedup")
+        dedupTab.label = t("AI Dedup")
+        dedupTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
+        buildDedupTab(dedupTab.view!, t: t)
+        aiTabView.addTabViewItem(dedupTab)
+
         let oneClickTab = NSTabViewItem(identifier: "oneclick")
         oneClickTab.label = t("One-click Enhance")
         oneClickTab.view = NSView(frame: NSRect(x: 0, y: 0, width: aiTabView.bounds.width - 20, height: aiTabView.bounds.height - 40))
@@ -656,6 +664,51 @@ final class PreferencesWindow: NSObject {
         }
     }
 
+    private func buildDedupTab(_ root: NSView, t: (String) -> String) {
+        let contentWidth = root.bounds.width - 28
+        let rootHeight = root.bounds.height
+
+        // Restore button at bottom
+        let restoreButton = NSButton(frame: NSRect(x: contentWidth - 140, y: 14, width: 140, height: 26))
+        restoreButton.title = t("Restore This Page Defaults")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreDedupDefaults(_:))
+        root.addSubview(restoreButton)
+
+        // Section fills remaining space
+        let sectionHeight = rootHeight - 54
+        let box = makeSection(root, title: t("AI Dedup Settings"), x: 14, y: 54, width: contentWidth, height: sectionHeight)
+
+        // Content view height is sectionHeight - 28 (title space)
+        let boxHeight = sectionHeight - 28
+        let topPadding: CGFloat = 10
+        var rowY = boxHeight - topPadding
+
+        let thresholdLabel = makeLabel(box, text: t("Similarity threshold (0.70–0.99, higher = stricter):"), x: 14, y: rowY - 16)
+        dedupThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
+        dedupThresholdField.font = NSFont.systemFont(ofSize: 13)
+        dedupThresholdField.alignment = .center
+        dedupThresholdField.target = self
+        dedupThresholdField.action = #selector(dedupThresholdFieldChanged(_:))
+        box.addSubview(dedupThresholdField)
+        dedupThresholdStepper = NSStepper(frame: NSRect(x: dedupThresholdField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        dedupThresholdStepper.minValue = 0.70
+        dedupThresholdStepper.maxValue = 0.99
+        dedupThresholdStepper.increment = 0.01
+        dedupThresholdStepper.valueWraps = false
+        dedupThresholdStepper.doubleValue = AppConfig.shared.dedupThreshold
+        dedupThresholdStepper.target = self
+        dedupThresholdStepper.action = #selector(dedupThresholdStepperChanged(_:))
+        box.addSubview(dedupThresholdStepper)
+        rowY -= 28
+
+        dedupAskContinueCheckbox = makeCheck(box, title: t("Ask to continue between duplicate groups"), x: 14, y: rowY - 18)
+        dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
+        dedupAskContinueCheckbox.target = self
+        dedupAskContinueCheckbox.action = #selector(toggleDedupAskContinue(_:))
+    }
+
     private func buildOneClickTab(_ root: NSView, t: (String) -> String) {
         let contentWidth = root.bounds.width - 28
         let rootHeight = root.bounds.height
@@ -701,12 +754,6 @@ final class PreferencesWindow: NSObject {
         statusLabel.isSelectable = false
         statusLabel.stringValue = ""
         box.addSubview(statusLabel)
-        rowY -= 28
-
-        dedupAskContinueCheckbox = makeCheck(box, title: t("Ask to continue between duplicate groups"), x: 14, y: rowY - 18)
-        dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
-        dedupAskContinueCheckbox.target = self
-        dedupAskContinueCheckbox.action = #selector(toggleDedupAskContinue(_:))
 
         oneClickStatusLabel = statusLabel
         updateOneClickStatus()
@@ -1004,6 +1051,13 @@ final class PreferencesWindow: NSObject {
             }
             if self.enhanceModePopup.indexOfSelectedItem != modeIdx { self.enhanceModePopup.selectItem(at: modeIdx) }
             self.dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
+            let dedupThreshold = AppConfig.shared.dedupThreshold
+            if let field = self.dedupThresholdField, abs(field.doubleValue - dedupThreshold) > 0.001 {
+                field.stringValue = String(format: "%.2f", dedupThreshold)
+            }
+            if let stepper = self.dedupThresholdStepper, abs(stepper.doubleValue - dedupThreshold) > 0.001 {
+                stepper.doubleValue = dedupThreshold
+            }
             self.proxyEnabledCheckbox.state = AppConfig.shared.proxyEnabled ? .on : .off
             let typeIdx = (AppConfig.shared.proxyType == "socks") ? 1 : 0
             if self.proxyTypePopup.indexOfSelectedItem != typeIdx { self.proxyTypePopup.selectItem(at: typeIdx) }
@@ -1319,6 +1373,23 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.dedupAskContinue = (sender.state == .on)
     }
 
+    @objc private func dedupThresholdStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        dedupThresholdField.stringValue = String(format: "%.2f", value)
+        AppConfig.shared.dedupThreshold = value
+    }
+
+    @objc private func dedupThresholdFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0.70), 0.99)
+        sender.stringValue = String(format: "%.2f", clamped)
+        dedupThresholdStepper.doubleValue = clamped
+        AppConfig.shared.dedupThreshold = clamped
+    }
+
     @objc private func toggleProxyEnabled(_ sender: NSButton) {
         AppConfig.shared.proxyEnabled = (sender.state == .on)
     }
@@ -1386,9 +1457,13 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.watermarkFeatherRadius = AppConfig.Defaults.watermarkFeatherRadius
     }
 
+    @objc private func restoreDedupDefaults(_ sender: Any?) {
+        AppConfig.shared.dedupAskContinue = AppConfig.Defaults.dedupAskContinue
+        AppConfig.shared.dedupThreshold = AppConfig.Defaults.dedupThreshold
+    }
+
     @objc private func restoreOneClickDefaults(_ sender: Any?) {
         AppConfig.shared.aiEnhanceMode = AppConfig.Defaults.aiEnhanceMode
-        AppConfig.shared.dedupAskContinue = AppConfig.Defaults.dedupAskContinue
     }
 
     @objc private func restoreAdvancedDefaults(_ sender: Any?) {

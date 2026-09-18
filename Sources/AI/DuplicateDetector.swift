@@ -16,6 +16,11 @@ enum DuplicateDetector {
     /// Cosine-similarity threshold above which two images count as duplicates.
     static let defaultThreshold: Float = 0.85
 
+    /// Returns the configured threshold from AppConfig.
+    static var threshold: Float {
+        return Float(AppConfig.shared.dedupThreshold)
+    }
+
     // MARK: - Feature prints
 
     /// Extract a FeaturePrint observation for each URL (nil for failures).
@@ -92,7 +97,8 @@ enum DuplicateDetector {
     /// Group indices whose pairwise cosine similarity ≥ threshold (union-find).
     static func findGroups(urls: [URL],
                            observations: [Int: VNFeaturePrintObservation],
-                           threshold: Float = defaultThreshold) -> [DuplicateGroup] {
+                           threshold: Float? = nil) -> [DuplicateGroup] {
+        let threshold = threshold ?? Self.threshold
         let keys = observations.keys.sorted()
         var parent = Array(repeating: 0, count: urls.count)
         for i in 0..<urls.count { parent[i] = i }

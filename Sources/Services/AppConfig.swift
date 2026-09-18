@@ -40,6 +40,9 @@ final class AppConfig {
         /// "both" | "dedupOnly" | "watermarkOnly"
         static let aiEnhanceMode = "both"
         static let dedupAskContinue = true
+        /// Duplicate detection similarity threshold (0.70 - 0.99, default 0.85).
+        /// Higher = stricter (fewer false positives, may miss similar images).
+        static let dedupThreshold: Double = 0.85
         static let proxyEnabled = false
         /// "http" | "socks" (socks is accepted but downloads fall back to http).
         static let proxyType = "http"
@@ -103,6 +106,7 @@ final class AppConfig {
         var aiAutoDewatermarkEnabled: Bool?
         var aiEnhanceMode: String?
         var dedupAskContinue: Bool?
+        var dedupThreshold: Double?
         var proxyEnabled: Bool?
         var proxyType: String?
         var proxyHost: String?
@@ -149,6 +153,7 @@ final class AppConfig {
     private var _aiAutoDewatermarkEnabled: Bool = Defaults.aiAutoDewatermarkEnabled
     private var _aiEnhanceMode: String = Defaults.aiEnhanceMode
     private var _dedupAskContinue: Bool = Defaults.dedupAskContinue
+    private var _dedupThreshold: Double = Defaults.dedupThreshold
     private var _proxyEnabled: Bool = Defaults.proxyEnabled
     private var _proxyType: String = Defaults.proxyType
     private var _proxyHost: String = Defaults.proxyHost
@@ -379,6 +384,23 @@ final class AppConfig {
             lock.lock()
             let changed = _dedupAskContinue != newValue
             if changed { _dedupAskContinue = newValue }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Duplicate detection similarity threshold (0.70 - 0.99, default 0.85).
+    /// Higher = stricter (fewer false positives, may miss similar images).
+    var dedupThreshold: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _dedupThreshold
+        }
+        set {
+            let clamped = min(max(newValue, 0.70), 0.99)
+            lock.lock()
+            let changed = _dedupThreshold != clamped
+            if changed { _dedupThreshold = clamped }
             lock.unlock()
             if changed { save(); notifyChange() }
         }
@@ -923,6 +945,7 @@ final class AppConfig {
         if let v = payload.aiAutoDewatermarkEnabled { _aiAutoDewatermarkEnabled = v }
         if let v = payload.aiEnhanceMode { _aiEnhanceMode = Self.normalizeEnhanceMode(v) }
         if let v = payload.dedupAskContinue { _dedupAskContinue = v }
+        if let v = payload.dedupThreshold { _dedupThreshold = min(max(v, 0.70), 0.99) }
         if let v = payload.proxyEnabled { _proxyEnabled = v }
         if let v = payload.proxyType { _proxyType = (v == "socks") ? "socks" : "http" }
         if let v = payload.proxyHost, !v.isEmpty { _proxyHost = v }
@@ -965,6 +988,7 @@ final class AppConfig {
             aiAutoDewatermarkEnabled: _aiAutoDewatermarkEnabled,
             aiEnhanceMode: _aiEnhanceMode,
             dedupAskContinue: _dedupAskContinue,
+            dedupThreshold: _dedupThreshold,
             proxyEnabled: _proxyEnabled,
             proxyType: _proxyType,
             proxyHost: _proxyHost,
