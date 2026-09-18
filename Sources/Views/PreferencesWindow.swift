@@ -30,6 +30,8 @@ final class PreferencesWindow: NSObject {
     private var cacheStepper: NSStepper!
     private var logEnabledCheckbox: NSButton!
     private var logPathField: NSTextField!
+    private var toolbarHiddenAlphaField: NSTextField!
+    private var toolbarHiddenAlphaStepper: NSStepper!
 
     // AI - Enhance tab
     private var enhanceVibranceField: NSTextField!
@@ -351,6 +353,25 @@ final class PreferencesWindow: NSObject {
         } else {
             cropModePopup.selectItem(at: 0)
         }
+        rowY -= 28
+
+        // Toolbar hidden opacity
+        let toolbarAlphaLabel = makeLabel(box, text: t("Toolbar hidden opacity (0–1, 0 = invisible):"), x: 14, y: rowY - 16)
+        toolbarHiddenAlphaField = NSTextField(frame: NSRect(x: toolbarAlphaLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
+        toolbarHiddenAlphaField.font = NSFont.systemFont(ofSize: 13)
+        toolbarHiddenAlphaField.alignment = .center
+        toolbarHiddenAlphaField.target = self
+        toolbarHiddenAlphaField.action = #selector(toolbarHiddenAlphaFieldChanged(_:))
+        box.addSubview(toolbarHiddenAlphaField)
+        toolbarHiddenAlphaStepper = NSStepper(frame: NSRect(x: toolbarHiddenAlphaField.frame.maxX + 4, y: rowY - 20, width: 19, height: 27))
+        toolbarHiddenAlphaStepper.minValue = 0
+        toolbarHiddenAlphaStepper.maxValue = 1
+        toolbarHiddenAlphaStepper.increment = 0.1
+        toolbarHiddenAlphaStepper.valueWraps = false
+        toolbarHiddenAlphaStepper.doubleValue = AppConfig.shared.toolbarHiddenAlpha
+        toolbarHiddenAlphaStepper.target = self
+        toolbarHiddenAlphaStepper.action = #selector(toolbarHiddenAlphaStepperChanged(_:))
+        box.addSubview(toolbarHiddenAlphaStepper)
     }
 
     // MARK: - AI Tab
@@ -989,6 +1010,14 @@ final class PreferencesWindow: NSObject {
             let path = AppConfig.shared.logPath
             if self.logPathField.stringValue != path { self.logPathField.stringValue = path }
 
+            let toolbarAlpha = AppConfig.shared.toolbarHiddenAlpha
+            if let field = self.toolbarHiddenAlphaField, abs(field.doubleValue - toolbarAlpha) > 0.001 {
+                field.stringValue = String(format: "%.1f", toolbarAlpha)
+            }
+            if let stepper = self.toolbarHiddenAlphaStepper, abs(stepper.doubleValue - toolbarAlpha) > 0.001 {
+                stepper.doubleValue = toolbarAlpha
+            }
+
             let vibrance = AppConfig.shared.enhanceVibrance
             if abs(self.enhanceVibranceField.doubleValue - vibrance) > 0.001 { self.enhanceVibranceField.stringValue = String(format: "%.2f", vibrance) }
             if abs(self.enhanceVibranceStepper.doubleValue - vibrance) > 0.001 { self.enhanceVibranceStepper.doubleValue = vibrance }
@@ -1090,6 +1119,23 @@ final class PreferencesWindow: NSObject {
     @objc private func cropModeChanged(_ sender: NSPopUpButton) {
         let mode = sender.indexOfSelectedItem == 1 ? "select" : "full"
         AppConfig.shared.cropMode = mode
+    }
+
+    @objc private func toolbarHiddenAlphaStepperChanged(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        toolbarHiddenAlphaField.stringValue = String(format: "%.1f", value)
+        AppConfig.shared.toolbarHiddenAlpha = value
+    }
+
+    @objc private func toolbarHiddenAlphaFieldChanged(_ sender: NSTextField) {
+        guard let value = Double(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0), 1)
+        sender.stringValue = String(format: "%.1f", clamped)
+        toolbarHiddenAlphaStepper.doubleValue = clamped
+        AppConfig.shared.toolbarHiddenAlpha = clamped
     }
 
     @objc private func openDirModeChanged(_ sender: NSPopUpButton) {
@@ -1436,6 +1482,7 @@ final class PreferencesWindow: NSObject {
         AppConfig.shared.customOpenDirectory = AppConfig.Defaults.customOpenDirectory()
         AppConfig.shared.slideshowInterval = AppConfig.Defaults.slideshowInterval
         AppConfig.shared.cropMode = AppConfig.Defaults.cropMode
+        AppConfig.shared.toolbarHiddenAlpha = AppConfig.Defaults.toolbarHiddenAlpha
     }
 
     @objc private func restoreEnhanceDefaults(_ sender: Any?) {

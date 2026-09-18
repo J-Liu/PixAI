@@ -84,6 +84,8 @@ final class AppConfig {
         // ── Crop mode defaults ─────────────────────────────────────
         /// Crop mode: "full" (start with full image) or "select" (drag to select region)
         static let cropMode: String = "full"
+        /// Toolbar hidden opacity (0.0 - 1.0, default 0.3). 0 = completely invisible.
+        static let toolbarHiddenAlpha: Double = 0.3
     }
 
     /// Allowed range for the image cache count.
@@ -133,6 +135,8 @@ final class AppConfig {
         var watermarkFeatherRadius: Int?
         // Crop mode
         var cropMode: String?
+        // Toolbar
+        var toolbarHiddenAlpha: Double?
     }
 
     private let fileURL: URL
@@ -180,6 +184,8 @@ final class AppConfig {
     private var _watermarkFeatherRadius: Int = Defaults.watermarkFeatherRadius
     // Crop mode
     private var _cropMode: String = Defaults.cropMode
+    // Toolbar
+    private var _toolbarHiddenAlpha: Double = Defaults.toolbarHiddenAlpha
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -774,6 +780,24 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Toolbar settings
+
+    /// Toolbar hidden opacity (0.0 - 1.0, default 0.3). 0 = completely invisible.
+    var toolbarHiddenAlpha: Double {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _toolbarHiddenAlpha
+        }
+        set {
+            let clamped = min(max(newValue, 0), 1)
+            lock.lock()
+            let changed = _toolbarHiddenAlpha != clamped
+            if changed { _toolbarHiddenAlpha = clamped }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
     static func normalizeCropMode(_ value: String) -> String {
         switch value {
         case "select": return "select"
@@ -970,6 +994,7 @@ final class AppConfig {
         if let v = payload.watermarkMode { _watermarkMode = Self.normalizeWatermarkMode(v) }
         if let v = payload.watermarkFeatherRadius { _watermarkFeatherRadius = min(max(v, 0), 10) }
         if let v = payload.cropMode { _cropMode = Self.normalizeCropMode(v) }
+        if let v = payload.toolbarHiddenAlpha { _toolbarHiddenAlpha = min(max(v, 0), 1) }
         lock.unlock()
     }
 
@@ -1009,7 +1034,8 @@ final class AppConfig {
             watermarkMaxMaskFraction: _watermarkMaxMaskFraction,
             watermarkMode: _watermarkMode,
             watermarkFeatherRadius: _watermarkFeatherRadius,
-            cropMode: _cropMode
+            cropMode: _cropMode,
+            toolbarHiddenAlpha: _toolbarHiddenAlpha
         )
         lock.unlock()
         do {

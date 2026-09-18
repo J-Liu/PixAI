@@ -437,9 +437,10 @@ class AutoHideToolbar: NSView {
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
+        let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
-            self.animator().alphaValue = 0.3
+            self.animator().alphaValue = hiddenAlpha
         }
     }
 
@@ -453,9 +454,10 @@ class AutoHideToolbar: NSView {
 
     /// Hide the toolbar with animation.
     func hide() {
+        let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
-            self.animator().alphaValue = 0.3
+            self.animator().alphaValue = hiddenAlpha
         }
     }
 }
