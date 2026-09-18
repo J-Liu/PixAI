@@ -286,6 +286,7 @@ final class PreferencesWindow: NSObject {
         transitionField = NSTextField(frame: NSRect(x: transitionLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
         transitionField.font = NSFont.systemFont(ofSize: 13)
         transitionField.alignment = .center
+        transitionField.stringValue = String(format: "%.1f", AppConfig.shared.imageTransitionDuration)
         transitionField.target = self
         transitionField.action = #selector(transitionFieldChanged(_:))
         box.addSubview(transitionField)
@@ -304,6 +305,7 @@ final class PreferencesWindow: NSObject {
         intervalField = NSTextField(frame: NSRect(x: intervalLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
         intervalField.font = NSFont.systemFont(ofSize: 13)
         intervalField.alignment = .center
+        intervalField.stringValue = String(Int(AppConfig.shared.slideshowInterval))
         box.addSubview(intervalField)
         intervalField.target = self
         intervalField.action = #selector(intervalFieldChanged(_:))
@@ -360,6 +362,7 @@ final class PreferencesWindow: NSObject {
         toolbarHiddenAlphaField = NSTextField(frame: NSRect(x: toolbarAlphaLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
         toolbarHiddenAlphaField.font = NSFont.systemFont(ofSize: 13)
         toolbarHiddenAlphaField.alignment = .center
+        toolbarHiddenAlphaField.stringValue = String(format: "%.1f", AppConfig.shared.toolbarHiddenAlpha)
         toolbarHiddenAlphaField.target = self
         toolbarHiddenAlphaField.action = #selector(toolbarHiddenAlphaFieldChanged(_:))
         box.addSubview(toolbarHiddenAlphaField)
@@ -447,6 +450,7 @@ final class PreferencesWindow: NSObject {
         enhanceVibranceField = NSTextField(frame: NSRect(x: vibranceLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
         enhanceVibranceField.font = NSFont.systemFont(ofSize: 13)
         enhanceVibranceField.alignment = .center
+        enhanceVibranceField.stringValue = String(format: "%.2f", AppConfig.shared.enhanceVibrance)
         box.addSubview(enhanceVibranceField)
         enhanceVibranceField.target = self
         enhanceVibranceField.action = #selector(enhanceVibranceFieldChanged(_:))
@@ -465,6 +469,7 @@ final class PreferencesWindow: NSObject {
         enhanceContrastField = NSTextField(frame: NSRect(x: contrastLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
         enhanceContrastField.font = NSFont.systemFont(ofSize: 13)
         enhanceContrastField.alignment = .center
+        enhanceContrastField.stringValue = String(format: "%.2f", AppConfig.shared.enhanceContrast)
         box.addSubview(enhanceContrastField)
         enhanceContrastField.target = self
         enhanceContrastField.action = #selector(enhanceContrastFieldChanged(_:))
@@ -483,6 +488,7 @@ final class PreferencesWindow: NSObject {
         enhanceSharpnessField = NSTextField(frame: NSRect(x: sharpnessLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
         enhanceSharpnessField.font = NSFont.systemFont(ofSize: 13)
         enhanceSharpnessField.alignment = .center
+        enhanceSharpnessField.stringValue = String(format: "%.2f", AppConfig.shared.enhanceSharpness)
         box.addSubview(enhanceSharpnessField)
         enhanceSharpnessField.target = self
         enhanceSharpnessField.action = #selector(enhanceSharpnessFieldChanged(_:))
@@ -531,6 +537,7 @@ final class PreferencesWindow: NSObject {
             smallImageThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
             smallImageThresholdField.font = NSFont.systemFont(ofSize: 13)
             smallImageThresholdField.alignment = .center
+            smallImageThresholdField.stringValue = String(AppConfig.shared.smallImageMaxSide)
             smallImageThresholdField.target = self
             smallImageThresholdField.action = #selector(smallImageThresholdFieldChanged(_:))
             box.addSubview(smallImageThresholdField)
@@ -617,6 +624,7 @@ final class PreferencesWindow: NSObject {
                 watermarkThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
                 watermarkThresholdField.font = NSFont.systemFont(ofSize: 13)
                 watermarkThresholdField.alignment = .center
+                watermarkThresholdField.stringValue = String(format: "%.2f", AppConfig.shared.watermarkMaskThreshold)
                 watermarkThresholdField.target = self
                 watermarkThresholdField.action = #selector(watermarkThresholdFieldChanged(_:))
                 box.addSubview(watermarkThresholdField)
@@ -636,6 +644,7 @@ final class PreferencesWindow: NSObject {
                 watermarkMinFractionField = NSTextField(frame: NSRect(x: minFractionLabel.frame.maxX + 10, y: rowY - 20, width: 64, height: 24))
                 watermarkMinFractionField.font = NSFont.systemFont(ofSize: 13)
                 watermarkMinFractionField.alignment = .center
+                watermarkMinFractionField.stringValue = String(format: "%.4f", AppConfig.shared.watermarkMinMaskFraction)
                 watermarkMinFractionField.target = self
                 watermarkMinFractionField.action = #selector(watermarkMinFractionFieldChanged(_:))
                 box.addSubview(watermarkMinFractionField)
@@ -656,6 +665,7 @@ final class PreferencesWindow: NSObject {
             watermarkFeatherField = NSTextField(frame: NSRect(x: featherLabel.frame.maxX + 10, y: rowY - 20, width: 40, height: 24))
             watermarkFeatherField.font = NSFont.systemFont(ofSize: 13)
             watermarkFeatherField.alignment = .center
+            watermarkFeatherField.stringValue = String(AppConfig.shared.watermarkFeatherRadius)
             watermarkFeatherField.target = self
             watermarkFeatherField.action = #selector(watermarkFeatherFieldChanged(_:))
             box.addSubview(watermarkFeatherField)
@@ -710,6 +720,7 @@ final class PreferencesWindow: NSObject {
         dedupThresholdField = NSTextField(frame: NSRect(x: thresholdLabel.frame.maxX + 10, y: rowY - 20, width: 56, height: 24))
         dedupThresholdField.font = NSFont.systemFont(ofSize: 13)
         dedupThresholdField.alignment = .center
+        dedupThresholdField.stringValue = String(format: "%.2f", AppConfig.shared.dedupThreshold)
         dedupThresholdField.target = self
         dedupThresholdField.action = #selector(dedupThresholdFieldChanged(_:))
         box.addSubview(dedupThresholdField)
@@ -899,6 +910,7 @@ final class PreferencesWindow: NSObject {
         proxyPortField = NSTextField(frame: NSRect(x: 408, y: proxyContentH - padding - 48, width: 60, height: 24))
         proxyPortField.font = NSFont.systemFont(ofSize: 13)
         proxyPortField.alignment = .center
+        proxyPortField.stringValue = String(AppConfig.shared.proxyPort)
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
         proxyPortField.formatter = formatter
@@ -923,6 +935,7 @@ final class PreferencesWindow: NSObject {
         cacheField = NSTextField(frame: NSRect(x: cacheLabel.frame.maxX + 10, y: cacheContentH - padding - 20, width: 64, height: 24))
         cacheField.font = NSFont.systemFont(ofSize: 13)
         cacheField.alignment = .center
+        cacheField.stringValue = String(AppConfig.shared.imageCacheCount)
         cacheBox.addSubview(cacheField)
         cacheField.target = self
         cacheField.action = #selector(cacheFieldChanged(_:))
@@ -980,7 +993,8 @@ final class PreferencesWindow: NSObject {
             }
             if self.languagePopup.indexOfSelectedItem != langIdx { self.languagePopup.selectItem(at: langIdx) }
             let transition = AppConfig.shared.imageTransitionDuration
-            if abs(self.transitionField.doubleValue - transition) > 0.001 { self.transitionField.stringValue = String(format: "%.1f", transition) }
+            let transitionStr = String(format: "%.1f", transition)
+            if self.transitionField.stringValue != transitionStr { self.transitionField.stringValue = transitionStr }
             if abs(self.transitionStepper.doubleValue - transition) > 0.001 { self.transitionStepper.doubleValue = transition }
 
             let interval = Int(AppConfig.shared.slideshowInterval)
@@ -1004,36 +1018,42 @@ final class PreferencesWindow: NSObject {
             if self.openDirField.stringValue != displayDir { self.openDirField.stringValue = displayDir }
 
             let cache = AppConfig.shared.imageCacheCount
-            if self.cacheField.integerValue != cache { self.cacheField.integerValue = cache }
+            let cacheStr = String(cache)
+            if self.cacheField.stringValue != cacheStr { self.cacheField.stringValue = cacheStr }
             if self.cacheStepper.integerValue != cache { self.cacheStepper.integerValue = cache }
             self.logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
             let path = AppConfig.shared.logPath
             if self.logPathField.stringValue != path { self.logPathField.stringValue = path }
 
             let toolbarAlpha = AppConfig.shared.toolbarHiddenAlpha
-            if let field = self.toolbarHiddenAlphaField, abs(field.doubleValue - toolbarAlpha) > 0.001 {
-                field.stringValue = String(format: "%.1f", toolbarAlpha)
+            let toolbarAlphaStr = String(format: "%.1f", toolbarAlpha)
+            if let field = self.toolbarHiddenAlphaField, field.stringValue != toolbarAlphaStr {
+                field.stringValue = toolbarAlphaStr
             }
             if let stepper = self.toolbarHiddenAlphaStepper, abs(stepper.doubleValue - toolbarAlpha) > 0.001 {
                 stepper.doubleValue = toolbarAlpha
             }
 
             let vibrance = AppConfig.shared.enhanceVibrance
-            if abs(self.enhanceVibranceField.doubleValue - vibrance) > 0.001 { self.enhanceVibranceField.stringValue = String(format: "%.2f", vibrance) }
+            let vibranceStr = String(format: "%.2f", vibrance)
+            if self.enhanceVibranceField.stringValue != vibranceStr { self.enhanceVibranceField.stringValue = vibranceStr }
             if abs(self.enhanceVibranceStepper.doubleValue - vibrance) > 0.001 { self.enhanceVibranceStepper.doubleValue = vibrance }
             let contrast = AppConfig.shared.enhanceContrast
-            if abs(self.enhanceContrastField.doubleValue - contrast) > 0.001 { self.enhanceContrastField.stringValue = String(format: "%.2f", contrast) }
+            let contrastStr = String(format: "%.2f", contrast)
+            if self.enhanceContrastField.stringValue != contrastStr { self.enhanceContrastField.stringValue = contrastStr }
             if abs(self.enhanceContrastStepper.doubleValue - contrast) > 0.001 { self.enhanceContrastStepper.doubleValue = contrast }
             let sharpness = AppConfig.shared.enhanceSharpness
-            if abs(self.enhanceSharpnessField.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessField.stringValue = String(format: "%.2f", sharpness) }
+            let sharpnessStr = String(format: "%.2f", sharpness)
+            if self.enhanceSharpnessField.stringValue != sharpnessStr { self.enhanceSharpnessField.stringValue = sharpnessStr }
             if abs(self.enhanceSharpnessStepper.doubleValue - sharpness) > 0.001 { self.enhanceSharpnessStepper.doubleValue = sharpness }
 
             self.aiAutoUpscaleCheckbox?.state = AppConfig.shared.aiAutoUpscaleEnabled ? .on : .off
 
             // Super resolution settings
             let smallThreshold = AppConfig.shared.smallImageMaxSide
-            if let field = self.smallImageThresholdField, field.integerValue != smallThreshold {
-                field.stringValue = String(smallThreshold)
+            let smallThresholdStr = String(smallThreshold)
+            if let field = self.smallImageThresholdField, field.stringValue != smallThresholdStr {
+                field.stringValue = smallThresholdStr
             }
             if let stepper = self.smallImageThresholdStepper, stepper.integerValue != smallThreshold {
                 stepper.integerValue = smallThreshold
@@ -1043,15 +1063,17 @@ final class PreferencesWindow: NSObject {
 
             // Watermark removal settings
             let threshold = AppConfig.shared.watermarkMaskThreshold
-            if let field = self.watermarkThresholdField, abs(field.doubleValue - threshold) > 0.001 {
-                field.stringValue = String(format: "%.2f", threshold)
+            let thresholdStr = String(format: "%.2f", threshold)
+            if let field = self.watermarkThresholdField, field.stringValue != thresholdStr {
+                field.stringValue = thresholdStr
             }
             if let stepper = self.watermarkThresholdStepper, abs(stepper.doubleValue - threshold) > 0.001 {
                 stepper.doubleValue = threshold
             }
             let minFraction = AppConfig.shared.watermarkMinMaskFraction
-            if let field = self.watermarkMinFractionField, abs(field.doubleValue - minFraction) > 0.00001 {
-                field.stringValue = String(format: "%.4f", minFraction)
+            let minFractionStr = String(format: "%.4f", minFraction)
+            if let field = self.watermarkMinFractionField, field.stringValue != minFractionStr {
+                field.stringValue = minFractionStr
             }
             if let stepper = self.watermarkMinFractionStepper, abs(stepper.doubleValue - minFraction) > 0.00001 {
                 stepper.doubleValue = minFraction
@@ -1065,8 +1087,9 @@ final class PreferencesWindow: NSObject {
 
             // Feather radius
             let feather = AppConfig.shared.watermarkFeatherRadius
-            if let field = self.watermarkFeatherField, field.integerValue != feather {
-                field.stringValue = String(feather)
+            let featherStr = String(feather)
+            if let field = self.watermarkFeatherField, field.stringValue != featherStr {
+                field.stringValue = featherStr
             }
             if let stepper = self.watermarkFeatherStepper, stepper.integerValue != feather {
                 stepper.integerValue = feather
@@ -1081,8 +1104,9 @@ final class PreferencesWindow: NSObject {
             if self.enhanceModePopup.indexOfSelectedItem != modeIdx { self.enhanceModePopup.selectItem(at: modeIdx) }
             self.dedupAskContinueCheckbox.state = AppConfig.shared.dedupAskContinue ? .on : .off
             let dedupThreshold = AppConfig.shared.dedupThreshold
-            if let field = self.dedupThresholdField, abs(field.doubleValue - dedupThreshold) > 0.001 {
-                field.stringValue = String(format: "%.2f", dedupThreshold)
+            let dedupThresholdStr = String(format: "%.2f", dedupThreshold)
+            if let field = self.dedupThresholdField, field.stringValue != dedupThresholdStr {
+                field.stringValue = dedupThresholdStr
             }
             if let stepper = self.dedupThresholdStepper, abs(stepper.doubleValue - dedupThreshold) > 0.001 {
                 stepper.doubleValue = dedupThreshold
@@ -1092,7 +1116,8 @@ final class PreferencesWindow: NSObject {
             if self.proxyTypePopup.indexOfSelectedItem != typeIdx { self.proxyTypePopup.selectItem(at: typeIdx) }
             if self.proxyHostField.stringValue != AppConfig.shared.proxyHost { self.proxyHostField.stringValue = AppConfig.shared.proxyHost }
             let port = AppConfig.shared.proxyPort
-            if self.proxyPortField.integerValue != port { self.proxyPortField.integerValue = port }
+            let portStr = String(port)
+            if self.proxyPortField.stringValue != portStr { self.proxyPortField.stringValue = portStr }
             if self.proxyPortStepper.integerValue != port { self.proxyPortStepper.integerValue = port }
             self.syncModelRows()
         }
