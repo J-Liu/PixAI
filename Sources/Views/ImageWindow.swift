@@ -924,14 +924,12 @@ class ImageWindow: NSObject, NSWindowDelegate {
         return container?.imageView?.zoomScale ?? 1
     }
 
-    /// Build a tab-separated attributed string (fixed tab interval for aligned columns).
+    /// Build a space-separated attributed string for status bar.
     private static func statusString(_ text: String) -> NSAttributedString {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.defaultTabInterval = 96
-        return NSAttributedString(string: text, attributes: [.paragraphStyle: paragraph])
+        return NSAttributedString(string: text, attributes: [:])
     }
 
-    /// Update the bottom status bar: filename / size / zoom ratio / index-total.
+    /// Update the bottom status bar: filename / size / file size / zoom ratio / index-total.
     private func updateStatusBar() {
         guard let label = statusBarLabel else { return }
 
@@ -950,6 +948,23 @@ class ImageWindow: NSObject, NSWindowDelegate {
                 sizeText += " (\(L10n.shared.t("scaled")))"
             }
             parts.append(sizeText)
+
+            // Add file size
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let fileSize = attrs[.size] as? Int64 {
+                let sizeStr: String
+                if fileSize < 1024 {
+                    sizeStr = "\(fileSize) B"
+                } else if fileSize < 1024 * 1024 {
+                    sizeStr = String(format: "%.1f KB", Double(fileSize) / 1024.0)
+                } else if fileSize < 1024 * 1024 * 1024 {
+                    sizeStr = String(format: "%.1f MB", Double(fileSize) / (1024.0 * 1024.0))
+                } else {
+                    sizeStr = String(format: "%.2f GB", Double(fileSize) / (1024.0 * 1024.0 * 1024.0))
+                }
+                parts.append(sizeStr)
+            }
+
             parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
         }
 
@@ -957,7 +972,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
             parts.append(mark)
         }
         parts.append("\(currentIndex + 1) / \(imageURLs.count)")
-        label.attributedStringValue = Self.statusString(parts.joined(separator: "\t"))
+
+        // Join with 3 spaces for readability
+        label.attributedStringValue = Self.statusString(parts.joined(separator: "   "))
     }
 
     /// Update the toolbar's fit toggle icon (true = depicts "fit to window").
