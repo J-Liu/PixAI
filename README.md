@@ -19,6 +19,7 @@ A lightweight, fast, AI-powered image viewer for macOS.
 
 **Image Viewing**
 - Support for JPEG, PNG, HEIC, HEIF, GIF, WebP, BMP, TIFF
+- Live Photo playback (HEIC + MOV pairs)
 - Zoom, pan, rotate, crop
 - Slideshow mode
 - Duplicate detection and comparison
@@ -80,6 +81,31 @@ Open Preferences with `Cmd+,` to configure:
 - Slideshow: interval timing
 - AI: auto-enhance options, one-click mode
 - Advanced: proxy settings, image cache, logging
+
+---
+
+## Live Photo Support
+
+PixAI can play Apple Live Photos exported from iPhone. On macOS, a Live Photo consists of two files:
+
+- `IMG_1234.HEIC` — the still image
+- `IMG_1234.MOV` — the 3-second video
+
+**Requirements for playback:**
+- Both files must be in the **same directory**
+- Both files must have the **same base name** (e.g., `IMG_1234.HEIC` and `IMG_1234.MOV`)
+- The MOV file must contain Live Photo metadata
+
+**Exporting from Photos app:**
+1. Select the Live Photo in Photos
+2. File → Export → Export Unmodified Original
+3. Both HEIC and MOV files will be exported
+
+When you open a Live Photo HEIC file in PixAI, it will automatically detect the companion MOV and show playback controls:
+- Live Photo badge (bottom-left) — click to play/stop
+- Mute button — toggle audio on/off
+
+Auto-play can be enabled/disabled in Preferences.
 
 ---
 
