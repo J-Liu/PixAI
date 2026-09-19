@@ -1589,7 +1589,12 @@ class ImageWindow: NSObject, NSWindowDelegate {
                             rightURL: live[1],
                             initialSelection: defaultSide,
                             onConfirm: { side in
-                                cont.resume(returning: side == 0 ? live[0] : live[1])
+                                // side: 0 = left, 1 = right, 2 = keep both
+                                if side == 2 {
+                                    cont.resume(returning: nil) // nil means keep both
+                                } else {
+                                    cont.resume(returning: side == 0 ? live[0] : live[1])
+                                }
                             },
                             onCancelAll: { [weak self] in
                                 // Esc = cancel the entire dedup batch and return to browse mode.
@@ -2127,7 +2132,12 @@ class ImageWindow: NSObject, NSWindowDelegate {
                             rightURL: live[1],
                             initialSelection: defaultSide,
                             onConfirm: { side in
-                                cont.resume(returning: side == 0 ? live[0] : live[1])
+                                // side: 0 = left, 1 = right, 2 = keep both
+                                if side == 2 {
+                                    cont.resume(returning: nil)
+                                } else {
+                                    cont.resume(returning: side == 0 ? live[0] : live[1])
+                                }
                             },
                             onCancelAll: {
                                 self.batchCancelled = true

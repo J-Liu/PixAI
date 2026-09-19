@@ -334,6 +334,7 @@ final class L10n {
         "Choose which image to keep": "选择要保留的图片",
         "← KEEP (Enter)": "← 保留 (Enter)",
         "KEEP (Enter) →": "保留 (Enter) →",
+        "Keep Both (B)": "两个都保留 (B)",
 
         // ── Empty-state placeholder ──────────────────────────────────
         "Open Images": "打开图片",
@@ -607,6 +608,7 @@ final class L10n {
         "Choose which image to keep": "選擇要保留的圖片",
         "← KEEP (Enter)": "← 保留 (Enter)",
         "KEEP (Enter) →": "保留 (Enter) →",
+        "Keep Both (B)": "兩個都保留 (B)",
 
         // ── Empty-state placeholder ──────────────────────────────────
         "Open Images": "打開圖片",

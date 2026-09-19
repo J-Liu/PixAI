@@ -4,10 +4,10 @@
 import AppKit
 
 /// A side-by-side duplicate-comparison window. Two images are shown left and
-/// right; the user selects which to keep with the keyboard (←/↑/A/W/H = left,
-/// →/↓/D/S/J/K = right) and confirms with Enter/Space. Esc CANCELS THE WHOLE
+/// right; the user selects which to keep with the keyboard (←/↑/A/W/H/J = left,
+/// →/↓/D/S/K/L = right) and confirms with Enter/Space. Esc CANCELS THE WHOLE
 /// dedup operation and returns the app to browse mode.
-final class DedupComparisonWindow {
+final class DedupComparisonWindow: NSObject, NSWindowDelegate {
     private let panel: NSPanel
     private let leftView: NSImageView
     private let rightView: NSImageView
@@ -27,9 +27,12 @@ final class DedupComparisonWindow {
         self.rightView = rightView
         self.leftBadge = leftBadge
         self.rightBadge = rightBadge
+        super.init()
+        panel.delegate = self
     }
 
     /// Present the comparison as a modal-ish key window over `parent`.
+    /// onConfirm returns: 0 = keep left, 1 = keep right, 2 = keep both
     static func present(over parent: NSWindow,
                         leftURL: URL,
                         rightURL: URL,
@@ -39,7 +42,7 @@ final class DedupComparisonWindow {
         // Only one comparison at a time.
         active?.close()
 
-        let size = NSSize(width: 1040, height: 620)
+        let size = NSSize(width: 1040, height: 680)
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .resizable],
@@ -48,6 +51,8 @@ final class DedupComparisonWindow {
         )
         panel.title = L10n.shared.t("Choose which image to keep")
         panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
 
         let root = DedupKeyCatcher(frame: NSRect(origin: .zero, size: size))
         root.wantsLayer = true
@@ -56,8 +61,8 @@ final class DedupComparisonWindow {
         func makePane(_ x: CGFloat, url: URL) -> (NSImageView, NSTextField) {
             let pad: CGFloat = 16
             let paneW = size.width / 2 - pad * 3
-            let paneH = size.height - 90
-            let iv = NSImageView(frame: NSRect(x: x + pad, y: 44, width: paneW, height: paneH))
+            let paneH = size.height - 150
+            let iv = NSImageView(frame: NSRect(x: x + pad, y: 104, width: paneW, height: paneH))
             iv.imageScaling = .scaleProportionallyUpOrDown
             iv.wantsLayer = true
             iv.layer?.backgroundColor = NSColor(white: 0.18, alpha: 1).cgColor
@@ -68,7 +73,7 @@ final class DedupComparisonWindow {
             badge.font = NSFont.systemFont(ofSize: 13, weight: .bold)
             badge.textColor = AutoHideToolbar.buttonColor
             badge.alignment = .center
-            badge.frame = NSRect(x: x + pad, y: 10, width: paneW, height: 24)
+            badge.frame = NSRect(x: x + pad, y: 70, width: paneW, height: 24)
             root.addSubview(iv)
             root.addSubview(badge)
             return (iv, badge)
@@ -76,6 +81,15 @@ final class DedupComparisonWindow {
 
         let (leftView, leftBadge) = makePane(0, url: leftURL)
         let (rightView, rightBadge) = makePane(size.width / 2, url: rightURL)
+
+        // Keep Both button
+        let t = L10n.shared.t
+        let keepBothButton = NSButton(frame: NSRect(x: size.width / 2 - 80, y: 16, width: 160, height: 32))
+        keepBothButton.title = t("Keep Both (B)")
+        keepBothButton.bezelStyle = .rounded
+        keepBothButton.target = nil
+        keepBothButton.action = nil
+        root.addSubview(keepBothButton)
 
         panel.contentView = root
         panel.center()
@@ -97,19 +111,33 @@ final class DedupComparisonWindow {
         root.onConfirmKey = { [weak win] in
             guard let win = win else { return }
             let pick = win.selection
+            NSApp.stopModal()
             win.close()
             win.onConfirm?(pick)
         }
+        root.onKeepBoth = { [weak win] in
+            guard let win = win else { return }
+            NSApp.stopModal()
+            win.close()
+            win.onConfirm?(2)
+        }
         root.onCancelKey = { [weak win] in
             guard let win = win else { return }
+            NSApp.stopModal()
             win.close()
             win.onCancelAll?()
         }
+
+        keepBothButton.target = root
+        keepBothButton.action = #selector(DedupKeyCatcher.keepBothAction(_:))
 
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(root)
         NSApp.activate(ignoringOtherApps: true)
         active = win
+
+        // Run modal to keep focus in this window
+        NSApp.runModal(for: panel)
     }
 
     private func select(_ which: Int) {
@@ -132,6 +160,15 @@ final class DedupComparisonWindow {
         panel.orderOut(nil)
         if Self.active === self { Self.active = nil }
     }
+
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        // Stop modal if still running
+        NSApp.stopModal()
+        // Cancel the dedup batch when window is closed via close button or Cmd+W
+        onCancelAll?()
+    }
 }
 
 /// Content view that captures the keyboard for the comparison window.
@@ -139,9 +176,14 @@ private final class DedupKeyCatcher: NSView {
     var onSelectLeft: (() -> Void)?
     var onSelectRight: (() -> Void)?
     var onConfirmKey: (() -> Void)?
+    var onKeepBoth: (() -> Void)?
     var onCancelKey: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
+
+    @objc func keepBothAction(_ sender: Any?) {
+        onKeepBoth?()
+    }
 
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -152,12 +194,14 @@ private final class DedupKeyCatcher: NSView {
         }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch key {
-        case "leftarrow", "a", "w", "h":
+        case "leftarrow", "uparrow", "a", "w", "h", "j":
             onSelectLeft?()
-        case "rightarrow", "d", "s", "j", "k":
+        case "rightarrow", "downarrow", "d", "s", "k", "l":
             onSelectRight?()
         case "\r", "\n", " ":
             onConfirmKey?()
+        case "b":
+            onKeepBoth?()
         case "\u{1b}":
             onCancelKey?()
         default:
