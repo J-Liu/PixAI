@@ -1610,25 +1610,24 @@ class ImageWindow: NSObject, NSWindowDelegate {
                     }
                 } else {
                     // >2 members: iterative pairwise comparison
-                    // Keep comparing until user decides for all
-                    var survivors = [live[0]] // Start with first image as a survivor
-                    var toCheck = Array(live.dropFirst()) // Remaining images to compare
+                    var survivors = Set([live[0]]) // Start with first image
+                    var toCheck = Array(live.dropFirst()) // Remaining to compare
 
                     while !toCheck.isEmpty && !self.batchCancelled {
                         let candidate = toCheck.removeFirst()
-                        var newSurvivors: [URL] = []
+                        var candidateSurvives = true
+                        var newSurvivors = Set<URL>()
 
                         // Compare candidate with each survivor
                         for survivor in survivors {
                             if self.batchCancelled { break }
 
-                            let defaultSide: Int = 0 // Default to keeping survivor
                             let keepURL: URL? = await withCheckedContinuation { cont in
                                 DedupComparisonWindow.present(
                                     over: self.window,
                                     leftURL: survivor,
                                     rightURL: candidate,
-                                    initialSelection: defaultSide,
+                                    initialSelection: 0,
                                     onConfirm: { side in
                                         if side == 2 {
                                             cont.resume(returning: nil) // Keep both
@@ -1645,22 +1644,26 @@ class ImageWindow: NSObject, NSWindowDelegate {
 
                             if let keep = keepURL {
                                 if keep == survivor {
-                                    // Keep survivor, candidate loses
-                                    newSurvivors.append(survivor)
-                                    // candidate is rejected, don't add it
+                                    // Survivor wins, candidate is eliminated
+                                    newSurvivors.insert(survivor)
+                                    candidateSurvives = false
+                                    // Remove candidate from newSurvivors if it was added earlier
+                                    newSurvivors.remove(candidate)
                                 } else {
-                                    // Keep candidate, survivor loses
-                                    newSurvivors.append(candidate)
+                                    // Candidate wins, survivor is eliminated
+                                    newSurvivors.insert(candidate)
+                                    // Survivor loses, don't add it
                                 }
                             } else {
-                                // Keep both - both survive and continue
-                                if !newSurvivors.contains(survivor) {
-                                    newSurvivors.append(survivor)
-                                }
-                                if !newSurvivors.contains(candidate) {
-                                    newSurvivors.append(candidate)
-                                }
+                                // Keep both
+                                newSurvivors.insert(survivor)
+                                // Candidate also survives (will be added later if not eliminated)
                             }
+                        }
+
+                        // If candidate survived all comparisons, add it
+                        if candidateSurvives {
+                            newSurvivors.insert(candidate)
                         }
 
                         survivors = newSurvivors
@@ -2210,25 +2213,24 @@ class ImageWindow: NSObject, NSWindowDelegate {
                     }
                 } else {
                     // >2 members: iterative pairwise comparison
-                    // Keep comparing until user decides for all
-                    var survivors = [live[0]] // Start with first image as a survivor
-                    var toCheck = Array(live.dropFirst()) // Remaining images to compare
+                    var survivors = Set([live[0]]) // Start with first image
+                    var toCheck = Array(live.dropFirst()) // Remaining to compare
 
                     while !toCheck.isEmpty && !self.batchCancelled {
                         let candidate = toCheck.removeFirst()
-                        var newSurvivors: [URL] = []
+                        var candidateSurvives = true
+                        var newSurvivors = Set<URL>()
 
                         // Compare candidate with each survivor
                         for survivor in survivors {
                             if self.batchCancelled { break }
 
-                            let defaultSide: Int = 0 // Default to keeping survivor
                             let keepURL: URL? = await withCheckedContinuation { cont in
                                 DedupComparisonWindow.present(
                                     over: self.window,
                                     leftURL: survivor,
                                     rightURL: candidate,
-                                    initialSelection: defaultSide,
+                                    initialSelection: 0,
                                     onConfirm: { side in
                                         if side == 2 {
                                             cont.resume(returning: nil) // Keep both
@@ -2245,22 +2247,26 @@ class ImageWindow: NSObject, NSWindowDelegate {
 
                             if let keep = keepURL {
                                 if keep == survivor {
-                                    // Keep survivor, candidate loses
-                                    newSurvivors.append(survivor)
-                                    // candidate is rejected, don't add it
+                                    // Survivor wins, candidate is eliminated
+                                    newSurvivors.insert(survivor)
+                                    candidateSurvives = false
+                                    // Remove candidate from newSurvivors if it was added earlier
+                                    newSurvivors.remove(candidate)
                                 } else {
-                                    // Keep candidate, survivor loses
-                                    newSurvivors.append(candidate)
+                                    // Candidate wins, survivor is eliminated
+                                    newSurvivors.insert(candidate)
+                                    // Survivor loses, don't add it
                                 }
                             } else {
-                                // Keep both - both survive and continue
-                                if !newSurvivors.contains(survivor) {
-                                    newSurvivors.append(survivor)
-                                }
-                                if !newSurvivors.contains(candidate) {
-                                    newSurvivors.append(candidate)
-                                }
+                                // Keep both
+                                newSurvivors.insert(survivor)
+                                // Candidate also survives (will be added later if not eliminated)
                             }
+                        }
+
+                        // If candidate survived all comparisons, add it
+                        if candidateSurvives {
+                            newSurvivors.insert(candidate)
                         }
 
                         survivors = newSurvivors
