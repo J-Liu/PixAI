@@ -86,6 +86,8 @@ final class AppConfig {
         static let cropMode: String = "full"
         /// Toolbar hidden opacity (0.0 - 1.0, default 0.3). 0 = completely invisible.
         static let toolbarHiddenAlpha: Double = 0.3
+        /// Slideshow end behavior: "stop" (stop at last), "first" (return to first), "loop" (continuous loop)
+        static let slideshowEndMode: String = "stop"
     }
 
     /// Allowed range for the image cache count.
@@ -137,6 +139,8 @@ final class AppConfig {
         var cropMode: String?
         // Toolbar
         var toolbarHiddenAlpha: Double?
+        // Slideshow
+        var slideshowEndMode: String?
     }
 
     private let fileURL: URL
@@ -186,6 +190,8 @@ final class AppConfig {
     private var _cropMode: String = Defaults.cropMode
     // Toolbar
     private var _toolbarHiddenAlpha: Double = Defaults.toolbarHiddenAlpha
+    // Slideshow
+    private var _slideshowEndMode: String = Defaults.slideshowEndMode
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -798,6 +804,29 @@ final class AppConfig {
         }
     }
 
+    /// Slideshow end behavior: "stop" (stop at last), "first" (return to first), "loop" (continuous loop)
+    var slideshowEndMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _slideshowEndMode
+        }
+        set {
+            let normalized = Self.normalizeSlideshowEndMode(newValue)
+            lock.lock()
+            let changed = _slideshowEndMode != normalized
+            if changed { _slideshowEndMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeSlideshowEndMode(_ value: String) -> String {
+        switch value {
+        case "first", "loop": return value
+        default: return "stop"
+        }
+    }
+
     static func normalizeCropMode(_ value: String) -> String {
         switch value {
         case "select": return "select"
@@ -995,6 +1024,7 @@ final class AppConfig {
         if let v = payload.watermarkFeatherRadius { _watermarkFeatherRadius = min(max(v, 0), 10) }
         if let v = payload.cropMode { _cropMode = Self.normalizeCropMode(v) }
         if let v = payload.toolbarHiddenAlpha { _toolbarHiddenAlpha = min(max(v, 0), 1) }
+        if let v = payload.slideshowEndMode { _slideshowEndMode = Self.normalizeSlideshowEndMode(v) }
         lock.unlock()
     }
 
@@ -1035,7 +1065,8 @@ final class AppConfig {
             watermarkMode: _watermarkMode,
             watermarkFeatherRadius: _watermarkFeatherRadius,
             cropMode: _cropMode,
-            toolbarHiddenAlpha: _toolbarHiddenAlpha
+            toolbarHiddenAlpha: _toolbarHiddenAlpha,
+            slideshowEndMode: _slideshowEndMode
         )
         lock.unlock()
         do {

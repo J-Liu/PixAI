@@ -9,7 +9,7 @@ import ImageIO
 /// A single image viewer window: light-gray image area with centered proportional
 /// scaling, a bottom status bar (filename / size / zoom ratio / index-total),
 /// a floating auto-hide toolbar, an empty-state placeholder, and keyboard navigation.
-class ImageWindow: NSObject, NSWindowDelegate {
+class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// The underlying window.
     var window: NSWindow!
 
@@ -138,6 +138,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// The slide interval defaults to 3 s and will later be configurable via
     /// a config file / settings UI.
     private let slideshow = SlideshowController()
+    /// Track if slideshow was paused for context menu (to resume after menu closes)
+    private var slideshowPausedForMenu = false
 
     private var closeObserver: NSObjectProtocol?
 
@@ -3223,14 +3225,19 @@ class ImageWindow: NSObject, NSWindowDelegate {
     }
 
     /// Exit full screen and restore the previous window frame (Esc / Enter keys).
+    /// Also stops any running slideshow.
     func exitFullScreen() {
+        // Stop slideshow if running
+        if slideshow.isActive {
+            stopSlideshow()
+        }
         guard window.styleMask.contains(.fullScreen) else { return }
         window.toggleFullScreen(nil)
     }
 
     // MARK: - Slideshow
 
-    /// Start the slideshow: auto full screen, then advance every `interval` seconds.
+    /// Start the slideshow: advance every `interval` seconds.
     private func startSlideshow() {
         guard !imageURLs.isEmpty else { return }
         // Read the configured interval (Preferences ▸ Slideshow) at start time.
@@ -3238,7 +3245,6 @@ class ImageWindow: NSObject, NSWindowDelegate {
         Logger.shared.log("Slideshow started: \(imageURLs.count) images, \(slideshow.interval)s each")
         slideshow.start()
         updatePlayPauseIcon()
-        window.toggleFullScreen(nil)   // auto full screen on start
     }
 
     /// Pause the running slideshow (Space key / toolbar button).
@@ -3257,7 +3263,7 @@ class ImageWindow: NSObject, NSWindowDelegate {
         updatePlayPauseIcon()
     }
 
-    /// Stop the slideshow and return to window mode (P / Enter / Esc keys).
+    /// Stop the slideshow (P key).
     private func stopSlideshow() {
         guard slideshow.isActive else { return }
         Logger.shared.log("Slideshow stopped")
@@ -3265,7 +3271,6 @@ class ImageWindow: NSObject, NSWindowDelegate {
     }
 
     /// Toggle play/pause (Space key, toolbar play-pause button).
-    /// Starts the slideshow when it is not running yet.
     func togglePlayPause() {
         guard !batchRunning, !imageURLs.isEmpty else { return }
         switch slideshow.state {
@@ -3275,7 +3280,7 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// P key: start the slideshow when stopped, exit it (back to window mode) otherwise.
+    /// P key: start the slideshow when stopped, stop it when running.
     func startOrStopSlideshow() {
         if slideshow.isActive {
             stopSlideshow()
@@ -3291,7 +3296,19 @@ class ImageWindow: NSObject, NSWindowDelegate {
         if currentIndex < imageURLs.count - 1 {
             loadImage(at: currentIndex + 1)
         } else {
-            endSlideshow(finished: true)
+            // At last image: handle based on slideshowEndMode
+            let endMode = AppConfig.shared.slideshowEndMode
+            switch endMode {
+            case "first":
+                // Return to first image
+                loadImage(at: 0)
+            case "loop":
+                // Continuous loop: restart from first
+                loadImage(at: 0)
+            default:
+                // Stop at last image
+                endSlideshow(finished: true)
+            }
         }
     }
 
@@ -3338,14 +3355,11 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Finish the slideshow: stop playback, exit full screen (back to window
-    /// mode), and — when the whole list was played — hint in the status bar.
+    /// Finish the slideshow: stop playback and hint in the status bar when the
+    /// whole list was played.
     private func endSlideshow(finished: Bool) {
         slideshow.stop()
         updatePlayPauseIcon()
-        if window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        }
         if finished {
             Logger.shared.log("Slideshow finished at the last image")
             showStatusBarHint(L10n.shared.t("Playback ended"), for: 3.0)
@@ -3648,9 +3662,15 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// Build the right-click context menu: every toolbar/menu action plus Rename.
     private func buildContextMenu() -> NSMenu? {
         guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return nil }
+        // Pause slideshow when showing context menu
+        if slideshow.isPlaying {
+            slideshowPausedForMenu = true
+            pauseSlideshow()
+        }
         let t = L10n.shared.t
         let menu = NSMenu()
         menu.autoenablesItems = false
+        menu.delegate = self
 
         func item(_ title: String, _ action: Selector) -> NSMenuItem {
             let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -3746,6 +3766,18 @@ class ImageWindow: NSObject, NSWindowDelegate {
     @objc private func contextAIEnhance() { toggleAIEnhance() }
     @objc private func contextAIDedup() { runAIDedup() }
     @objc private func contextAIOneClick() { runAIOneClickEnhance() }
+
+    // MARK: - NSMenuDelegate
+
+    func menuDidClose(_ menu: NSMenu) {
+        // Resume slideshow if it was paused for this menu
+        if slideshowPausedForMenu {
+            slideshowPausedForMenu = false
+            if slideshow.state == .paused {
+                resumeSlideshow()
+            }
+        }
+    }
 
     // MARK: - Rename
 

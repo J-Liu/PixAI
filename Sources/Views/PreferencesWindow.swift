@@ -26,6 +26,7 @@ final class PreferencesWindow: NSObject {
     private var openDirField: NSTextField!
     private var intervalField: NSTextField!
     private var intervalStepper: NSStepper!
+    private var slideshowEndModePopup: NSPopUpButton!
     private var cacheField: NSTextField!
     private var cacheStepper: NSStepper!
     private var logEnabledCheckbox: NSButton!
@@ -318,6 +319,19 @@ final class PreferencesWindow: NSObject {
         intervalStepper.target = self
         intervalStepper.action = #selector(intervalStepperChanged(_:))
         box.addSubview(intervalStepper)
+        rowY -= 28
+
+        // Slideshow end mode
+        let slideshowEndLabel = makeLabel(box, text: t("When slideshow ends:"), x: 14, y: rowY - 16)
+        slideshowEndModePopup = makePopup(box, items: [t("Stop at last image"), t("Return to first image"), t("Continuous loop")], x: slideshowEndLabel.frame.maxX + 10, y: rowY - 18, width: 160)
+        slideshowEndModePopup.target = self
+        slideshowEndModePopup.action = #selector(slideshowEndModeChanged(_:))
+        let savedEndMode = AppConfig.shared.slideshowEndMode
+        switch savedEndMode {
+        case "first": slideshowEndModePopup.selectItem(at: 1)
+        case "loop": slideshowEndModePopup.selectItem(at: 2)
+        default: slideshowEndModePopup.selectItem(at: 0)
+        }
         rowY -= 28
 
         modelCheckPromptCheckbox = makeCheck(box, title: t("Ask to download AI models at startup when missing"), x: 14, y: rowY - 18)
@@ -1001,6 +1015,17 @@ final class PreferencesWindow: NSObject {
             if self.intervalField.integerValue != interval { self.intervalField.integerValue = interval }
             if self.intervalStepper.integerValue != interval { self.intervalStepper.integerValue = interval }
 
+            let slideshowEndMode = AppConfig.shared.slideshowEndMode
+            let slideshowEndIdx: Int
+            switch slideshowEndMode {
+            case "first": slideshowEndIdx = 1
+            case "loop": slideshowEndIdx = 2
+            default: slideshowEndIdx = 0
+            }
+            if self.slideshowEndModePopup.indexOfSelectedItem != slideshowEndIdx {
+                self.slideshowEndModePopup.selectItem(at: slideshowEndIdx)
+            }
+
             self.modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
             self.cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
             self.liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
@@ -1209,6 +1234,16 @@ final class PreferencesWindow: NSObject {
         sender.integerValue = clamped
         intervalStepper.integerValue = clamped
         AppConfig.shared.slideshowInterval = Double(clamped)
+    }
+
+    @objc private func slideshowEndModeChanged(_ sender: NSPopUpButton) {
+        let mode: String
+        switch sender.indexOfSelectedItem {
+        case 1: mode = "first"
+        case 2: mode = "loop"
+        default: mode = "stop"
+        }
+        AppConfig.shared.slideshowEndMode = mode
     }
 
     @objc private func cacheStepperChanged(_ sender: NSStepper) {
