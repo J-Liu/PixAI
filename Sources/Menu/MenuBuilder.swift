@@ -288,17 +288,17 @@ final class MenuActions: NSObject, NSMenuItemValidation {
               let win = provider() else { return false }
         switch action {
         case #selector(aiUpscale(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && RealESRGANEngine.shared.isAvailable
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated && RealESRGANEngine.shared.isAvailable
         case #selector(aiDewatermark(_:)), #selector(aiManualDewatermark(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && U2NetEngine.shared.isAvailable
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated && U2NetEngine.shared.isAvailable
         case #selector(aiEnhance(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated
         case #selector(aiOneClick(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated
         case #selector(aiDedup(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && win.imageCount > 1
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated && win.imageCount > 1
         case #selector(crop(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageAnimated
         default:
             break
         }

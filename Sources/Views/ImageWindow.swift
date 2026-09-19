@@ -677,9 +677,9 @@ class ImageWindow: NSObject, NSWindowDelegate {
             self.currentFormat = MagicNumberDetector.detect(url: url)
             self.hideLoadSpinner()
             self.hideUnsupportedView()
-            // For GIF, reload frames from disk (not cached)
+            // For GIF or animated WebP, reload frames from disk (not cached)
             var gifFrames: [(cgImage: CGImage, delay: TimeInterval)] = []
-            if self.currentFormat == .gif {
+            if self.currentFormat == .gif || self.currentFormat == .webp {
                 gifFrames = Self.loadGifFrames(url: url)
             }
             self.displayImage(cached, at: url, gifFrames: gifFrames)
@@ -690,8 +690,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
             self.updateStatusBar()
             self.updateAIToolbarState()
             self.applyAutoAIIfNeeded(url: url)
-            // Adjust slideshow interval for GIF
-            self.adjustSlideshowIntervalForGIF()
+            // Adjust slideshow interval for animated images
+            self.adjustSlideshowIntervalForAnimated()
             return
         }
 
@@ -753,8 +753,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
                 self.updateStatusBar()
                 self.updateAIToolbarState()
                 self.applyAutoAIIfNeeded(url: url)
-                // Adjust slideshow interval for GIF
-                self.adjustSlideshowIntervalForGIF()
+                // Adjust slideshow interval for animated images
+                self.adjustSlideshowIntervalForAnimated()
             } catch {
                 guard generation == self.loadGeneration else { return }
                 Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
@@ -1317,18 +1317,18 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// Sync the AI toolbar buttons with model availability + current image state.
     private func updateAIToolbarState() {
         let state: ImageAIState? = imageURLs.indices.contains(currentIndex) ? aiStates[imageURLs[currentIndex]] : nil
-        // Disable AI for GIF format (animation not supported)
-        let isGIF = currentFormat == .gif
-        // First, set all AI buttons enable/disable based on GIF
-        toolbar?.setAllAIButtonsEnabled(!isGIF)
+        // Disable AI for animated images (GIF or animated WebP)
+        let isAnimated = isCurrentImageAnimated
+        // First, set all AI buttons enable/disable based on animation
+        toolbar?.setAllAIButtonsEnabled(!isAnimated)
         // Then, override specific buttons based on model availability
         toolbar?.setAIModelButtonsEnabled(
-            upscaleAvailable: !isGIF && RealESRGANEngine.shared.isAvailable,
-            dewatermarkAvailable: !isGIF && U2NetEngine.shared.isAvailable
+            upscaleAvailable: !isAnimated && RealESRGANEngine.shared.isAvailable,
+            dewatermarkAvailable: !isAnimated && U2NetEngine.shared.isAvailable
         )
-        toolbar?.setAIEnhanceQualityApplied(!isGIF && (state?.isEnhanced ?? false))
-        toolbar?.setAIDewatermarkApplied(!isGIF && (state?.isDewatermarked ?? false))
-        toolbar?.setAIUpscaleApplied(!isGIF && (state?.isUpscaled ?? false))
+        toolbar?.setAIEnhanceQualityApplied(!isAnimated && (state?.isEnhanced ?? false))
+        toolbar?.setAIDewatermarkApplied(!isAnimated && (state?.isDewatermarked ?? false))
+        toolbar?.setAIUpscaleApplied(!isAnimated && (state?.isUpscaled ?? false))
     }
 
     /// Auto-AI on load (config: auto upscale small images / auto dewatermark).
@@ -3290,13 +3290,13 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// After loading an image in slideshow mode, adjust the next interval for GIFs.
-    private func adjustSlideshowIntervalForGIF() {
+    /// After loading an image in slideshow mode, adjust the next interval for animated images.
+    private func adjustSlideshowIntervalForAnimated() {
         guard slideshow.isPlaying else { return }
-        // If current image is an animated GIF, wait for it to complete
-        if currentFormat == .gif, let imageView = container?.imageView, !imageView.gifFrames.isEmpty {
+        // If current image is animated (GIF or WebP), wait for it to complete
+        if isCurrentImageAnimated, let imageView = container?.imageView, !imageView.gifFrames.isEmpty {
             let totalDuration = imageView.gifFrames.reduce(0.0) { $0 + $1.delay }
-            // Use GIF duration if > 0, otherwise fall back to default interval
+            // Use animation duration if > 0, otherwise fall back to default interval
             slideshow.currentSlideInterval = totalDuration > 0 ? totalDuration : nil
             slideshow.restartCountdown()
         }
@@ -3411,16 +3411,14 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Enter crop mode after format checks: GIF/animated images are rejected,
+    /// Enter crop mode after format checks: animated images (GIF/WebP) are rejected,
     /// Live Photos require a one-time confirmation (configurable).
     func enterCropMode() {
         guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex), baseImage != nil else { return }
         let url = imageURLs[currentIndex]
 
-        // GIF is the only animated format in this project; it cannot be cropped.
-        let format = currentFormat ?? MagicNumberDetector.detect(url: url)
-        currentFormat = format
-        if format == .gif {
+        // Animated images (GIF or animated WebP) cannot be cropped.
+        if isCurrentImageAnimated {
             let alert = NSAlert()
             alert.messageText = L10n.shared.t("Cropping not supported")
             alert.informativeText = L10n.shared.t("Cropping GIF and animated images is not supported.")
@@ -3431,6 +3429,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
 
         // Cropping a Live Photo turns it into a still image — confirm first.
+        let format = currentFormat ?? MagicNumberDetector.detect(url: url)
+        currentFormat = format
         if format == .livePhoto, AppConfig.shared.cropLivePhotoConfirm {
             let alert = NSAlert()
             alert.messageText = L10n.shared.t("Crop Live Photo?")
@@ -3662,21 +3662,21 @@ class ImageWindow: NSObject, NSWindowDelegate {
         _ = item(t("Play/Pause"), #selector(contextPlayPause))
         _ = item(t("Start/Stop Slideshow"), #selector(contextSlideshow))
         menu.addItem(.separator())
-        // AI functions are disabled for GIF format
-        let isGIF = (currentFormat ?? MagicNumberDetector.detect(url: imageURLs[currentIndex])) == .gif
+        // AI functions are disabled for animated images (GIF or animated WebP)
+        let isAnimated = isCurrentImageAnimated
         let upscaleItem = item(t("AI Super-Resolution"), #selector(contextAIUpscale))
-        upscaleItem.isEnabled = !isGIF && RealESRGANEngine.shared.isAvailable
+        upscaleItem.isEnabled = !isAnimated && RealESRGANEngine.shared.isAvailable
         let dewatermarkItem = item(t("AI Watermark Removal"), #selector(contextAIDewatermark))
-        dewatermarkItem.isEnabled = !isGIF && U2NetEngine.shared.isAvailable
+        dewatermarkItem.isEnabled = !isAnimated && U2NetEngine.shared.isAvailable
         let manualDewatermarkItem = item(t("AI Manual Watermark Removal"), #selector(contextAIManualDewatermark))
-        manualDewatermarkItem.isEnabled = !isGIF && U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
+        manualDewatermarkItem.isEnabled = !isAnimated && U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
         let enhanceItem = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
-        enhanceItem.isEnabled = !isGIF
+        enhanceItem.isEnabled = !isAnimated
         let dedupItem = item(t("AI Dedup"), #selector(contextAIDedup))
         dedupItem.isEnabled = imageURLs.count > 1
         menu.addItem(.separator())
         let oneClickItem = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
-        oneClickItem.isEnabled = !isGIF
+        oneClickItem.isEnabled = !isAnimated
         return menu
     }
 
@@ -3778,9 +3778,15 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// True while the AI one-click batch runs (locks most actions).
     var isBatchRunning: Bool { batchRunning }
 
-    /// Whether the current image is a GIF (AI functions should be disabled).
-    var isCurrentImageGIF: Bool {
-        return currentFormat == .gif
+    /// Whether the current image is animated (GIF or animated WebP).
+    /// AI functions should be disabled for animated images.
+    var isCurrentImageAnimated: Bool {
+        // Check if we have multiple frames (animated GIF or WebP)
+        if let imageView = container?.imageView, imageView.gifFrames.count > 1 {
+            return true
+        }
+        // Also check format for static GIF (still needs AI disabled for consistency)
+        return currentFormat == .gif || currentFormat == .webp && (container?.imageView?.gifFrames.count ?? 0) > 1
     }
 
     // MARK: - Localization refresh
