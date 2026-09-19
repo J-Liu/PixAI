@@ -140,6 +140,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private let slideshow = SlideshowController()
     /// Track if slideshow was paused for context menu (to resume after menu closes)
     private var slideshowPausedForMenu = false
+    /// Track if Live Photo was paused for context menu
+    private var livePhotoPausedForMenu = false
 
     private var closeObserver: NSObjectProtocol?
 
@@ -3667,6 +3669,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             slideshowPausedForMenu = true
             pauseSlideshow()
         }
+        // Pause Live Photo if playing
+        if let imageView = container?.imageView, imageView.isLivePhotoPlaying {
+            livePhotoPausedForMenu = true
+            imageView.pauseLivePlayback()
+        }
         let t = L10n.shared.t
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -3776,6 +3783,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if slideshow.state == .paused {
                 resumeSlideshow()
             }
+        }
+        // Resume Live Photo if it was paused
+        if livePhotoPausedForMenu {
+            livePhotoPausedForMenu = false
+            container?.imageView?.resumeLivePlayback()
         }
     }
 

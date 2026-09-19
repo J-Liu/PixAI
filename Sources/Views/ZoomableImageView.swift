@@ -592,6 +592,22 @@ class ZoomableImageView: NSView {
         liveOverlay.isHidden = true
     }
 
+    /// Pause Live Photo playback (for context menu), can be resumed.
+    func pauseLivePlayback() {
+        livePlayer?.pause()
+    }
+
+    /// Resume Live Photo playback after pause.
+    func resumeLivePlayback() {
+        guard livePhotoURL != nil, livePlayer != nil else { return }
+        livePlayer?.play()
+    }
+
+    /// Check if Live Photo is currently playing.
+    var isLivePhotoPlaying: Bool {
+        return livePlayer?.timeControlStatus == .playing
+    }
+
     /// Badge click: play when idle, stop while playing. Mute follows the
     /// current setting at playback time.
     private func toggleLivePlayback() {
