@@ -192,11 +192,25 @@ private final class DedupKeyCatcher: NSView {
             super.keyDown(with: event)
             return
         }
+
+        // Check arrow keys by keyCode
+        switch event.keyCode {
+        case 123, 126: // Left arrow, Up arrow
+            onSelectLeft?()
+            return
+        case 124, 125: // Right arrow, Down arrow
+            onSelectRight?()
+            return
+        default:
+            break
+        }
+
+        // Check character keys
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch key {
-        case "leftarrow", "uparrow", "a", "w", "h", "j":
+        case "a", "w", "h", "j":
             onSelectLeft?()
-        case "rightarrow", "downarrow", "d", "s", "k", "l":
+        case "d", "s", "k", "l":
             onSelectRight?()
         case "\r", "\n", " ":
             onConfirmKey?()
