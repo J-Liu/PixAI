@@ -1669,8 +1669,11 @@ class ImageWindow: NSObject, NSWindowDelegate {
                         survivors = newSurvivors
                     }
 
-                    // Delete images not in survivors
-                    toTrash = live.filter { !survivors.contains($0) }
+                    // Only delete if not cancelled
+                    if !self.batchCancelled {
+                        // Delete images not in survivors
+                        toTrash = live.filter { !survivors.contains($0) }
+                    }
                 }
 
                 for u in toTrash {
@@ -2272,8 +2275,11 @@ class ImageWindow: NSObject, NSWindowDelegate {
                         survivors = newSurvivors
                     }
 
-                    // Delete images not in survivors
-                    toTrash = live.filter { !survivors.contains($0) }
+                    // Only delete if not cancelled
+                    if !self.batchCancelled {
+                        // Delete images not in survivors
+                        toTrash = live.filter { !survivors.contains($0) }
+                    }
                 }
 
                 for trashURL in toTrash {
