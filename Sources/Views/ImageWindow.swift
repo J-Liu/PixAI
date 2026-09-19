@@ -3302,8 +3302,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             let endMode = AppConfig.shared.slideshowEndMode
             switch endMode {
             case "first":
-                // Return to first image
+                // Return to first image and stop
                 loadImage(at: 0)
+                endSlideshow(finished: false)
             case "loop":
                 // Continuous loop: restart from first
                 loadImage(at: 0)
