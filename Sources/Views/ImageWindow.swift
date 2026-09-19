@@ -2,6 +2,7 @@
 // Copyright © 2026 Jia Liu
 
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 import ImageIO
 
@@ -905,12 +906,16 @@ class ImageWindow: NSObject, NSWindowDelegate {
         // the companion video for such URLs within this window session.
         guard !livePhotoSuppressed.contains(url) else { return }
         let generation = loadGeneration
+        Logger.shared.log("attachLivePhoto: starting detection for \(url.lastPathComponent)")
         Task { @MainActor [weak self] in
             guard let self = self, self.loadGeneration == generation,
                   self.imageURLs.indices.contains(self.currentIndex),
                   self.imageURLs[self.currentIndex] == url else { return }
-            self.container?.imageView?.livePhotoURL =
-                await LivePhotoDetector.shared.companionVideoURL(for: url)
+            let liveURL = await LivePhotoDetector.shared.companionVideoURL(for: url)
+            Logger.shared.log("attachLivePhoto: detection result = \(liveURL?.lastPathComponent ?? "nil")")
+            self.container?.imageView?.livePhotoURL = liveURL
+            // After Live Photo is attached, adjust slideshow interval
+            self.adjustSlideshowIntervalForAnimated()
         }
     }
 
@@ -3290,15 +3295,46 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    /// After loading an image in slideshow mode, adjust the next interval for animated images.
+    /// After loading an image in slideshow mode, adjust the next interval for animated images or Live Photos.
     private func adjustSlideshowIntervalForAnimated() {
-        guard slideshow.isPlaying else { return }
-        // If current image is animated (GIF or WebP), wait for it to complete
+        guard slideshow.isPlaying else {
+            Logger.shared.log("Slideshow: adjustSlideshowIntervalForAnimated called but not playing")
+            return
+        }
+
+        // Check for Live Photo first
+        if let livePhotoURL = container?.imageView?.livePhotoURL {
+            Logger.shared.log("Slideshow: Found Live Photo, getting duration from \(livePhotoURL.lastPathComponent)")
+            // Get Live Photo duration from the MOV file
+            let asset = AVURLAsset(url: livePhotoURL)
+            Task {
+                let duration = try? await asset.load(.duration)
+                let seconds = duration?.seconds ?? 0
+                Logger.shared.log("Slideshow: Live Photo duration = \(seconds)s")
+                await MainActor.run {
+                    if seconds > 0 {
+                        self.slideshow.currentSlideInterval = seconds
+                        self.slideshow.restartCountdown()
+                        Logger.shared.log("Slideshow: Set interval to \(seconds)s and restarted countdown")
+                    }
+                }
+            }
+            return
+        }
+
+        // Check for animated images (GIF or WebP)
         if isCurrentImageAnimated, let imageView = container?.imageView, !imageView.gifFrames.isEmpty {
             let totalDuration = imageView.gifFrames.reduce(0.0) { $0 + $1.delay }
+            Logger.shared.log("Slideshow: Animated image duration = \(totalDuration)s, frames = \(imageView.gifFrames.count)")
             // Use animation duration if > 0, otherwise fall back to default interval
             slideshow.currentSlideInterval = totalDuration > 0 ? totalDuration : nil
             slideshow.restartCountdown()
+            Logger.shared.log("Slideshow: Set interval to \(totalDuration)s and restarted countdown")
+        } else {
+            // Regular image: reset to default interval and restart countdown
+            slideshow.currentSlideInterval = nil
+            slideshow.restartCountdown()
+            Logger.shared.log("Slideshow: No Live Photo or animation, reset to default interval")
         }
     }
 
