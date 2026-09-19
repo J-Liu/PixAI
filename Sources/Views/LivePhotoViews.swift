@@ -111,3 +111,64 @@ final class LivePhotoBadgeView: NSView {
         return out
     }
 }
+
+/// Mute/unmute badge for Live Photo playback. Click toggles mute state.
+final class LivePhotoMuteBadge: NSView {
+    var onTap: (() -> Void)?
+    var isMuted: Bool = true {
+        didSet { needsDisplay = true }
+    }
+
+    private let speakerImage: NSImage?
+    private let speakerSlashImage: NSImage?
+
+    override init(frame frameRect: NSRect) {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        speakerImage = NSImage(systemSymbolName: "speaker.wave.2", accessibilityDescription: "Unmuted")?
+            .withSymbolConfiguration(config)
+        speakerSlashImage = NSImage(systemSymbolName: "speaker.slash", accessibilityDescription: "Muted")?
+            .withSymbolConfiguration(config)
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let background = NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7)
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        background.fill()
+
+        let image = isMuted ? speakerSlashImage : speakerImage
+        guard let image else { return }
+        let tinted = Self.tinted(image, with: NSColor.white.withAlphaComponent(0.95))
+        let side: CGFloat = 16
+        let rect = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)
+        tinted.draw(in: rect)
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(point), event.clickCount == 1 else { return }
+        onTap?()
+    }
+
+    private static func tinted(_ image: NSImage, with color: NSColor) -> NSImage {
+        let size = image.size
+        let out = NSImage(size: size)
+        out.lockFocus()
+        color.set()
+        let rect = NSRect(origin: .zero, size: size)
+        image.draw(in: rect)
+        rect.fill(using: .sourceAtop)
+        out.unlockFocus()
+        return out
+    }
+}

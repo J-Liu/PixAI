@@ -80,6 +80,7 @@ class ZoomableImageView: NSView {
     private var liveLoadedURL: URL?
     private let liveOverlay = LivePhotoOverlayView(frame: .zero)
     private let liveBadge = LivePhotoBadgeView(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+    private let liveMuteBadge = LivePhotoMuteBadge(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
     /// Tokens for the end/failure observers of the current AVPlayerItem.
     private var liveEventObservers: [NSObjectProtocol] = []
     private var configObserver: NSObjectProtocol?
@@ -180,6 +181,11 @@ class ZoomableImageView: NSView {
             self?.toggleLivePlayback()
         }
         addSubview(liveBadge)
+        liveMuteBadge.isHidden = true
+        liveMuteBadge.onTap = { [weak self] in
+            self?.toggleLiveMute()
+        }
+        addSubview(liveMuteBadge)
 
         // Keep a running Live Photo's mute state in sync with the setting.
         configObserver = NotificationCenter.default.addObserver(
@@ -187,8 +193,10 @@ class ZoomableImageView: NSView {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, let player = self.livePlayer else { return }
-            player.isMuted = AppConfig.shared.livePhotoMuted
+            guard let self = self else { return }
+            self.livePlayer?.isMuted = AppConfig.shared.livePhotoMuted
+            self.liveMuteBadge.isMuted = AppConfig.shared.livePhotoMuted
+            self.liveMuteBadge.needsDisplay = true
         }
     }
 
@@ -526,9 +534,12 @@ class ZoomableImageView: NSView {
         stopLivePlayback()
         guard livePhotoURL != nil else {
             liveBadge.isHidden = true
+            liveMuteBadge.isHidden = true
             return
         }
         liveBadge.isHidden = false
+        liveMuteBadge.isHidden = false
+        liveMuteBadge.isMuted = AppConfig.shared.livePhotoMuted
         layoutLivePhotoChrome()
         if AppConfig.shared.livePhotoAutoPlay {
             startLivePlayback()
@@ -574,6 +585,15 @@ class ZoomableImageView: NSView {
         }
     }
 
+    /// Mute badge click: toggle mute state for Live Photo playback.
+    private func toggleLiveMute() {
+        let newMuted = !AppConfig.shared.livePhotoMuted
+        AppConfig.shared.livePhotoMuted = newMuted
+        livePlayer?.isMuted = newMuted
+        liveMuteBadge.isMuted = newMuted
+        liveMuteBadge.needsDisplay = true
+    }
+
     /// Reposition the video overlay (exactly over the drawn image) and the badge
     /// (bottom-left corner of the drawn image). Called on every zoom/pan/resize.
     private func layoutLivePhotoChrome() {
@@ -583,6 +603,13 @@ class ZoomableImageView: NSView {
         let inset = Self.liveBadgeInset
         liveBadge.frame = NSRect(
             x: rect.minX + inset,
+            y: rect.maxY - side - inset,
+            width: side,
+            height: side
+        )
+        // Mute badge to the right of live badge
+        liveMuteBadge.frame = NSRect(
+            x: rect.minX + inset + side + 8,
             y: rect.maxY - side - inset,
             width: side,
             height: side
