@@ -9,8 +9,8 @@ import AppKit
 /// dedup operation and returns the app to browse mode.
 final class DedupComparisonWindow: NSObject, NSWindowDelegate {
     private let panel: NSPanel
-    private let leftView: NSImageView
-    private let rightView: NSImageView
+    private let leftView: ClickableImageView
+    private let rightView: ClickableImageView
     private let leftBadge: NSTextField
     private let rightBadge: NSTextField
     private var selection: Int = 0     // 0 = left, 1 = right
@@ -20,7 +20,7 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
     /// The currently active comparison window (singleton).
     static var active: DedupComparisonWindow?
 
-    private init(panel: NSPanel, leftView: NSImageView, rightView: NSImageView,
+    private init(panel: NSPanel, leftView: ClickableImageView, rightView: ClickableImageView,
                  leftBadge: NSTextField, rightBadge: NSTextField) {
         self.panel = panel
         self.leftView = leftView
@@ -58,11 +58,11 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor(white: 0.12, alpha: 1).cgColor
 
-        func makePane(_ x: CGFloat, url: URL) -> (NSImageView, NSTextField) {
+        func makePane(_ x: CGFloat, url: URL) -> (ClickableImageView, NSTextField) {
             let pad: CGFloat = 16
             let paneW = size.width / 2 - pad * 3
             let paneH = size.height - 150
-            let iv = NSImageView(frame: NSRect(x: x + pad, y: 104, width: paneW, height: paneH))
+            let iv = ClickableImageView(frame: NSRect(x: x + pad, y: 104, width: paneW, height: paneH))
             iv.imageScaling = .scaleProportionallyUpOrDown
             iv.wantsLayer = true
             iv.layer?.backgroundColor = NSColor(white: 0.18, alpha: 1).cgColor
@@ -105,6 +105,10 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         win.onCancelAll = onCancelAll
         win.selection = (initialSelection == 1) ? 1 : 0
         win.applySelection()
+
+        // Click handlers for image selection
+        leftView.onClick = { [weak win] in win?.select(0) }
+        rightView.onClick = { [weak win] in win?.select(1) }
 
         root.onSelectLeft = { [weak win] in win?.select(0) }
         root.onSelectRight = { [weak win] in win?.select(1) }
@@ -221,5 +225,14 @@ private final class DedupKeyCatcher: NSView {
         default:
             super.keyDown(with: event)
         }
+    }
+}
+
+/// Image view that handles mouse clicks for selection.
+private final class ClickableImageView: NSImageView {
+    var onClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
     }
 }

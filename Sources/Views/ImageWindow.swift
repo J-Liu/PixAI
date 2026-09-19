@@ -1603,13 +1603,71 @@ class ImageWindow: NSObject, NSWindowDelegate {
                             }
                         )
                     }
-                    if let keep = keepURL {
+                    // Only delete if user explicitly chose one to keep
+                    // keepURL == nil means "keep both" or "cancelled" - don't delete anything
+                    if let keep = keepURL, live.contains(keep) {
                         toTrash = live.filter { $0 != keep }
                     }
                 } else {
-                    // >2 members: keep the best, trash the rest.
-                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
-                    toTrash = live.filter { $0 != urls[best] }
+                    // >2 members: iterative pairwise comparison
+                    // Keep comparing until user decides for all
+                    var survivors = [live[0]] // Start with first image as a survivor
+                    var toCheck = Array(live.dropFirst()) // Remaining images to compare
+
+                    while !toCheck.isEmpty && !self.batchCancelled {
+                        let candidate = toCheck.removeFirst()
+                        var newSurvivors: [URL] = []
+
+                        // Compare candidate with each survivor
+                        for survivor in survivors {
+                            if self.batchCancelled { break }
+
+                            let defaultSide: Int = 0 // Default to keeping survivor
+                            let keepURL: URL? = await withCheckedContinuation { cont in
+                                DedupComparisonWindow.present(
+                                    over: self.window,
+                                    leftURL: survivor,
+                                    rightURL: candidate,
+                                    initialSelection: defaultSide,
+                                    onConfirm: { side in
+                                        if side == 2 {
+                                            cont.resume(returning: nil) // Keep both
+                                        } else {
+                                            cont.resume(returning: side == 0 ? survivor : candidate)
+                                        }
+                                    },
+                                    onCancelAll: { [weak self] in
+                                        self?.batchCancelled = true
+                                        cont.resume(returning: nil)
+                                    }
+                                )
+                            }
+
+                            if let keep = keepURL {
+                                if keep == survivor {
+                                    // Keep survivor, candidate loses
+                                    newSurvivors.append(survivor)
+                                    // candidate is rejected, don't add it
+                                } else {
+                                    // Keep candidate, survivor loses
+                                    newSurvivors.append(candidate)
+                                }
+                            } else {
+                                // Keep both - both survive and continue
+                                if !newSurvivors.contains(survivor) {
+                                    newSurvivors.append(survivor)
+                                }
+                                if !newSurvivors.contains(candidate) {
+                                    newSurvivors.append(candidate)
+                                }
+                            }
+                        }
+
+                        survivors = newSurvivors
+                    }
+
+                    // Delete images not in survivors
+                    toTrash = live.filter { !survivors.contains($0) }
                 }
 
                 for u in toTrash {
@@ -2145,15 +2203,71 @@ class ImageWindow: NSObject, NSWindowDelegate {
                             }
                         )
                     }
-                    if let keep = keepURL {
+                    // Only delete if user explicitly chose one to keep
+                    // keepURL == nil means "keep both" or "cancelled" - don't delete anything
+                    if let keep = keepURL, live.contains(keep) {
                         toTrash = live.filter { $0 != keep }
                     }
                 } else {
-                    // Auto-select best for groups > 2
-                    let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
-                    if let bestURL = urls.indices.contains(best) ? urls[best] : nil {
-                        toTrash = live.filter { $0 != bestURL }
+                    // >2 members: iterative pairwise comparison
+                    // Keep comparing until user decides for all
+                    var survivors = [live[0]] // Start with first image as a survivor
+                    var toCheck = Array(live.dropFirst()) // Remaining images to compare
+
+                    while !toCheck.isEmpty && !self.batchCancelled {
+                        let candidate = toCheck.removeFirst()
+                        var newSurvivors: [URL] = []
+
+                        // Compare candidate with each survivor
+                        for survivor in survivors {
+                            if self.batchCancelled { break }
+
+                            let defaultSide: Int = 0 // Default to keeping survivor
+                            let keepURL: URL? = await withCheckedContinuation { cont in
+                                DedupComparisonWindow.present(
+                                    over: self.window,
+                                    leftURL: survivor,
+                                    rightURL: candidate,
+                                    initialSelection: defaultSide,
+                                    onConfirm: { side in
+                                        if side == 2 {
+                                            cont.resume(returning: nil) // Keep both
+                                        } else {
+                                            cont.resume(returning: side == 0 ? survivor : candidate)
+                                        }
+                                    },
+                                    onCancelAll: { [weak self] in
+                                        self?.batchCancelled = true
+                                        cont.resume(returning: nil)
+                                    }
+                                )
+                            }
+
+                            if let keep = keepURL {
+                                if keep == survivor {
+                                    // Keep survivor, candidate loses
+                                    newSurvivors.append(survivor)
+                                    // candidate is rejected, don't add it
+                                } else {
+                                    // Keep candidate, survivor loses
+                                    newSurvivors.append(candidate)
+                                }
+                            } else {
+                                // Keep both - both survive and continue
+                                if !newSurvivors.contains(survivor) {
+                                    newSurvivors.append(survivor)
+                                }
+                                if !newSurvivors.contains(candidate) {
+                                    newSurvivors.append(candidate)
+                                }
+                            }
+                        }
+
+                        survivors = newSurvivors
                     }
+
+                    // Delete images not in survivors
+                    toTrash = live.filter { !survivors.contains($0) }
                 }
 
                 for trashURL in toTrash {
