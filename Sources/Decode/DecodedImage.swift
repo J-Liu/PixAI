@@ -14,6 +14,8 @@ struct DecodedImage {
     let pixelSize: NSSize?
     /// Companion .MOV for Apple Live Photo pairs; nil for every other format.
     let companionVideoURL: URL?
+    /// Animated GIF frames (CGImage + delay in seconds). Empty for non-animated GIFs.
+    let gifFrames: [(cgImage: CGImage, delay: TimeInterval)]
 }
 
 /// Errors surfaced by the decode abstraction layer.

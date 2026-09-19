@@ -288,11 +288,17 @@ final class MenuActions: NSObject, NSMenuItemValidation {
               let win = provider() else { return false }
         switch action {
         case #selector(aiUpscale(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && RealESRGANEngine.shared.isAvailable
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && RealESRGANEngine.shared.isAvailable
         case #selector(aiDewatermark(_:)), #selector(aiManualDewatermark(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && U2NetEngine.shared.isAvailable
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && U2NetEngine.shared.isAvailable
+        case #selector(aiEnhance(_:)):
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
+        case #selector(aiOneClick(_:)):
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
         case #selector(aiDedup(_:)):
-            return win.hasCurrentImage && !win.isBatchRunning && win.imageCount > 1
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF && win.imageCount > 1
+        case #selector(crop(_:)):
+            return win.hasCurrentImage && !win.isBatchRunning && !win.isCurrentImageGIF
         default:
             break
         }

@@ -103,7 +103,8 @@ final class DecoderManager {
         let size = NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
         let image = NSImage(cgImage: cgImage, size: size)
         return DecodedImage(image: image, format: detectFormat(of: url),
-                            pixelSize: size, companionVideoURL: nil)
+                            pixelSize: size, companionVideoURL: nil,
+                            gifFrames: [])
     }
 
     /// Detect the format of `data` (using `url` for the extension fallback and

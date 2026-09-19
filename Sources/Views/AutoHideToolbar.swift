@@ -265,6 +265,15 @@ class AutoHideToolbar: NSView {
         aiDewatermarkButton.isEnabled = dewatermarkAvailable
     }
 
+    /// Enable/disable all AI buttons (e.g., for GIF format).
+    func setAllAIButtonsEnabled(_ enabled: Bool) {
+        aiEnhanceQualityButton.isEnabled = enabled
+        aiDedupButton.isEnabled = enabled
+        // These will be overridden by setAIModelButtonsEnabled for model-backed buttons
+        aiUpscaleButton.isEnabled = enabled
+        aiDewatermarkButton.isEnabled = enabled
+    }
+
     private func applySymbol(_ name: String, to button: NSButton) {
         let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
         if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) {

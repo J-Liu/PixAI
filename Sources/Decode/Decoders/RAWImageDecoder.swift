@@ -47,6 +47,7 @@ final class RAWImageDecoder: ImageDecoder {
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         return DecodedImage(image: image, format: .raw,
                             pixelSize: NSSize(width: cgImage.width, height: cgImage.height),
-                            companionVideoURL: nil)
+                            companionVideoURL: nil,
+                            gifFrames: [])
     }
 }

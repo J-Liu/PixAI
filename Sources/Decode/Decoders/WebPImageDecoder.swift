@@ -22,13 +22,15 @@ final class WebPImageDecoder: ImageDecoder {
     func decode(data: Data, url: URL?, format: ImageFormat) async throws -> DecodedImage {
         if let image = NSImage(data: data) {
             return DecodedImage(image: image, format: .webp,
-                                pixelSize: image.decodedPixelSize, companionVideoURL: nil)
+                                pixelSize: image.decodedPixelSize, companionVideoURL: nil,
+                                gifFrames: [])
         }
         if let source = CGImageSourceCreateWithData(data as CFData, nil),
            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
             let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             return DecodedImage(image: image, format: .webp,
-                                pixelSize: image.decodedPixelSize, companionVideoURL: nil)
+                                pixelSize: image.decodedPixelSize, companionVideoURL: nil,
+                                gifFrames: [])
         }
         throw DecodeError.decodeFailed("WebPImageDecoder: no native WebP decoder available on this system")
     }

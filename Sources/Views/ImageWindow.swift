@@ -677,7 +677,12 @@ class ImageWindow: NSObject, NSWindowDelegate {
             self.currentFormat = MagicNumberDetector.detect(url: url)
             self.hideLoadSpinner()
             self.hideUnsupportedView()
-            self.displayImage(cached, at: url)
+            // For GIF, reload frames from disk (not cached)
+            var gifFrames: [(cgImage: CGImage, delay: TimeInterval)] = []
+            if self.currentFormat == .gif {
+                gifFrames = Self.loadGifFrames(url: url)
+            }
+            self.displayImage(cached, at: url, gifFrames: gifFrames)
             self.loadOverlays(for: url)  // Load overlays after image is set in view
             self.updateWindowTitle()
             self.container?.placeholder?.isHidden = true
@@ -685,6 +690,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
             self.updateStatusBar()
             self.updateAIToolbarState()
             self.applyAutoAIIfNeeded(url: url)
+            // Adjust slideshow interval for GIF
+            self.adjustSlideshowIntervalForGIF()
             return
         }
 
@@ -726,7 +733,7 @@ class ImageWindow: NSObject, NSWindowDelegate {
                 // support is configured alongside the new still.
                 self.hideLoadSpinner()
                 self.hideUnsupportedView()
-                self.displayImage(decoded.image, at: url)
+                self.displayImage(decoded.image, at: url, gifFrames: decoded.gifFrames)
                 self.loadOverlays(for: url)  // Load overlays after image is set in view
 
                 // Window title shows the current file name (+ active AI mark).
@@ -746,6 +753,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
                 self.updateStatusBar()
                 self.updateAIToolbarState()
                 self.applyAutoAIIfNeeded(url: url)
+                // Adjust slideshow interval for GIF
+                self.adjustSlideshowIntervalForGIF()
             } catch {
                 guard generation == self.loadGeneration else { return }
                 Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
@@ -803,7 +812,8 @@ class ImageWindow: NSObject, NSWindowDelegate {
            let small = Self.downscale(decoded.image, toMaxPixels: ImageLimits.thumbnailMaxPixels) {
             return (DecodedImage(image: small, format: decoded.format,
                                  pixelSize: small.decodedPixelSize,
-                                 companionVideoURL: decoded.companionVideoURL), true)
+                                 companionVideoURL: decoded.companionVideoURL,
+                                 gifFrames: decoded.gifFrames), true)
         }
         return (decoded, false)
     }
@@ -848,13 +858,15 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// Swap in a new displayed image and (re)configure Live Photo support for it:
     /// stop any running playback, show the still, then attach the companion video
     /// (if any) — which auto-plays per the "Auto-play Live Photos" setting.
-    private func displayImage(_ nsImage: NSImage, at url: URL) {
+    private func displayImage(_ nsImage: NSImage, at url: URL, gifFrames: [(cgImage: CGImage, delay: TimeInterval)] = []) {
         guard let imageView = container?.imageView else { return }
         imageView.livePhotoURL = nil   // stop playback of the previous image first
+        imageView.gifFrames = gifFrames // configure GIF animation
         // Show the active AI transform (if any) instead of the base image.
         var shown = nsImage
         if let state = aiStates[url], let kind = state.activeKind, let aiImage = state.image(for: kind) {
             shown = aiImage
+            imageView.gifFrames = [] // AI transform disables GIF animation
         }
         imageView.image = shown
         attachLivePhoto(for: url)
@@ -915,6 +927,29 @@ class ImageWindow: NSObject, NSWindowDelegate {
             return image.size
         }
         return nil
+    }
+
+    /// Load GIF frames from disk (for cache-hit GIF playback).
+    private static func loadGifFrames(url: URL) -> [(cgImage: CGImage, delay: TimeInterval)] {
+        guard let data = try? Data(contentsOf: url),
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return []
+        }
+        let frameCount = CGImageSourceGetCount(source)
+        var frames: [(cgImage: CGImage, delay: TimeInterval)] = []
+        for i in 0..<frameCount {
+            guard let cgImage = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            let delay: TimeInterval
+            if let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any],
+               let gifProps = props[kCGImagePropertyGIFDictionary as String] as? [String: Any],
+               let delayValue = gifProps[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double ?? gifProps[kCGImagePropertyGIFDelayTime as String] as? Double {
+                delay = delayValue > 0 ? delayValue : 0.1
+            } else {
+                delay = 0.1
+            }
+            frames.append((cgImage, delay))
+        }
+        return frames
     }
 
     /// The actual on-screen scale of the current image relative to its original size
@@ -1282,13 +1317,18 @@ class ImageWindow: NSObject, NSWindowDelegate {
     /// Sync the AI toolbar buttons with model availability + current image state.
     private func updateAIToolbarState() {
         let state: ImageAIState? = imageURLs.indices.contains(currentIndex) ? aiStates[imageURLs[currentIndex]] : nil
+        // Disable AI for GIF format (animation not supported)
+        let isGIF = currentFormat == .gif
+        // First, set all AI buttons enable/disable based on GIF
+        toolbar?.setAllAIButtonsEnabled(!isGIF)
+        // Then, override specific buttons based on model availability
         toolbar?.setAIModelButtonsEnabled(
-            upscaleAvailable: RealESRGANEngine.shared.isAvailable,
-            dewatermarkAvailable: U2NetEngine.shared.isAvailable
+            upscaleAvailable: !isGIF && RealESRGANEngine.shared.isAvailable,
+            dewatermarkAvailable: !isGIF && U2NetEngine.shared.isAvailable
         )
-        toolbar?.setAIEnhanceQualityApplied(state?.isEnhanced ?? false)
-        toolbar?.setAIDewatermarkApplied(state?.isDewatermarked ?? false)
-        toolbar?.setAIUpscaleApplied(state?.isUpscaled ?? false)
+        toolbar?.setAIEnhanceQualityApplied(!isGIF && (state?.isEnhanced ?? false))
+        toolbar?.setAIDewatermarkApplied(!isGIF && (state?.isDewatermarked ?? false))
+        toolbar?.setAIUpscaleApplied(!isGIF && (state?.isUpscaled ?? false))
     }
 
     /// Auto-AI on load (config: auto upscale small images / auto dewatermark).
@@ -3250,6 +3290,18 @@ class ImageWindow: NSObject, NSWindowDelegate {
         }
     }
 
+    /// After loading an image in slideshow mode, adjust the next interval for GIFs.
+    private func adjustSlideshowIntervalForGIF() {
+        guard slideshow.isPlaying else { return }
+        // If current image is an animated GIF, wait for it to complete
+        if currentFormat == .gif, let imageView = container?.imageView, !imageView.gifFrames.isEmpty {
+            let totalDuration = imageView.gifFrames.reduce(0.0) { $0 + $1.delay }
+            // Use GIF duration if > 0, otherwise fall back to default interval
+            slideshow.currentSlideInterval = totalDuration > 0 ? totalDuration : nil
+            slideshow.restartCountdown()
+        }
+    }
+
     /// Finish the slideshow: stop playback, exit full screen (back to window
     /// mode), and — when the whole list was played — hint in the status bar.
     private func endSlideshow(finished: Bool) {
@@ -3610,17 +3662,21 @@ class ImageWindow: NSObject, NSWindowDelegate {
         _ = item(t("Play/Pause"), #selector(contextPlayPause))
         _ = item(t("Start/Stop Slideshow"), #selector(contextSlideshow))
         menu.addItem(.separator())
+        // AI functions are disabled for GIF format
+        let isGIF = (currentFormat ?? MagicNumberDetector.detect(url: imageURLs[currentIndex])) == .gif
         let upscaleItem = item(t("AI Super-Resolution"), #selector(contextAIUpscale))
-        upscaleItem.isEnabled = RealESRGANEngine.shared.isAvailable
+        upscaleItem.isEnabled = !isGIF && RealESRGANEngine.shared.isAvailable
         let dewatermarkItem = item(t("AI Watermark Removal"), #selector(contextAIDewatermark))
-        dewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable
+        dewatermarkItem.isEnabled = !isGIF && U2NetEngine.shared.isAvailable
         let manualDewatermarkItem = item(t("AI Manual Watermark Removal"), #selector(contextAIManualDewatermark))
-        manualDewatermarkItem.isEnabled = U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
-        _ = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
+        manualDewatermarkItem.isEnabled = !isGIF && U2NetEngine.shared.isAvailable && LaMaEngine.shared.isAvailable
+        let enhanceItem = item(t("AI Quality Enhance"), #selector(contextAIEnhance))
+        enhanceItem.isEnabled = !isGIF
         let dedupItem = item(t("AI Dedup"), #selector(contextAIDedup))
         dedupItem.isEnabled = imageURLs.count > 1
         menu.addItem(.separator())
-        _ = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
+        let oneClickItem = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
+        oneClickItem.isEnabled = !isGIF
         return menu
     }
 
@@ -3721,6 +3777,11 @@ class ImageWindow: NSObject, NSWindowDelegate {
 
     /// True while the AI one-click batch runs (locks most actions).
     var isBatchRunning: Bool { batchRunning }
+
+    /// Whether the current image is a GIF (AI functions should be disabled).
+    var isCurrentImageGIF: Bool {
+        return currentFormat == .gif
+    }
 
     // MARK: - Localization refresh
 

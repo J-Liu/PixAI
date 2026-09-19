@@ -74,6 +74,23 @@ class ZoomableImageView: NSView {
         }
     }
 
+    // MARK: - GIF animation state
+
+    /// Animated GIF frames (empty for non-animated images). Setting this starts
+    /// automatic playback when there are multiple frames.
+    var gifFrames: [(cgImage: CGImage, delay: TimeInterval)] = [] {
+        didSet {
+            stopGifAnimation()
+            guard !gifFrames.isEmpty else { return }
+            if gifFrames.count > 1 {
+                startGifAnimation()
+            }
+        }
+    }
+
+    private var gifAnimationTimer: Timer?
+    private var gifCurrentFrame: Int = 0
+
     private var livePlayer: AVPlayer?
     /// The URL currently loaded into `livePlayer` (the player is recreated when
     /// the companion video changes).
@@ -205,6 +222,7 @@ class ZoomableImageView: NSView {
             NotificationCenter.default.removeObserver(observer)
         }
         fadeTimer?.invalidate()
+        gifAnimationTimer?.invalidate()
         if let observer = configObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -614,6 +632,42 @@ class ZoomableImageView: NSView {
             width: side,
             height: side
         )
+    }
+
+    // MARK: - GIF animation
+
+    /// Start GIF animation playback.
+    private func startGifAnimation() {
+        guard gifFrames.count > 1 else { return }
+        gifCurrentFrame = 0
+        scheduleNextGifFrame()
+    }
+
+    /// Schedule the next GIF frame after the current frame's delay.
+    private func scheduleNextGifFrame() {
+        guard gifFrames.count > 1, gifCurrentFrame < gifFrames.count else { return }
+        let delay = gifFrames[gifCurrentFrame].delay
+        gifAnimationTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.advanceGifFrame()
+        }
+    }
+
+    /// Advance to the next GIF frame and redisplay.
+    private func advanceGifFrame() {
+        guard gifFrames.count > 1 else { return }
+        gifCurrentFrame = (gifCurrentFrame + 1) % gifFrames.count
+        // Update the image from the current frame
+        let cgImage = gifFrames[gifCurrentFrame].cgImage
+        image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        needsDisplay = true
+        scheduleNextGifFrame()
+    }
+
+    /// Stop GIF animation playback.
+    private func stopGifAnimation() {
+        gifAnimationTimer?.invalidate()
+        gifAnimationTimer = nil
+        gifCurrentFrame = 0
     }
 
     /// Observe the end (and failure) of the current item so playback falls back

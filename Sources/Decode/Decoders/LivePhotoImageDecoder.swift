@@ -34,6 +34,7 @@ final class LivePhotoImageDecoder: ImageDecoder {
         let companion = url.flatMap { MagicNumberDetector.livePhotoCompanion(for: $0) }
         return DecodedImage(image: image, format: .livePhoto,
                             pixelSize: image.decodedPixelSize,
-                            companionVideoURL: companion)
+                            companionVideoURL: companion,
+                            gifFrames: [])
     }
 }

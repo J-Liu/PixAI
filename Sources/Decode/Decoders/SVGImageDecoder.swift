@@ -34,7 +34,8 @@ final class SVGImageDecoder: ImageDecoder {
         // 1. Native NSImage SVG rep (macOS builds with built-in SVG support).
         if let image = NSImage(data: data), !image.representations.isEmpty {
             return DecodedImage(image: image, format: .svg,
-                                pixelSize: image.decodedPixelSize, companionVideoURL: nil)
+                                pixelSize: image.decodedPixelSize, companionVideoURL: nil,
+                                gifFrames: [])
         }
 
         // 2. WebKit offscreen snapshot (main-actor bound).
@@ -45,7 +46,8 @@ final class SVGImageDecoder: ImageDecoder {
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         return DecodedImage(image: image, format: .svg,
                             pixelSize: NSSize(width: cgImage.width, height: cgImage.height),
-                            companionVideoURL: nil)
+                            companionVideoURL: nil,
+                            gifFrames: [])
     }
 
     // MARK: - Intrinsic size

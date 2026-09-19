@@ -19,6 +19,10 @@ final class SlideshowController {
     /// config file / settings UI (set before starting the slideshow).
     var interval: TimeInterval = 3.0
 
+    /// Override the default interval for the current slide (e.g., for GIF animation).
+    /// Resets to `interval` after this tick.
+    var currentSlideInterval: TimeInterval?
+
     private(set) var state: State = .stopped
 
     /// Called on the main thread after a full interval elapses while playing.
@@ -72,7 +76,10 @@ final class SlideshowController {
     }
 
     private func scheduleTick() {
-        let t = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+        // Use currentSlideInterval if set, otherwise the default interval
+        let delay = currentSlideInterval ?? interval
+        currentSlideInterval = nil // Reset for next slide
+        let t = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             self?.onTick?()
         }
         // .common mode keeps the tick firing while the run loop is busy with
