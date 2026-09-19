@@ -19,7 +19,9 @@ final class LivePhotoDetector {
     /// Movie-level metadata keys that mark a MOV as a Live Photo video.
     private static let livePhotoMetadataKeys: Set<String> = [
         "com.apple.quicktime.livephoto",
-        "com.apple.quicktime.content.identifier"
+        "com.apple.quicktime.content.identifier",
+        "mdta/com.apple.quicktime.livephoto",
+        "mdta/com.apple.quicktime.content.identifier"
     ]
 
     private var cache: [URL: URL?] = [:]
@@ -55,6 +57,7 @@ final class LivePhotoDetector {
         let dir = imageURL.deletingLastPathComponent()
         let baseName = imageURL.deletingPathExtension().lastPathComponent
         guard !baseName.isEmpty else { return nil }
+        Logger.shared.log("LivePhotoDetector: checking \(imageURL.lastPathComponent) in \(dir.path)")
 
         do {
             let items = try FileManager.default.contentsOfDirectory(
@@ -67,7 +70,11 @@ final class LivePhotoDetector {
                 let candidateBase = item.deletingPathExtension().lastPathComponent
                 return candidateBase.caseInsensitiveCompare(baseName) == .orderedSame
             }
-            guard let movURL = candidates.first else { return nil }
+            guard let movURL = candidates.first else {
+                Logger.shared.log("LivePhotoDetector: no matching .MOV found for \(baseName)")
+                return nil
+            }
+            Logger.shared.log("LivePhotoDetector: found candidate MOV: \(movURL.lastPathComponent)")
 
             // 2. Verify the MOV carries Live Photo movie-level metadata via the
             //    modern async AVAsset API (`asset.metadata` is deprecated).
@@ -75,17 +82,22 @@ final class LivePhotoDetector {
             guard let metadata = try? await asset.load(.metadata), !metadata.isEmpty else {
                 // Metadata unreadable (locked file, unusual container): fall
                 // back to Apple's file-naming convention.
+                Logger.shared.log("LivePhotoDetector: MOV metadata unreadable, falling back to naming convention")
                 return movURL
             }
+            Logger.shared.log("LivePhotoDetector: MOV has \(metadata.count) metadata items")
             for item in metadata {
                 let keys = [item.identifier?.rawValue, item.commonKey?.rawValue]
                     .compactMap { $0 }
+                Logger.shared.log("LivePhotoDetector: metadata keys: \(keys)")
                 if keys.contains(where: { livePhotoMetadataKeys.contains($0) }) {
+                    Logger.shared.log("LivePhotoDetector: confirmed Live Photo pair")
                     return movURL
                 }
             }
             // Readable metadata with no Live Photo marker: a regular video that
             // merely shares the file name — not a Live Photo.
+            Logger.shared.log("LivePhotoDetector: no Live Photo metadata found in MOV")
             return nil
         } catch {
             Logger.shared.log("LivePhotoDetector: failed to scan \(dir.path): \(error)")
