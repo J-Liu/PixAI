@@ -2678,8 +2678,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         for url in imageURLs {
             var hasChanges = false
 
-            // Check if AI operations were done
-            if let state = aiStates[url], state.hasComputedResult {
+            // Check if AI operations are currently active (not just computed but then undone)
+            if let state = aiStates[url], state.activeKind != nil {
+                hasChanges = true
+            }
+
+            // Check if this image has unsaved rotation (only for current image)
+            // rotationSteps * 90 % 360 != 0 means actual rotation change
+            if imageURLs.indices.contains(currentIndex), url == imageURLs[currentIndex], (rotationSteps * 90) % 360 != 0 {
                 hasChanges = true
             }
 
