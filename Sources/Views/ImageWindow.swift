@@ -2718,8 +2718,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             return
         }
 
-        // Switch to the first modified image
-        if let firstURL = urls.first, let idx = imageURLs.firstIndex(of: firstURL) {
+        // Switch to the first modified image (only if different from current)
+        if let firstURL = urls.first, let idx = imageURLs.firstIndex(of: firstURL), idx != currentIndex {
             saveCurrentOverlays()
             loadImage(at: idx)
         }
@@ -2730,6 +2730,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                              backing: .buffered,
                              defer: false)
         sheet.title = ""
+        sheet.isReleasedWhenClosed = false
 
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 180))
 
@@ -2806,10 +2807,28 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         unsavedURLs = urls
         saveSheet = sheet
 
+        // Add Esc key support to cancel
+        let escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Esc key
+                if let sheet = self?.saveSheet {
+                    self?.window.endSheet(sheet)
+                    return nil
+                }
+            }
+            return event
+        }
+        saveSheetEscMonitor = escMonitor
+
         window.beginSheet(sheet) { [weak self] _ in
             self?.saveSheet = nil
+            if let monitor = self?.saveSheetEscMonitor {
+                NSEvent.removeMonitor(monitor)
+                self?.saveSheetEscMonitor = nil
+            }
         }
     }
+
+    private var saveSheetEscMonitor: Any?
 
     private var unsavedURLs: [URL] = []
     private var saveSheet: NSWindow?
