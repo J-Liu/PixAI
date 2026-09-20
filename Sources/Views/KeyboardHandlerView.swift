@@ -224,10 +224,10 @@ class KeyboardHandlerView: NSView {
         case ("j", _):
             onNext()
             return
-        case ("k", _):
+        case ("j", _):
             onPrevious()
             return
-        case ("l", _):
+        case ("k", _):
             onNext()
             return
         // R: rotate 90° clockwise (temporary, not saved)
