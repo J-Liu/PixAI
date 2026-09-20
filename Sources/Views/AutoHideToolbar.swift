@@ -31,6 +31,8 @@ class AutoHideToolbar: NSView {
     private let saveGroupDivider: NSView
 
     private var isHovered = false
+    /// Whether images are loaded (affects default visibility)
+    private var hasImages = false
     private let onLeftTap: () -> Void
     private let onRightTap: () -> Void
     private let onZoomInTap: () -> Void
@@ -184,7 +186,7 @@ class AutoHideToolbar: NSView {
             self?.refreshTooltips()
         }
 
-        // Start in the visible (hovered) state.
+        // Start hidden by default (no images loaded yet)
         self.alphaValue = 0.9
     }
 
@@ -467,6 +469,23 @@ class AutoHideToolbar: NSView {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             self.animator().alphaValue = hiddenAlpha
+        }
+    }
+
+    /// Set the default visibility based on whether images are loaded.
+    /// - When no images: toolbar is visible by default
+    /// - When images loaded: toolbar is hidden by default, appears on hover
+    func setHasImages(_ hasImages: Bool) {
+        self.hasImages = hasImages
+        // Only update if not currently hovered
+        guard !isHovered else { return }
+        let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
+        if hasImages {
+            // Images loaded: start hidden
+            self.alphaValue = hiddenAlpha
+        } else {
+            // No images: start visible
+            self.alphaValue = 0.9
         }
     }
 }

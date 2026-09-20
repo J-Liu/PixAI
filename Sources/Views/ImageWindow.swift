@@ -614,6 +614,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         overlaysSaved = [:]
         overlayStorage = [:]
 
+        // Update toolbar visibility: visible when no images, hidden when images loaded
+        toolbar?.setHasImages(!imageUrls.isEmpty)
+
         if !imageURLs.isEmpty {
             loadImage(at: 0)
         } else {
@@ -3197,6 +3200,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             container?.imageView?.livePhotoURL = nil
             container?.imageView?.image = nil
             container?.placeholder?.isHidden = false
+            toolbar?.setHasImages(false)
             updateStatusBar()
         } else {
             // Switch to the image that shifted into this slot (the next one),
