@@ -221,7 +221,7 @@ class KeyboardHandlerView: NSView {
         case ("h", _):
             onPrevious()
             return
-        case ("j", _):
+        case ("l", _):
             onNext()
             return
         case ("j", _):
