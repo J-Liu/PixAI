@@ -195,9 +195,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         statusBar.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.9).cgColor
 
         let statusLabel = NSTextField(labelWithString: L10n.shared.t("Open or drag images here"))
-        statusLabel.font = NSFont.systemFont(ofSize: 12)
+        statusLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         statusLabel.textColor = NSColor(white: 0.92, alpha: 1)
-        statusLabel.lineBreakMode = .byTruncatingMiddle
+        statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
         statusBar.addSubview(statusLabel)
 
@@ -986,42 +986,97 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
 
         let url = imageURLs[currentIndex]
-        var parts: [String] = [url.lastPathComponent]
 
+        // Fixed-width fields (in characters)
+        let filenameWidth = 30
+        let resolutionWidth = 15
+        let fileSizeWidth = 10
+        let zoomWidth = 8
+
+        // Build filename with truncation
+        let filename = truncatedFilename(url.lastPathComponent, maxWidth: filenameWidth)
+
+        // Build resolution string
+        var resolution = ""
         if let size = currentPixelSize() {
-            var sizeText = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
+            resolution = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
             if currentImageIsScaled {
-                // Huge-image thumbnail: mark that the display is scaled down.
-                sizeText += " (\(L10n.shared.t("scaled")))"
+                resolution += " (\(L10n.shared.t("scaled")))"
             }
-            parts.append(sizeText)
-
-            // Add file size
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-               let fileSize = attrs[.size] as? Int64 {
-                let sizeStr: String
-                if fileSize < 1024 {
-                    sizeStr = "\(fileSize) B"
-                } else if fileSize < 1024 * 1024 {
-                    sizeStr = String(format: "%.1f KB", Double(fileSize) / 1024.0)
-                } else if fileSize < 1024 * 1024 * 1024 {
-                    sizeStr = String(format: "%.1f MB", Double(fileSize) / (1024.0 * 1024.0))
-                } else {
-                    sizeStr = String(format: "%.2f GB", Double(fileSize) / (1024.0 * 1024.0 * 1024.0))
-                }
-                parts.append(sizeStr)
-            }
-
-            parts.append(String(format: "%.0f%%", currentZoomRatio() * 100))
         }
+        resolution = paddedRight(resolution, width: resolutionWidth)
 
+        // Build file size string
+        var fileSizeStr = ""
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let fileSize = attrs[.size] as? Int64 {
+            if fileSize < 1024 {
+                fileSizeStr = "\(fileSize) B"
+            } else if fileSize < 1024 * 1024 {
+                fileSizeStr = String(format: "%.1f KB", Double(fileSize) / 1024.0)
+            } else if fileSize < 1024 * 1024 * 1024 {
+                fileSizeStr = String(format: "%.1f MB", Double(fileSize) / (1024.0 * 1024.0))
+            } else {
+                fileSizeStr = String(format: "%.2f GB", Double(fileSize) / (1024.0 * 1024.0 * 1024.0))
+            }
+        }
+        fileSizeStr = paddedRight(fileSizeStr, width: fileSizeWidth)
+
+        // Build zoom string
+        let zoomStr = paddedRight(String(format: "%.0f%%", currentZoomRatio() * 100), width: zoomWidth)
+
+        // Build index string
+        let indexStr = "\(currentIndex + 1) / \(imageURLs.count)"
+
+        // Combine all parts
+        let statusText = "\(filename)   \(resolution)   \(fileSizeStr)   \(zoomStr)   \(indexStr)"
+
+        // Add AI mark if present
+        var finalText = statusText
         if let mark = aiStates[url]?.activeMark {
-            parts.append(mark)
+            finalText += "   \(mark)"
         }
-        parts.append("\(currentIndex + 1) / \(imageURLs.count)")
 
-        // Join with 3 spaces for readability
-        label.attributedStringValue = Self.statusString(parts.joined(separator: "   "))
+        label.attributedStringValue = Self.statusString(finalText)
+    }
+
+    /// Truncate filename to fit within maxWidth characters.
+    /// Uses format: prefix~suffix.extension if too long.
+    private func truncatedFilename(_ filename: String, maxWidth: Int) -> String {
+        guard filename.count > maxWidth else {
+            return paddedRight(filename, width: maxWidth)
+        }
+
+        // Find extension
+        let ext = (filename as NSString).pathExtension
+        let nameWithoutExt = ext.isEmpty ? filename : (filename as NSString).deletingPathExtension
+
+        // Reserve space for extension and separator
+        let reservedForExt = ext.isEmpty ? 0 : ext.count + 1 // +1 for dot
+        let availableForName = maxWidth - reservedForExt - 1 // -1 for ~
+
+        if availableForName < 5 {
+            // Not enough space, just truncate
+            return String(filename.prefix(maxWidth))
+        }
+
+        // Split: half for prefix, half for suffix
+        let prefixLen = availableForName / 2
+        let suffixLen = availableForName - prefixLen
+
+        let prefix = String(nameWithoutExt.prefix(prefixLen))
+        let suffix = String(nameWithoutExt.suffix(suffixLen))
+
+        let truncated = ext.isEmpty ? "\(prefix)~\(suffix)" : "\(prefix)~\(suffix).\(ext)"
+        return paddedRight(truncated, width: maxWidth)
+    }
+
+    /// Pad string to the right with spaces.
+    private func paddedRight(_ str: String, width: Int) -> String {
+        if str.count >= width {
+            return str
+        }
+        return str + String(repeating: " ", count: width - str.count)
     }
 
     /// Update the toolbar's fit toggle icon (true = depicts "fit to window").
