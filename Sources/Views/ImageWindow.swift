@@ -3968,7 +3968,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     /// Show a status message at the bottom center of the window.
     private func showStatusMessage(_ message: String) {
-        // Create a temporary label for the status message.
+        // Create a container view with rounded corners and background
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.75).cgColor
+        container.layer?.cornerRadius = 8
+
+        // Create the text label
         let label = NSTextField(labelWithString: message)
         label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         label.textColor = .white
@@ -3976,36 +3982,46 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         label.isBezeled = false
         label.isBordered = false
         label.alignment = .center
-        label.backgroundColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.6)
+        label.backgroundColor = .clear
+        label.sizeToFit()
 
-        // Position it at the bottom center of the window (above the toolbar).
+        // Calculate sizes
+        let padding: CGFloat = 16
+        let labelSize = label.frame.size
+        let containerWidth = labelSize.width + padding * 2
+        let containerHeight = labelSize.height + padding
+        let labelX = padding
+        let labelY = (containerHeight - labelSize.height) / 2
+
+        // Position the container at the bottom center of the window
         let windowSize = window.contentView?.bounds.size ?? window.frame.size
-        let labelWidth: CGFloat = 300
-        let labelHeight: CGFloat = 24
-        let labelX = (windowSize.width - labelWidth) / 2
-        let labelY: CGFloat = ViewerContainerView.statusBarHeight + 60
+        let containerX = (windowSize.width - containerWidth) / 2
+        let containerY: CGFloat = ViewerContainerView.statusBarHeight + 80
 
-        label.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: labelHeight)
+        container.frame = NSRect(x: containerX, y: containerY, width: containerWidth, height: containerHeight)
+        label.frame = NSRect(x: labelX, y: labelY, width: labelSize.width, height: labelSize.height)
 
-        // Add the label to the window's content view.
+        container.addSubview(label)
+
+        // Add the container to the window's content view.
         if let contentView = window.contentView {
-            contentView.addSubview(label)
+            contentView.addSubview(container)
 
             // Animate in.
-            label.alphaValue = 0
+            container.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.3
-                label.animator().alphaValue = 1
+                container.animator().alphaValue = 1
             }
 
-            // Remove after 2 seconds.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            // Remove after 3 seconds.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.3
-                    label.animator().alphaValue = 0
+                    container.animator().alphaValue = 0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    label.removeFromSuperview()
+                    container.removeFromSuperview()
                 }
             }
         }
