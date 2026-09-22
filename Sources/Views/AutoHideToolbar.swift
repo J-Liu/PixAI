@@ -50,6 +50,9 @@ class AutoHideToolbar: NSView {
     private let onDeleteTap: () -> Void
     private var l10nObserver: NSObjectProtocol?
 
+    /// Called when toolbar visibility changes due to hover (true = visible, false = hidden).
+    var onVisibilityChange: ((Bool) -> Void)?
+
     /// The color for the toolbar buttons (bright orange).
     static let buttonColor = NSColor(red: 1.0, green: 0.55, blue: 0.0, alpha: 1.0) // Bright orange
 
@@ -440,6 +443,7 @@ class AutoHideToolbar: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        onVisibilityChange?(true)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             self.animator().alphaValue = 0.9
@@ -448,6 +452,7 @@ class AutoHideToolbar: NSView {
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
+        onVisibilityChange?(false)
         let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3

@@ -27,6 +27,17 @@ class NavigationButtonView: NSView {
         }
     }
 
+    /// Whether toolbar is currently visible (higher priority).
+    var toolbarIsVisible: Bool = false {
+        didSet {
+            if toolbarIsVisible {
+                // Toolbar is visible: hide navigation buttons
+                alphaValue = 0
+                layer?.backgroundColor = NSColor(white: 0, alpha: 0).cgColor
+            }
+        }
+    }
+
     private var isHovered = false
     private var dragStartPoint: NSPoint?
     private var isDragging = false
@@ -109,8 +120,8 @@ class NavigationButtonView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        // Only show if images are loaded
-        guard hasImages else { return }
+        // Only show if images are loaded AND toolbar is not visible
+        guard hasImages && !toolbarIsVisible else { return }
         // Show dark background and button on hover
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.4).cgColor
         NSAnimationContext.runAnimationGroup { context in

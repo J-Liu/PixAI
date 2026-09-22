@@ -301,6 +301,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self?.deleteCurrentImage()
             }
         )
+        toolbar.onVisibilityChange = { [weak self] visible in
+            // When toolbar is visible (hovered), hide navigation buttons
+            self?.container?.leftNavButton?.toolbarIsVisible = visible
+            self?.container?.rightNavButton?.toolbarIsVisible = visible
+        }
         container.toolbar = toolbar
         self.toolbar = toolbar
         container.addSubview(toolbar)
@@ -3056,19 +3061,19 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
 
         // Create custom sheet
-        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 450, height: 180),
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
                              styleMask: [.titled, .closable],
                              backing: .buffered,
                              defer: false)
         sheet.title = ""
         sheet.isReleasedWhenClosed = false
 
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 180))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 200))
 
         // Message label
         let t = L10n.shared.t
         let messageLabel = NSTextField(wrappingLabelWithString: t("The following images have unsaved changes:"))
-        messageLabel.frame = NSRect(x: 20, y: 140, width: 410, height: 20)
+        messageLabel.frame = NSRect(x: 20, y: 155, width: 440, height: 20)
         messageLabel.font = NSFont.boldSystemFont(ofSize: 13)
         contentView.addSubview(messageLabel)
 
@@ -3076,20 +3081,20 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         let fileNames = urls.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
         let more = urls.count > 5 ? "..." : ""
         let filesLabel = NSTextField(wrappingLabelWithString: fileNames + more)
-        filesLabel.frame = NSRect(x: 20, y: 90, width: 410, height: 40)
+        filesLabel.frame = NSRect(x: 20, y: 105, width: 440, height: 40)
         filesLabel.font = NSFont.systemFont(ofSize: 12)
         filesLabel.textColor = .secondaryLabelColor
         contentView.addSubview(filesLabel)
 
         // Buttons - Row 1: Save All, Discard All, Cancel (centered)
-        let buttonHeight: CGFloat = 24
-        let row1Y: CGFloat = 50
-        let row2Y: CGFloat = 15
-        let buttonWidth: CGFloat = 90
+        let buttonHeight: CGFloat = 28
+        let row1Y: CGFloat = 70
+        let row2Y: CGFloat = 20
+        let buttonWidth: CGFloat = 100
         let gap: CGFloat = 10
-        let sheetWidth: CGFloat = 450
+        let sheetWidth: CGFloat = 480
 
-        // Row 1: 3 buttons, centered
+        // Row 1: 3 buttons + shortcuts
         let row1Width = buttonWidth * 3 + gap * 2
         let row1StartX = (sheetWidth - row1Width) / 2
 
@@ -3100,6 +3105,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         saveAllBtn.action = #selector(handleSaveAll)
         contentView.addSubview(saveAllBtn)
 
+        let saveAllShortcut = NSTextField(labelWithString: "⌘↩")
+        saveAllShortcut.font = NSFont.systemFont(ofSize: 10)
+        saveAllShortcut.textColor = .secondaryLabelColor
+        saveAllShortcut.alignment = .center
+        saveAllShortcut.frame = NSRect(x: row1StartX, y: row1Y - 14, width: buttonWidth, height: 12)
+        contentView.addSubview(saveAllShortcut)
+
         let discardAllBtn = NSButton(frame: NSRect(x: row1StartX + buttonWidth + gap, y: row1Y, width: buttonWidth, height: buttonHeight))
         discardAllBtn.title = t("Discard All")
         discardAllBtn.bezelStyle = .rounded
@@ -3107,12 +3119,26 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         discardAllBtn.action = #selector(handleDiscardAll)
         contentView.addSubview(discardAllBtn)
 
+        let discardAllShortcut = NSTextField(labelWithString: "⇧Esc")
+        discardAllShortcut.font = NSFont.systemFont(ofSize: 10)
+        discardAllShortcut.textColor = .secondaryLabelColor
+        discardAllShortcut.alignment = .center
+        discardAllShortcut.frame = NSRect(x: row1StartX + buttonWidth + gap, y: row1Y - 14, width: buttonWidth, height: 12)
+        contentView.addSubview(discardAllShortcut)
+
         let cancelBtn = NSButton(frame: NSRect(x: row1StartX + (buttonWidth + gap) * 2, y: row1Y, width: buttonWidth, height: buttonHeight))
         cancelBtn.title = t("Cancel")
         cancelBtn.bezelStyle = .rounded
         cancelBtn.target = self
         cancelBtn.action = #selector(handleSaveCancel)
         contentView.addSubview(cancelBtn)
+
+        let cancelShortcut = NSTextField(labelWithString: "Esc")
+        cancelShortcut.font = NSFont.systemFont(ofSize: 10)
+        cancelShortcut.textColor = .secondaryLabelColor
+        cancelShortcut.alignment = .center
+        cancelShortcut.frame = NSRect(x: row1StartX + (buttonWidth + gap) * 2, y: row1Y - 14, width: buttonWidth, height: 12)
+        contentView.addSubview(cancelShortcut)
 
         // Buttons - Row 2: Save, Discard (centered)
         let row2Width = buttonWidth * 2 + gap
@@ -3125,6 +3151,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         saveBtn.action = #selector(handleSave)
         contentView.addSubview(saveBtn)
 
+        let saveShortcut = NSTextField(labelWithString: "↩")
+        saveShortcut.font = NSFont.systemFont(ofSize: 10)
+        saveShortcut.textColor = .secondaryLabelColor
+        saveShortcut.alignment = .center
+        saveShortcut.frame = NSRect(x: row2StartX, y: row2Y - 14, width: buttonWidth, height: 12)
+        contentView.addSubview(saveShortcut)
+
         let discardBtn = NSButton(frame: NSRect(x: row2StartX + buttonWidth + gap, y: row2Y, width: buttonWidth, height: buttonHeight))
         discardBtn.title = t("Discard")
         discardBtn.bezelStyle = .rounded
@@ -3132,34 +3165,106 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         discardBtn.action = #selector(handleDiscard)
         contentView.addSubview(discardBtn)
 
+        let discardShortcut = NSTextField(labelWithString: "⌃Esc")
+        discardShortcut.font = NSFont.systemFont(ofSize: 10)
+        discardShortcut.textColor = .secondaryLabelColor
+        discardShortcut.alignment = .center
+        discardShortcut.frame = NSRect(x: row2StartX + buttonWidth + gap, y: row2Y - 14, width: buttonWidth, height: 12)
+        contentView.addSubview(discardShortcut)
+
         sheet.contentView = contentView
+
+        // Set up key view loop for Tab navigation
+        saveBtn.nextKeyView = discardBtn
+        discardBtn.nextKeyView = saveAllBtn
+        saveAllBtn.nextKeyView = discardAllBtn
+        discardAllBtn.nextKeyView = cancelBtn
+        cancelBtn.nextKeyView = saveBtn
 
         // Store URLs for button handlers
         unsavedURLs = urls
         saveSheet = sheet
 
-        // Add Esc key support to cancel
-        let escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Esc key
-                if let sheet = self?.saveSheet {
-                    self?.window.endSheet(sheet)
+        // Set default focus on Save button
+        DispatchQueue.main.async {
+            sheet.makeFirstResponder(saveBtn)
+        }
+
+        // Add keyboard shortcut monitoring
+
+        // Store button order for Tab navigation
+        let buttonOrder = [saveBtn, discardBtn, saveAllBtn, discardAllBtn, cancelBtn]
+
+        let keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, let sheet = self.saveSheet else { return event }
+
+            // Tab key - cycle focus through buttons
+            if event.keyCode == 48 {
+                let currentResponder = sheet.firstResponder as? NSButton
+                if let current = currentResponder, let idx = buttonOrder.firstIndex(of: current) {
+                    let nextIdx: Int
+                    if event.modifierFlags.contains(.shift) {
+                        // Shift+Tab = previous
+                        nextIdx = (idx - 1 + buttonOrder.count) % buttonOrder.count
+                    } else {
+                        // Tab = next
+                        nextIdx = (idx + 1) % buttonOrder.count
+                    }
+                    sheet.makeFirstResponder(buttonOrder[nextIdx])
                     return nil
                 }
             }
+
+            // Enter key - trigger focused button's action, or Save by default
+            if event.keyCode == 36 { // Return key
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags.contains(.command) {
+                    // Cmd+Enter = Save All
+                    self.handleSaveAll()
+                    return nil
+                } else if let focusedButton = sheet.firstResponder as? NSButton {
+                    // Enter on focused button - simulate click
+                    focusedButton.performClick(nil)
+                    return nil
+                } else {
+                    // No focus - default to Save
+                    self.handleSave()
+                    return nil
+                }
+            }
+
+            // Esc key
+            if event.keyCode == 53 {
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags.contains(.shift) {
+                    // Shift+Esc = Discard All
+                    self.handleDiscardAll()
+                    return nil
+                } else if flags.contains(.control) {
+                    // Control+Esc = Discard
+                    self.handleDiscard()
+                    return nil
+                } else {
+                    // Esc = Cancel
+                    self.handleSaveCancel()
+                    return nil
+                }
+            }
+
             return event
         }
-        saveSheetEscMonitor = escMonitor
+        saveSheetKeyMonitor = keyMonitor
 
         window.beginSheet(sheet) { [weak self] _ in
             self?.saveSheet = nil
-            if let monitor = self?.saveSheetEscMonitor {
+            if let monitor = self?.saveSheetKeyMonitor {
                 NSEvent.removeMonitor(monitor)
-                self?.saveSheetEscMonitor = nil
+                self?.saveSheetKeyMonitor = nil
             }
         }
     }
 
-    private var saveSheetEscMonitor: Any?
+    private var saveSheetKeyMonitor: Any?
 
     private var unsavedURLs: [URL] = []
     private var saveSheet: NSWindow?
@@ -3167,9 +3272,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc private func handleSaveAll() {
         guard let sheet = saveSheet else { return }
 
+        Logger.shared.log("handleSaveAll: called with \(unsavedURLs.count) unsaved URLs")
+
         // Check if any URLs are temp files
         let tempFiles = unsavedURLs.filter { $0.path.contains("/var/folders/") || $0.lastPathComponent.hasPrefix("clipboard_") }
         let regularFiles = unsavedURLs.filter { !$0.path.contains("/var/folders/") && !$0.lastPathComponent.hasPrefix("clipboard_") }
+
+        Logger.shared.log("handleSaveAll: \(tempFiles.count) temp files, \(regularFiles.count) regular files")
 
         if !tempFiles.isEmpty && regularFiles.isEmpty {
             // Only temp files - use async save with completion
@@ -3181,14 +3290,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         } else if !tempFiles.isEmpty {
             // Mixed temp and regular files - save regular first, then temp files
             window.endSheet(sheet)
-            // Save regular files (sync)
-            for url in regularFiles {
-                if let idx = imageURLs.firstIndex(of: url) {
-                    saveCurrentOverlays()
-                    loadImage(at: idx)
-                    saveCurrentRotation()
-                }
-            }
+            // Save regular files using saveAllImages (which handles rotation)
+            saveAllImages(urls: regularFiles)
             // Then save temp files (async)
             saveAllTempFilesSequentially(tempFiles, index: 0) { [weak self] in
                 self?.shouldPromptForSave = false
@@ -3354,6 +3457,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if let state = aiStates[currentURL] {
                 state.discardComputedResult()
             }
+            // Reset rotation for current image
+            rotationSteps = 0
         }
         let remaining = getUnsavedImageURLs()
         if remaining.isEmpty {
@@ -3389,10 +3494,19 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func saveAllImages(urls: [URL]) {
         let savedIndex = currentIndex
 
+        Logger.shared.log("saveAllImages: starting with \(urls.count) URLs")
+
         // Save overlays for current image first
         saveCurrentOverlays()
 
+        // Save rotation for current image before switching
+        let currentURL = imageURLs[savedIndex]
+        let netDegrees = rotationSteps * 90
+        let hasCurrentRotation = (netDegrees % 360) != 0 && savedIndex < imageURLs.count
+
         for url in urls {
+            Logger.shared.log("saveAllImages: processing \(url.lastPathComponent)")
+
             // Get image from cache, or load from file
             var cachedImage = ImageCache.shared.image(for: url)
             if cachedImage == nil {
@@ -3407,30 +3521,45 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
             }
 
-            guard let sourceImage = cachedImage else { continue }
+            guard var sourceImage = cachedImage else {
+                Logger.shared.log("saveAllImages: no source image for \(url)")
+                continue
+            }
 
             // Load overlays for this URL
             let overlays = overlayStorage[url] ?? []
 
             // Get AI state if any
             let aiState = aiStates[url]
-            let finalSourceImage: NSImage
             if let state = aiState, let kind = state.activeKind, let aiImage = state.image(for: kind) {
-                finalSourceImage = aiImage
+                sourceImage = aiImage
+                Logger.shared.log("saveAllImages: using AI image for \(url), kind=\(kind)")
             } else {
-                finalSourceImage = sourceImage
+                Logger.shared.log("saveAllImages: using source image for \(url)")
+            }
+
+            // Apply rotation if this is the current image with rotation
+            var finalImage = sourceImage
+            if url == currentURL && hasCurrentRotation {
+                if let rotated = sourceImage.rotatedClockwise(by: netDegrees) {
+                    finalImage = rotated
+                    Logger.shared.log("saveAllImages: applied \(netDegrees)° rotation for \(url)")
+                }
             }
 
             // Save this image
-            saveImageToFile(url: url, image: finalSourceImage, overlays: overlays)
+            saveImageToFile(url: url, image: finalImage, overlays: overlays)
         }
 
         // Restore to original index
         loadImage(at: savedIndex)
+        Logger.shared.log("saveAllImages: done")
     }
 
     /// Save image to file synchronously
     private func saveImageToFile(url: URL, image: NSImage, overlays: [OverlayData]) {
+        Logger.shared.log("saveImageToFile: starting for \(url.lastPathComponent), overlays=\(overlays.count)")
+
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             Logger.shared.log("saveImageToFile: could not get CGImage for \(url)")
             return
