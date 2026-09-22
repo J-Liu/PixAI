@@ -17,7 +17,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     var onClose: ((ImageWindow) -> Void)?
 
     private var container: ViewerContainerView?
-    private var statusBarLabel: NSTextField?
+    private var statusBar: StatusBarView?
     private var toolbar: AutoHideToolbar?
 
     /// List of loaded image URLs.
@@ -174,37 +174,67 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // zoom (10% step, 10%~1000%), trackpad pinch zoom, drag panning when zoomed
         // in, and a double-click toggle between "fit to window" and 100%.
         let imageView = ZoomableImageView()
-        imageView.onZoomChange = { [weak self] in
+        imageView.onZoomChange = { [weak self] isUserInitiated in
             guard let self = self else { return }
             self.updateStatusBar()
             // Keep the toolbar fit/100% icon in sync with the view's toggle state:
             // the icon always depicts what the next double-click / click will do.
             if let imageView = self.container?.imageView {
                 self.setFitToggleIcon(showsFit: imageView.nextToggleIsFit)
+                // Update status bar zoom display
+                let zoomPercent = Int((imageView.zoomScale * 100).rounded())
+                self.statusBar?.setZoomPercentage(zoomPercent)
+                self.statusBar?.setFitButtonShowsFitIcon(imageView.nextToggleIsFit)
+                // Show zoom notification for 1 second only for user-initiated zooms
+                if isUserInitiated {
+                    self.showZoomNotification(zoomPercent)
+                }
             }
             // The crop overlay maps pixel→view through live closures; a zoom or
             // pan change only needs a redraw to keep the rectangle in place.
             self.cropOverlay?.needsDisplay = true
         }
+        imageView.onNavigateFromDrag = { [weak self] deltaX in
+            // Positive deltaX = drag right (go to previous), negative = drag left (go to next)
+            if deltaX > 0 {
+                self?.goPrevious()
+            } else {
+                self?.goNext()
+            }
+        }
+        imageView.onNavigateDragProgress = { [weak self] deltaX in
+            // Move the image visually during drag
+            self?.applyNavigateDragOffset(deltaX)
+        }
+        imageView.onNavigateDragEnd = { [weak self] deltaX in
+            // Reset image position when drag ends
+            self?.resetNavigateDragOffset()
+        }
         container.imageView = imageView
         container.addSubview(imageView)
 
-        // Bottom status bar: filename / size / zoom ratio / index-total.
-        let statusBar = NSView()
-        statusBar.wantsLayer = true
-        statusBar.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.9).cgColor
-
-        let statusLabel = NSTextField(labelWithString: L10n.shared.t("Open or drag images here"))
-        statusLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        statusLabel.textColor = NSColor(white: 0.92, alpha: 1)
-        statusLabel.lineBreakMode = .byTruncatingTail
-        statusLabel.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
-        statusBar.addSubview(statusLabel)
-
+        // Bottom status bar with zoom controls.
+        let statusBar = StatusBarView(
+            onZoomIn: { [weak self] in
+                self?.container?.imageView?.zoomIn()
+            },
+            onZoomOut: { [weak self] in
+                self?.container?.imageView?.zoomOut()
+            },
+            onFitToggle: { [weak self] in
+                self?.container?.imageView?.toggleFitOr100Percent()
+            }
+        )
+        statusBar.filenameLabel.stringValue = L10n.shared.t("Open or drag images here")
+        statusBar.onZoomValueChange = { [weak self] percent in
+            self?.container?.imageView?.setZoom(to: CGFloat(percent) / 100.0, centeredOn: NSPoint(x: 0, y: 0))
+        }
         container.statusBar = statusBar
-        container.statusLabel = statusLabel
-        self.statusBarLabel = statusLabel
+        self.statusBar = statusBar
         container.addSubview(statusBar)
+
+        // Create edge navigation buttons (auto-hide on mouse leave).
+        createEdgeNavigationButtons()
 
         // Floating auto-hide toolbar, bottom-center above the status bar.
         let toolbar = AutoHideToolbar(
@@ -617,6 +647,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Update toolbar visibility: visible when no images, hidden when images loaded
         toolbar?.setHasImages(!imageUrls.isEmpty)
 
+        // Show/hide navigation buttons based on image count
+        updateNavButtonsVisibility()
+
         if !imageURLs.isEmpty {
             loadImage(at: 0)
         } else {
@@ -976,35 +1009,246 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         return NSAttributedString(string: text, attributes: [:])
     }
 
+    // MARK: - Edge navigation buttons
+
+    /// Width of edge navigation buttons.
+    private static let navButtonWidth: CGFloat = 60
+
+    /// Create left/right edge navigation buttons (auto-hide on mouse leave).
+    private func createEdgeNavigationButtons() {
+        let leftButton = NavigationButtonView(isLeft: true, onTap: { [weak self] in
+            self?.goPrevious()
+        }, onDrag: { [weak self] deltaX in
+            // Drag right (positive) = go to previous, drag left (negative) = go to next
+            if deltaX > 0 {
+                self?.goPrevious()
+            } else {
+                self?.goNext()
+            }
+        })
+        leftButton.onDragProgress = { [weak self] deltaX in
+            self?.applyNavigateDragOffset(deltaX)
+        }
+        leftButton.onDragEnd = { [weak self] deltaX in
+            self?.resetNavigateDragOffset()
+        }
+
+        let rightButton = NavigationButtonView(isLeft: false, onTap: { [weak self] in
+            self?.goNext()
+        }, onDrag: { [weak self] deltaX in
+            // Drag right (positive) = go to previous, drag left (negative) = go to next
+            if deltaX > 0 {
+                self?.goPrevious()
+            } else {
+                self?.goNext()
+            }
+        })
+        rightButton.onDragProgress = { [weak self] deltaX in
+            self?.applyNavigateDragOffset(deltaX)
+        }
+        rightButton.onDragEnd = { [weak self] deltaX in
+            self?.resetNavigateDragOffset()
+        }
+
+        container?.leftNavButton = leftButton
+        container?.rightNavButton = rightButton
+        container?.addSubview(leftButton)
+        container?.addSubview(rightButton)
+    }
+
+    /// Update navigation button visibility based on image count.
+    private func updateNavButtonsVisibility() {
+        // Navigation buttons are only active when there are multiple images
+        let hasImages = imageURLs.count > 1
+        container?.leftNavButton?.hasImages = hasImages
+        container?.rightNavButton?.hasImages = hasImages
+        if !hasImages {
+            container?.leftNavButton?.alphaValue = 0
+            container?.rightNavButton?.alphaValue = 0
+        }
+    }
+
+    // MARK: - Navigate drag visual feedback
+
+    /// Current visual offset applied during drag-to-navigate.
+    private var navigateDragOffset: CGFloat = 0
+    /// Preloaded adjacent image for smooth drag transition.
+    private var adjacentImage: NSImage?
+    /// Adjacent image view overlay for drag transition.
+    private var adjacentImageView: NSView?
+
+    /// Apply a visual offset to the image during navigation drag.
+    /// Also shows the adjacent image sliding in.
+    private func applyNavigateDragOffset(_ deltaX: CGFloat) {
+        guard let imageView = container?.imageView else { return }
+        navigateDragOffset = deltaX
+
+        // Determine which adjacent image to show
+        let goingNext = deltaX < 0
+        let adjacentIndex = goingNext ? currentIndex + 1 : currentIndex - 1
+
+        // Only show transition if there's a valid adjacent image
+        guard adjacentIndex >= 0 && adjacentIndex < imageURLs.count else {
+            imageView.setNavigateDragOffset(deltaX)
+            return
+        }
+
+        // Preload adjacent image if not already loaded
+        if adjacentImage == nil {
+            let adjacentURL = imageURLs[adjacentIndex]
+            adjacentImage = loadImageForTransition(at: adjacentURL)
+        }
+
+        // Create or update adjacent image overlay
+        if adjacentImageView == nil, let adjImage = adjacentImage {
+            let overlay = NSView(frame: imageView.bounds)
+            overlay.wantsLayer = true
+
+            let imgView = NSImageView(frame: overlay.bounds)
+            imgView.image = adjImage
+            imgView.imageScaling = .scaleProportionallyUpOrDown
+            overlay.addSubview(imgView)
+
+            imageView.addSubview(overlay)
+            adjacentImageView = overlay
+        }
+
+        // Position both images for smooth transition
+        imageView.setNavigateDragOffset(deltaX)
+
+        // Position adjacent image based on drag direction
+        if let adjOverlay = adjacentImageView {
+            let viewWidth = imageView.bounds.width
+            if goingNext {
+                // Next image comes from the right
+                adjOverlay.frame.origin.x = viewWidth + deltaX
+            } else {
+                // Previous image comes from the left
+                adjOverlay.frame.origin.x = -viewWidth + deltaX
+            }
+        }
+    }
+
+    /// Reset the visual offset after navigation drag ends.
+    private func resetNavigateDragOffset() {
+        guard let imageView = container?.imageView else { return }
+        navigateDragOffset = 0
+        imageView.setNavigateDragOffset(0)
+
+        // Remove adjacent image overlay with animation
+        if let overlay = adjacentImageView {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                overlay.animator().alphaValue = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak overlay] in
+                overlay?.removeFromSuperview()
+            }
+        }
+
+        adjacentImageView = nil
+        adjacentImage = nil
+    }
+
+    /// Load an image for transition (simplified, no rotation).
+    private func loadImageForTransition(at url: URL) -> NSImage? {
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        return image
+    }
+
+    // MARK: - Zoom notification overlay
+
+    /// Show a zoom change notification on the image for 1 second.
+    private func showZoomNotification(_ percent: Int) {
+        guard let imageView = container?.imageView else { return }
+
+        // Remove any existing zoom notification
+        hideZoomNotification()
+
+        let label = NSTextField(labelWithString: "\(percent)%")
+        label.font = NSFont.systemFont(ofSize: 48, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.isEditable = false
+        label.isBezeled = false
+        label.isBordered = false
+        label.backgroundColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.5)
+        label.sizeToFit()
+
+        let labelWidth = label.frame.width + 40
+        let labelHeight = label.frame.height + 20
+        let labelX = (imageView.bounds.width - labelWidth) / 2
+        let labelY = (imageView.bounds.height - labelHeight) / 2
+
+        label.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: labelHeight)
+
+        // Create container with rounded corners
+        let container = NSView(frame: label.frame)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.5).cgColor
+        container.layer?.cornerRadius = 10
+
+        label.frame = NSRect(x: 20, y: 10, width: label.frame.width - 40, height: label.frame.height - 20)
+        container.addSubview(label)
+
+        imageView.addSubview(container)
+
+        // Animate in
+        container.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            container.animator().alphaValue = 1
+        }
+
+        // Auto-hide after 1 second
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak container] in
+            guard let container = container else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                container.animator().alphaValue = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                container.removeFromSuperview()
+            }
+        }
+    }
+
+    private func hideZoomNotification() {
+        // Remove any existing zoom notification views
+        if let imageView = container?.imageView {
+            for subview in imageView.subviews {
+                if subview !== container?.leftNavButton && subview !== container?.rightNavButton {
+                    // Check if it's a zoom notification (has a text field with % in it)
+                    for sub in subview.subviews {
+                        if let tf = sub as? NSTextField, tf.stringValue.hasSuffix("%") {
+                            subview.removeFromSuperview()
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Update the bottom status bar: filename / size / file size / zoom ratio / index-total.
     private func updateStatusBar() {
-        guard let label = statusBarLabel else { return }
+        guard let statusBar = statusBar else { return }
 
         if imageURLs.isEmpty || currentIndex < 0 || currentIndex >= imageURLs.count {
-            label.attributedStringValue = Self.statusString(L10n.shared.t("Open or drag images here"))
+            statusBar.filenameLabel.stringValue = L10n.shared.t("Open or drag images here")
+            statusBar.resolutionLabel.stringValue = ""
+            statusBar.fileSizeLabel.stringValue = ""
+            statusBar.indexLabel.stringValue = ""
+            statusBar.aiMarkLabel.stringValue = ""
+            statusBar.setZoomPercentage(100)
             return
         }
 
         let url = imageURLs[currentIndex]
 
-        // Fixed-width fields (in characters)
-        let filenameWidth = 30
-        let resolutionWidth = 15
-        let fileSizeWidth = 10
-        let zoomWidth = 8
-
-        // Build filename with truncation
-        let filename = truncatedFilename(url.lastPathComponent, maxWidth: filenameWidth)
-
-        // Build resolution string
-        var resolution = ""
-        if let size = currentPixelSize() {
-            resolution = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
-            if currentImageIsScaled {
-                resolution += " (\(L10n.shared.t("scaled")))"
-            }
-        }
-        resolution = paddedRight(resolution, width: resolutionWidth)
+        // Build filename with middle truncation (~~~ for > 30 chars)
+        let filename = url.lastPathComponent
+        statusBar.filenameLabel.stringValue = truncateFilenameMiddle(filename, maxChars: 30)
 
         // Build file size string
         var fileSizeStr = ""
@@ -1020,24 +1264,56 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 fileSizeStr = String(format: "%.2f GB", Double(fileSize) / (1024.0 * 1024.0 * 1024.0))
             }
         }
-        fileSizeStr = paddedRight(fileSizeStr, width: fileSizeWidth)
+        statusBar.fileSizeLabel.stringValue = fileSizeStr
 
-        // Build zoom string
-        let zoomStr = paddedRight(String(format: "%.0f%%", currentZoomRatio() * 100), width: zoomWidth)
+        // Build resolution string
+        var resolution = ""
+        if let size = currentPixelSize() {
+            resolution = "\(Int(size.width.rounded()))x\(Int(size.height.rounded())) px"
+            if currentImageIsScaled {
+                resolution += " (\(L10n.shared.t("scaled")))"
+            }
+        }
+        statusBar.resolutionLabel.stringValue = resolution
+
+        // Update zoom percentage display
+        let zoomPercent = Int((currentZoomRatio() * 100).rounded())
+        statusBar.setZoomPercentage(zoomPercent)
 
         // Build index string
         let indexStr = "\(currentIndex + 1) / \(imageURLs.count)"
+        statusBar.indexLabel.stringValue = indexStr
 
-        // Combine all parts
-        let statusText = "\(filename)   \(resolution)   \(fileSizeStr)   \(zoomStr)   \(indexStr)"
+        // AI mark
+        statusBar.aiMarkLabel.stringValue = aiStates[url]?.activeMark ?? ""
+    }
 
-        // Add AI mark if present
-        var finalText = statusText
-        if let mark = aiStates[url]?.activeMark {
-            finalText += "   \(mark)"
+    /// Truncate filename in the middle with ~~~ if longer than maxChars.
+    private func truncateFilenameMiddle(_ filename: String, maxChars: Int) -> String {
+        guard filename.count > maxChars else { return filename }
+
+        let ext = (filename as NSString).pathExtension
+        let nameWithoutExt = ext.isEmpty ? filename : (filename as NSString).deletingPathExtension
+
+        // Reserve space for extension and ~~~
+        let reserved = ext.isEmpty ? 3 : ext.count + 4  // 3 for ~~~, 1 for dot
+        let availableForName = maxChars - reserved
+
+        if availableForName < 3 {
+            return String(filename.prefix(maxChars))
         }
 
-        label.attributedStringValue = Self.statusString(finalText)
+        let prefixCount = availableForName / 2
+        let suffixCount = availableForName - prefixCount
+
+        let prefix = String(nameWithoutExt.prefix(prefixCount))
+        let suffix = String(nameWithoutExt.suffix(suffixCount))
+
+        if ext.isEmpty {
+            return "\(prefix)~~~\(suffix)"
+        } else {
+            return "\(prefix)~~~\(suffix).\(ext)"
+        }
     }
 
     /// Truncate filename to fit within maxWidth characters.
@@ -3463,8 +3739,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// filename/size/zoom/index content is restored after `duration` seconds
     /// (navigation rewrites it earlier anyway).
     private func showStatusBarHint(_ message: String, for duration: TimeInterval) {
-        guard let label = statusBarLabel else { return }
-        label.attributedStringValue = Self.statusString(message)
+        guard let statusBar = statusBar else { return }
+        statusBar.filenameLabel.stringValue = message
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             self?.updateStatusBar()
         }
@@ -3714,7 +3990,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Flash the bottom status bar with `message`: alternate the label color
     /// between orange and normal for ~8 ticks, then restore it.
     private func blinkStatusBarHint(_ message: String) {
-        guard statusBarLabel != nil else { return }
+        guard statusBar != nil else { return }
         blinkMessage = message
         blinkRemainingTicks = 8
         blinkTimer?.invalidate()
@@ -3724,13 +4000,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if self.blinkRemainingTicks <= 0 {
                 timer.invalidate()
                 self.blinkTimer = nil
-                self.statusBarLabel?.textColor = Self.statusBarTextColor
+                self.statusBar?.filenameLabel.textColor = Self.statusBarTextColor
                 self.updateStatusBar()
                 return
             }
             let on = (self.blinkRemainingTicks % 2 == 0)
-            self.statusBarLabel?.attributedStringValue = Self.statusString(self.blinkMessage)
-            self.statusBarLabel?.textColor = on ? AutoHideToolbar.buttonColor : Self.statusBarTextColor
+            self.statusBar?.filenameLabel.stringValue = self.blinkMessage
+            self.statusBar?.filenameLabel.textColor = on ? AutoHideToolbar.buttonColor : Self.statusBarTextColor
         }
     }
 

@@ -60,7 +60,17 @@ class ZoomableImageView: NSView {
     private(set) var nextToggleIsFit: Bool = true
 
     /// Called after any zoom change so the status bar can refresh in real time.
-    var onZoomChange: (() -> Void)?
+    /// Parameter: isUserInitiated - true if the zoom was triggered by user action (scroll, pinch, button), false for programmatic changes.
+    var onZoomChange: ((Bool) -> Void)?
+
+    /// Called when a horizontal drag gesture is detected in fit mode.
+    /// Positive deltaX = drag right (go to previous), negative = drag left (go to next).
+    var onNavigateFromDrag: ((CGFloat) -> Void)?
+
+    /// Called continuously during drag-to-navigate for visual feedback.
+    var onNavigateDragProgress: ((CGFloat) -> Void)?
+    /// Called when drag-to-navigate ends (delta = 0 means cancelled/reset).
+    var onNavigateDragEnd: ((CGFloat) -> Void)?
 
     // MARK: - Live Photo state
 
@@ -181,6 +191,12 @@ class ZoomableImageView: NSView {
     private var panStartPoint: NSPoint = .zero
     private var panStartOrigin: NSPoint = .zero
 
+    /// Drag-to-navigate state (horizontal drag in fit mode).
+    private var isNavigateDragging = false
+    private var navigateDragStartX: CGFloat = 0
+    /// Visual offset for navigation drag feedback.
+    private var navigateDragVisualOffset: CGFloat = 0
+
     private var trackingArea: NSTrackingArea?
 
     // MARK: - Init
@@ -285,7 +301,7 @@ class ZoomableImageView: NSView {
         centerImage()
         needsDisplay = true
         layoutLivePhotoChrome()
-        onZoomChange?()
+        onZoomChange?(false)
     }
 
     /// Zoom by a multiplicative factor, keeping the image point under `cursor` fixed.
@@ -314,7 +330,7 @@ class ZoomableImageView: NSView {
         clampOrigin()
         needsDisplay = true
         layoutLivePhotoChrome()
-        onZoomChange?()
+        onZoomChange?(true)
     }
 
     /// Zoom in by one 10% step (same factor as the wheel), centered on the view.
@@ -347,7 +363,7 @@ class ZoomableImageView: NSView {
         }
         // zoomTo100Percent is a no-op when already at exactly 100% (no callback),
         // so report the state change explicitly to keep the toolbar icon in sync.
-        onZoomChange?()
+        onZoomChange?(true)
     }
 
     private func centerImage() {
@@ -391,7 +407,7 @@ class ZoomableImageView: NSView {
         }
         needsDisplay = true
         layoutLivePhotoChrome()
-        onZoomChange?()
+        onZoomChange?(false)
     }
 
     // MARK: - Mouse / wheel / pinch events
@@ -445,6 +461,12 @@ class ZoomableImageView: NSView {
             return
         }
 
+        // In fit mode, track horizontal drag for navigation
+        if isFitMode {
+            isNavigateDragging = false
+            navigateDragStartX = event.locationInWindow.x
+        }
+
         // Begin panning (clamped to center when the image is smaller than the view).
         isPanning = true
         panStartPoint = convert(event.locationInWindow, from: nil)
@@ -458,6 +480,21 @@ class ZoomableImageView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             onSelectionMouseDragged?(point)
             return
+        }
+
+        // In fit mode, track horizontal drag for navigation with visual feedback
+        if isFitMode {
+            let currentX = event.locationInWindow.x
+            let deltaX = currentX - navigateDragStartX
+
+            // Start navigation drag after 10px threshold
+            if abs(deltaX) > 10 {
+                isNavigateDragging = true
+                isPanning = false
+                // Provide continuous drag progress for visual image movement
+                onNavigateDragProgress?(deltaX)
+                return
+            }
         }
 
         guard isPanning else { return }
@@ -475,6 +512,21 @@ class ZoomableImageView: NSView {
         // Selection mode: forward to callback
         if isSelectionMode {
             onSelectionMouseUp?()
+            return
+        }
+
+        // Handle navigation drag end
+        if isNavigateDragging {
+            let currentX = event.locationInWindow.x
+            let deltaX = currentX - navigateDragStartX
+
+            // Trigger navigation if dragged enough (> 50px)
+            if abs(deltaX) > 50 {
+                onNavigateFromDrag?(deltaX)
+            }
+            // Reset visual drag
+            onNavigateDragEnd?(deltaX)
+            isNavigateDragging = false
             return
         }
 
@@ -536,6 +588,14 @@ class ZoomableImageView: NSView {
         } else {
             NSCursor.arrow.set()
         }
+    }
+
+    /// Apply a visual offset for navigation drag feedback (used in fit mode).
+    func setNavigateDragOffset(_ offset: CGFloat) {
+        guard isFitMode else { return }
+        navigateDragVisualOffset = offset
+        needsDisplay = true
+        layoutLivePhotoChrome()
     }
 
     // MARK: - Live Photo playback
@@ -721,7 +781,12 @@ class ZoomableImageView: NSView {
         bounds.fill()
 
         guard let size = drawnSize(), let context = NSGraphicsContext.current else { return }
-        let rect = NSRect(origin: imageOrigin, size: size)
+        // Apply navigation drag visual offset
+        var drawOrigin = imageOrigin
+        if isFitMode && navigateDragVisualOffset != 0 {
+            drawOrigin.x += navigateDragVisualOffset
+        }
+        let rect = NSRect(origin: drawOrigin, size: size)
 
         // Clip to the view so a zoomed/panned image never overdraws the status bar.
         context.saveGraphicsState()

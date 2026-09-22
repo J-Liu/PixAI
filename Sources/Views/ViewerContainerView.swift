@@ -16,8 +16,7 @@ import UniformTypeIdentifiers
 /// corner, y increases upward (see NSView.isFlipped).
 class ViewerContainerView: NSView {
     var imageView: ZoomableImageView?
-    var statusBar: NSView?
-    var statusLabel: NSTextField?
+    var statusBar: StatusBarView?
     var toolbar: AutoHideToolbar?
     var placeholder: PlaceholderView?
     var keyboardHandler: KeyboardHandlerView?
@@ -25,14 +24,18 @@ class ViewerContainerView: NSView {
     var unsupportedView: NSView?
     /// Interactive crop rectangle overlay (exactly over the image view).
     var cropOverlay: NSView?
+    /// Left edge navigation button (auto-hides).
+    var leftNavButton: NavigationButtonView?
+    /// Right edge navigation button (auto-hides).
+    var rightNavButton: NavigationButtonView?
     private let onDrop: ([URL]) -> Void
 
     /// Height of the bottom status bar.
     static let statusBarHeight: CGFloat = 28
-    /// Width of the floating toolbar (14 buttons + 6 dividers, incl. the AI group).
-    static let toolbarWidth: CGFloat = 920
+    /// Width of the floating toolbar (14 buttons + dividers, scaled for larger buttons).
+    static let toolbarWidth: CGFloat = 1180
     /// Distance of the toolbar above the status bar.
-    static let toolbarBottomInset: CGFloat = 16
+    static let toolbarBottomInset: CGFloat = 20
 
     init(onDrop: @escaping ([URL]) -> Void) {
         self.onDrop = onDrop
@@ -73,9 +76,6 @@ class ViewerContainerView: NSView {
         if let statusBar {
             statusBar.frame = NSRect(x: 0, y: 0, width: b.width, height: statusH)
         }
-        if let statusLabel {
-            statusLabel.frame = NSRect(x: 12, y: (statusH - 16) / 2, width: max(0, b.width - 24), height: 16)
-        }
 
         // Floating toolbar: horizontally centered, fixed distance above the status bar.
         if let toolbar {
@@ -115,6 +115,15 @@ class ViewerContainerView: NSView {
         // Keyboard handler: covers the whole content area (mouse passes through).
         if let keyboardHandler {
             keyboardHandler.frame = bounds
+        }
+
+        // Edge navigation buttons: full height, 120px wide, at left and right edges.
+        let navWidth: CGFloat = 120
+        if let leftNavButton {
+            leftNavButton.frame = NSRect(x: 0, y: statusH, width: navWidth, height: max(0, b.height - statusH))
+        }
+        if let rightNavButton {
+            rightNavButton.frame = NSRect(x: b.width - navWidth, y: statusH, width: navWidth, height: max(0, b.height - statusH))
         }
     }
 

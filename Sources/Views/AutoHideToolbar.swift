@@ -57,7 +57,7 @@ class AutoHideToolbar: NSView {
     static let toolbarColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.6)
 
     /// The height of the toolbar.
-    static let toolbarHeight: CGFloat = 56
+    static let toolbarHeight: CGFloat = 72
 
     /// SF Symbol shown while the next click will "fit to window".
     static let fitIconName = "arrow.down.left.and.arrow.up.right"
@@ -277,7 +277,7 @@ class AutoHideToolbar: NSView {
     }
 
     private func applySymbol(_ name: String, to button: NSButton) {
-        let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        let config = NSImage.SymbolConfiguration(pointSize: 32, weight: .semibold)
         if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
             image.isTemplate = true
             button.image = image
@@ -291,7 +291,7 @@ class AutoHideToolbar: NSView {
         button.title = ""
 
         // Orange-tinted template SF Symbol.
-        let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        let config = NSImage.SymbolConfiguration(pointSize: 32, weight: .semibold)
         if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
             image.isTemplate = true
             button.image = image
@@ -308,11 +308,11 @@ class AutoHideToolbar: NSView {
     override func layout() {
         super.layout()
 
-        let buttonSize: CGFloat = 42
-        let gap: CGFloat = 12
+        let buttonSize: CGFloat = 54
+        let gap: CGFloat = 16
         let dividerW: CGFloat = 1
-        let dividerH: CGFloat = 28
-        let dividerPad: CGFloat = 14
+        let dividerH: CGFloat = 36
+        let dividerPad: CGFloat = 18
         let rotateGroupWidth = buttonSize * 2 + gap
         let zoomGroupWidth = buttonSize * 4 + gap * 3
         let aiGroupWidth = buttonSize * 4 + gap * 3
