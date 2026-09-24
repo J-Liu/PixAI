@@ -53,6 +53,21 @@ class AutoHideToolbar: NSView {
     /// Called when toolbar visibility changes due to hover (true = visible, false = hidden).
     var onVisibilityChange: ((Bool) -> Void)?
 
+    /// When false, hover activation is disabled (for crop/watermark selection).
+    var hoverEnabled: Bool = true {
+        didSet {
+            if !hoverEnabled && isHovered {
+                // Force hide if currently hovered
+                isHovered = false
+                onVisibilityChange?(false)
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    self.animator().alphaValue = AppConfig.shared.toolbarHiddenAlpha
+                }
+            }
+        }
+    }
+
     /// The color for the toolbar buttons (bright orange).
     static let buttonColor = NSColor(red: 1.0, green: 0.55, blue: 0.0, alpha: 1.0) // Bright orange
 
@@ -442,6 +457,7 @@ class AutoHideToolbar: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard hoverEnabled else { return }
         isHovered = true
         onVisibilityChange?(true)
         NSAnimationContext.runAnimationGroup { context in

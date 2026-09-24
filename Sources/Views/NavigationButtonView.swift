@@ -38,6 +38,16 @@ class NavigationButtonView: NSView {
         }
     }
 
+    /// When false, hover activation is disabled (for crop/watermark selection).
+    var hoverEnabled: Bool = true {
+        didSet {
+            if !hoverEnabled && isHovered {
+                // Force hide if currently hovered
+                hide()
+            }
+        }
+    }
+
     private var isHovered = false
     private var dragStartPoint: NSPoint?
     private var isDragging = false
@@ -119,6 +129,7 @@ class NavigationButtonView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard hoverEnabled else { return }
         isHovered = true
         // Only show if images are loaded AND toolbar is not visible
         guard hasImages && !toolbarIsVisible else { return }

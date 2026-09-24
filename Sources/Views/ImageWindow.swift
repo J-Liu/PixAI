@@ -2331,6 +2331,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         watermarkSelectionMode = true
         watermarkSelectionRect = .zero
 
+        // Disable toolbar/nav button hover during selection
+        container?.toolbar?.hoverEnabled = false
+        container?.leftNavButton?.hoverEnabled = false
+        container?.rightNavButton?.hoverEnabled = false
+
         // Set up selection mode on image view
         guard let imageView = container?.imageView else { return }
         imageView.isSelectionMode = true
@@ -2516,6 +2521,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         watermarkSelectionRect = .zero
         watermarkSelectionOverlay?.removeFromSuperview()
         watermarkSelectionOverlay = nil
+
+        // Re-enable toolbar/nav button hover
+        container?.toolbar?.hoverEnabled = true
+        container?.leftNavButton?.hoverEnabled = true
+        container?.rightNavButton?.hoverEnabled = true
 
         // Clear selection mode on image view
         if let imageView = container?.imageView {
@@ -4022,6 +4032,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         container?.cropOverlay = overlay
         cropOverlay = overlay
         cropMode = true
+
+        // Disable toolbar/nav button hover during crop
+        container?.toolbar?.hoverEnabled = false
+        container?.leftNavButton?.hoverEnabled = false
+        container?.rightNavButton?.hoverEnabled = false
     }
 
     /// Exit crop mode without saving (Esc / crop button again).
@@ -4032,6 +4047,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         cropOverlay = nil
         container?.cropOverlay = nil
         cropRectPixels = .zero
+
+        // Re-enable toolbar/nav button hover
+        container?.toolbar?.hoverEnabled = true
+        container?.leftNavButton?.hoverEnabled = true
+        container?.rightNavButton?.hoverEnabled = true
     }
 
     /// Crop the current source image (active AI result when applied, otherwise
