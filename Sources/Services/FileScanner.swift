@@ -64,6 +64,6 @@ class FileScanner {
             }
         }
 
-        return results.sorted { $0.absoluteString < $1.absoluteString }
+        return results.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 }
