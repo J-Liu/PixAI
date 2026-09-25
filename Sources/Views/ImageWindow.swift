@@ -24,6 +24,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private var imageURLs: [URL] = []
     /// Current image index.
     private var currentIndex: Int = 0
+    /// Initial load index for single file drag (to show dragged file, not first in sorted list)
+    private var initialLoadIndex: Int?
     /// Monotonic counter used to discard stale async image loads.
     private var loadGeneration: Int = 0
     /// The original (unrotated) image of the current file. Rotations are always
@@ -596,21 +598,29 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 Logger.shared.log("Temp file opened: skipping directory scan, using single file only")
             } else if FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path) {
                 let parentDir = file.deletingLastPathComponent()
-                // Scan the directory for all photo files (excluding the dragged file)
+                // Scan the directory for all photo files
                 let allImages = scanDirectoryOnly(parentDir)
-                var otherImages: [URL] = []
-                for img in allImages {
-                    if img != file {
-                        otherImages.append(img)
+
+                Logger.shared.log("Single file case: parentDir=\(parentDir), allImages.count=\(allImages.count)")
+
+                // Use all images (already sorted), then find the dragged file's index
+                imageUrls = allImages
+                initialLoadIndex = 0  // Default to first
+
+                // Find the index of the dragged file in the sorted list
+                if let idx = imageUrls.firstIndex(of: file) {
+                    initialLoadIndex = idx
+                    Logger.shared.log("Single file opened: found dragged file at index \(idx) in sorted list")
+                } else {
+                    // Dragged file not in scan results (shouldn't happen), add it and re-sort
+                    imageUrls.append(file)
+                    imageUrls.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                    // Find it again after sorting
+                    if let idx = imageUrls.firstIndex(of: file) {
+                        initialLoadIndex = idx
                     }
+                    Logger.shared.log("Single file opened: added dragged file to list, re-sorted")
                 }
-
-                Logger.shared.log("Single file case: parentDir=\(parentDir), allImages.count=\(allImages.count), otherImages.count=\(otherImages.count)")
-
-                // Put the dragged file first, then other images
-                imageUrls = [file] + otherImages
-
-                Logger.shared.log("Single file opened: dragged file first, then \(otherImages.count) other images")
             } else {
                 // Parent doesn't exist, use the single file
                 imageUrls = FileScanner.scan(urls: [file])
@@ -642,7 +652,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
 
         imageURLs = imageUrls
-        currentIndex = 0
+        // Use initialLoadIndex if set (for single file drag), otherwise start at 0
+        let startIdx = initialLoadIndex ?? 0
+        initialLoadIndex = nil  // Reset for next load
+        currentIndex = startIdx
 
         // Clear overlay state for new images
         pastedOverlays.removeAll()
@@ -656,7 +669,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         updateNavButtonsVisibility()
 
         if !imageURLs.isEmpty {
-            loadImage(at: 0)
+            loadImage(at: startIdx)
         } else {
             window.title = "PixAI"
             container?.placeholder?.isHidden = false
@@ -690,7 +703,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         } catch {
             Logger.shared.log("Failed to scan directory \(directory): \(error)")
         }
-        return results.sorted { $0.absoluteString < $1.absoluteString }
+        return results.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     /// Load and display the image at the given index.
@@ -2877,6 +2890,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             overlay.removeFromSuperview()
             pastedOverlays.removeAll { $0 === overlay }
             Logger.shared.log("Undid paste")
+            // If no more overlays, mark as saved
+            if pastedOverlays.isEmpty, currentIndex >= 0, currentIndex < imageURLs.count {
+                overlaysSaved[imageURLs[currentIndex]] = true
+            }
 
         case .delete(let overlay, let frame):
             // Undo delete: restore the overlay
@@ -2884,6 +2901,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             container?.imageView?.addSubview(overlay)
             pastedOverlays.append(overlay)
             Logger.shared.log("Undid delete")
+            // Overlay restored, mark as unsaved
+            if currentIndex >= 0, currentIndex < imageURLs.count {
+                overlaysSaved[imageURLs[currentIndex]] = false
+            }
 
         case .transform(let overlay, let oldFrame):
             // Undo transform: restore the old frame
@@ -4303,50 +4324,167 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     // MARK: - Rename
 
+    private var renameEventMonitor: Any?
+
     /// Rename the current image file (same directory, same extension).
     func renameCurrentImage() {
         guard !batchRunning, !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
         let url = imageURLs[currentIndex]
 
-        let alert = NSAlert()
-        alert.messageText = L10n.shared.t("Rename image")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        // Create a panel (sheet) with proper keyboard handling
+        let sheet = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+                            styleMask: [.titled, .closable],
+                            backing: .buffered,
+                            defer: false)
+        sheet.title = L10n.shared.t("Rename image")
+        sheet.isReleasedWhenClosed = false
+        sheet.hidesOnDeactivate = false
+        sheet.becomesKeyOnlyIfNeeded = false
+
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+
+        // Text field
+        let field = NSTextField(frame: NSRect(x: 20, y: 60, width: 280, height: 24))
         field.stringValue = url.deletingPathExtension().lastPathComponent
-        alert.accessoryView = field
-        alert.addButton(withTitle: L10n.shared.t("Rename"))
-        alert.addButton(withTitle: L10n.shared.t("Cancel"))
-        window.makeKeyAndOrderFront(nil)
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self = self, response == .alertFirstButtonReturn else { return }
-            let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !newName.isEmpty else { return }
-            var dest = url.deletingLastPathComponent().appendingPathComponent(newName)
-            let ext = url.pathExtension
-            if !ext.isEmpty { dest.appendPathExtension(ext) }
-            guard dest != url else { return }
-            do {
-                try FileManager.default.moveItem(at: url, to: dest)
-                // Carry the per-image AI state over to the new URL.
-                if let state = self.aiStates[url] {
-                    self.aiStates[dest] = state
-                    self.aiStates[url] = nil
+        field.isEditable = true
+        field.bezelStyle = .roundedBezel
+        field.allowsEditingTextAttributes = true
+        contentView.addSubview(field)
+
+        // Buttons
+        let renameBtn = NSButton(frame: NSRect(x: 110, y: 15, width: 90, height: 28))
+        renameBtn.title = L10n.shared.t("Rename")
+        renameBtn.bezelStyle = .rounded
+        renameBtn.keyEquivalent = "\r"  // Enter key
+        contentView.addSubview(renameBtn)
+
+        let cancelBtn = NSButton(frame: NSRect(x: 210, y: 15, width: 90, height: 28))
+        cancelBtn.title = L10n.shared.t("Cancel")
+        cancelBtn.bezelStyle = .rounded
+        cancelBtn.keyEquivalent = "\u{1b}"  // Escape key
+        contentView.addSubview(cancelBtn)
+
+        sheet.contentView = contentView
+
+        // Button actions
+        renameBtn.target = self
+        renameBtn.action = #selector(handleRenameConfirm)
+        cancelBtn.target = self
+        cancelBtn.action = #selector(handleRenameCancel)
+
+        // Store references
+        renameField = field
+        renameSheet = sheet
+        renameURL = url
+
+        // Install local event monitor for Cmd+C/V/A/Z/X while rename sheet is active
+        renameEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak field] event in
+            guard let field = field, let sheet = self?.renameSheet, sheet.isVisible else {
+                return event
+            }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods.contains(.command) else { return event }
+
+            let editor = field.currentEditor()
+            switch event.charactersIgnoringModifiers {
+            case "c":
+                editor?.copy(nil)
+                return nil
+            case "v":
+                editor?.paste(nil)
+                return nil
+            case "x":
+                editor?.cut(nil)
+                return nil
+            case "a":
+                editor?.selectAll(nil)
+                return nil
+            case "z", "Z":
+                // Get undoManager from field editor (NSTextView)
+                let undoMgr: UndoManager? = editor?.undoManager ?? sheet.undoManager
+                Logger.shared.log("undo/redo: editor=\(editor != nil), undoMgr=\(undoMgr != nil), canUndo=\(undoMgr?.canUndo ?? false), canRedo=\(undoMgr?.canRedo ?? false)")
+                if let undoMgr = undoMgr {
+                    if mods.contains(.shift) {
+                        Logger.shared.log("redo: canRedo=\(undoMgr.canRedo)")
+                        if undoMgr.canRedo {
+                            undoMgr.redo()
+                            Logger.shared.log("redo executed, now canRedo=\(undoMgr.canRedo)")
+                        }
+                    } else {
+                        Logger.shared.log("undo: canUndo=\(undoMgr.canUndo)")
+                        if undoMgr.canUndo {
+                            undoMgr.undo()
+                            Logger.shared.log("undo executed, now canRedo=\(undoMgr.canRedo)")
+                        }
+                    }
                 }
-                self.imageURLs[self.currentIndex] = dest
-                ImageCache.shared.removeAll()
-                // The pixel content is unchanged; re-display under the new URL.
-                if let base = self.baseImage {
-                    self.displayImage(base, at: dest)
-                    self.updateWindowTitle()
-                    self.updateStatusBar()
-                    self.updateAIToolbarState()
-                }
-                Logger.shared.log("Renamed \(url.lastPathComponent) → \(dest.lastPathComponent)")
-                self.showStatusMessage(L10n.shared.tf("Renamed to %@", dest.lastPathComponent))
-            } catch {
-                Logger.shared.log("Rename failed: \(error.localizedDescription)")
-                self.showStatusMessage(L10n.shared.tf("Rename failed: %@", error.localizedDescription))
+                return nil
+            default:
+                return event
             }
         }
+
+        window.makeKeyAndOrderFront(nil)
+        window.beginSheet(sheet) { [weak self] _ in
+            // Remove event monitor when sheet closes
+            if let monitor = self?.renameEventMonitor {
+                NSEvent.removeMonitor(monitor)
+                self?.renameEventMonitor = nil
+            }
+            self?.renameField = nil
+            self?.renameSheet = nil
+            self?.renameURL = nil
+        }
+
+        // Set focus to text field after sheet is shown
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            sheet.makeKeyAndOrderFront(nil)
+            sheet.makeFirstResponder(field)
+            field.selectText(nil)  // Select all text
+        }
+    }
+
+    private var renameField: NSTextField?
+    private var renameSheet: NSWindow?
+    private var renameURL: URL?
+
+    @objc private func handleRenameConfirm() {
+        guard let field = renameField, let url = renameURL, let sheet = renameSheet else { return }
+        window.endSheet(sheet)
+
+        let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else { return }
+        var dest = url.deletingLastPathComponent().appendingPathComponent(newName)
+        let ext = url.pathExtension
+        if !ext.isEmpty { dest.appendPathExtension(ext) }
+        guard dest != url else { return }
+        do {
+            try FileManager.default.moveItem(at: url, to: dest)
+            // Carry the per-image AI state over to the new URL.
+            if let state = aiStates[url] {
+                aiStates[dest] = state
+                aiStates[url] = nil
+            }
+            imageURLs[currentIndex] = dest
+            ImageCache.shared.removeAll()
+            // The pixel content is unchanged; re-display under the new URL.
+            if let base = baseImage {
+                displayImage(base, at: dest)
+                updateWindowTitle()
+                updateStatusBar()
+                updateAIToolbarState()
+            }
+            Logger.shared.log("Renamed \(url.lastPathComponent) → \(dest.lastPathComponent)")
+            showStatusMessage(L10n.shared.tf("Renamed to %@", dest.lastPathComponent))
+        } catch {
+            Logger.shared.log("Rename failed: \(error.localizedDescription)")
+            showStatusMessage(L10n.shared.tf("Rename failed: %@", error.localizedDescription))
+        }
+    }
+
+    @objc private func handleRenameCancel() {
+        guard let sheet = renameSheet else { return }
+        window.endSheet(sheet)
     }
 
     // MARK: - Zoom (menu / context-menu entry points)
