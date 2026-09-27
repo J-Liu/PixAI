@@ -5,5 +5,17 @@
         <link>https://J-Liu.github.io/PixAI/appcast.xml</link>
         <description>PixAI releases</description>
         <language>en</language>
+    <item>
+    <title>Version 0.1.8</title>
+    <pubDate>Sun, 27 Sep 2026 09:05:21 +0000</pubDate>
+    <sparkle:version>1</sparkle:version>
+    <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+    <enclosure
+        url="https://github.com/J-Liu/PixAI/releases/download/v0.1.8/PixAI-0.1.8.zip"
+        sparkle:edSignature="S/zogIyaY4x6vgsz+fbXifBrKHurvtumkEo6EW4qQz+KLDejQGyHtFQrbPbe72d9qtzDKe06CcGyvqHvH3q5Aw=="
+        length="5362522"
+        type="application/octet-stream"/>
+</item>
     </channel>
 </rss>
