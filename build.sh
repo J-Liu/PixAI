@@ -32,6 +32,10 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_OUTPUT" "$APP_BUNDLE/Contents/MacOS/PixAI"
 chmod +x "$APP_BUNDLE/Contents/MacOS/PixAI"
 
+# Add rpath for embedded frameworks
+install_name_tool -add_rpath @executable_path/../Frameworks "$APP_BUNDLE/Contents/MacOS/PixAI"
+echo "   🔧 Added rpath for frameworks"
+
 # Copy compiled icon (Assets.car from Resources/Compiled)
 if [ -f "$SCRIPT_DIR/Resources/Compiled/Assets.car" ]; then
     cp "$SCRIPT_DIR/Resources/Compiled/Assets.car" "$APP_BUNDLE/Contents/Resources/Assets.car"
