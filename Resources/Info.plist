@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>PixAI</string>
     <key>CFBundleIdentifier</key>
-    <string>com.pixai.app</string>
+    <string>com.jialiu.pixai</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
@@ -50,5 +50,9 @@
             </array>
         </dict>
     </array>
+    <key>SUFeedURL</key>
+    <string>https://J-Liu.github.io/PixAI/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>Vr9i2AX1988R8LnDdU7JA4nuERui7jzJc3hM1xgQ4eo=</string>
 </dict>
 </plist>
