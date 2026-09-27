@@ -1,43 +1,130 @@
-name: Release
+name: Build macOS App
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: [ 'v*' ]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 60
+    runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Show Swift version
-        run: swift --version
+    - name: Cache Swift packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          .build
+          ~/Library/Caches/org.swift.swiftpm
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
 
-      - name: Build app bundle
-        run: |
-          chmod +x build.sh
-          ./build.sh
+    - name: Build and package
+      run: |
+        chmod +x build.sh
+        ./build.sh
 
-      - name: Verify app bundle
-        run: |
-          ls -la PixAI.app
-          test -d PixAI.app
+    - name: Create ZIP for Sparkle
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        VERSION="${GITHUB_REF_NAME#v}"
+        zip -r "PixAI-${VERSION}.zip" PixAI.app
 
-      - name: Package
-        run: |
-          zip -r PixAI.zip PixAI.app
+    - name: Sign update
+      if: startsWith(github.ref, 'refs/tags/')
+      id: sign
+      run: |
+        VERSION="${GITHUB_REF_NAME#v}"
+        ZIP="PixAI-${VERSION}.zip"
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: PixAI.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        echo "${{ secrets.SPARKLE_PRIVATE_KEY }}" > /tmp/sparkle_key.txt
+        RAW=$(./.build/artifacts/sparkle/Sparkle/bin/sign_update "$ZIP" --ed-key-file /tmp/sparkle_key.txt)
+        rm /tmp/sparkle_key.txt
+
+        # Extract just the base64 signature from: sparkle:edSignature="..." length="..."
+        SIGNATURE=$(echo "$RAW" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+
+        LENGTH=$(stat -f%z "$ZIP")
+        BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" PixAI.app/Contents/Info.plist)
+
+        echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
+        echo "length=$LENGTH" >> "$GITHUB_OUTPUT"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+    - name: Upload app bundle
+      uses: actions/upload-artifact@v4
+      with:
+        name: PixAI-app
+        path: PixAI.app
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          PixAI-*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update appcast
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        VERSION="${{ steps.sign.outputs.version }}"
+        SIGNATURE="${{ steps.sign.outputs.signature }}"
+        LENGTH="${{ steps.sign.outputs.length }}"
+        BUILD="${{ steps.sign.outputs.build }}"
+        DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+        # Build the new item block
+        NEW_ITEM=$(cat <<EOF
+        <item>
+            <title>Version ${VERSION}</title>
+            <pubDate>${DATE}</pubDate>
+            <sparkle:version>${BUILD}</sparkle:version>
+            <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/J-Liu/PixAI/releases/download/v${VERSION}/PixAI-${VERSION}.zip"
+                sparkle:edSignature="${SIGNATURE}"
+                length="${LENGTH}"
+                type="application/octet-stream"/>
+        </item>
+        EOF
+        )
+
+        # Insert the new item right after <language>en</language>
+        python3 - <<PYEOF
+        import re
+        path = "docs/appcast.xml"
+        with open(path) as f:
+            content = f.read()
+
+        new_item = """${NEW_ITEM}"""
+
+        content = re.sub(
+            r'(<language>en</language>)',
+            r'\1\n    ' + new_item,
+            content,
+            count=1
+        )
+
+        with open(path, "w") as f:
+            f.write(content)
+        PYEOF
+
+        # Commit and push
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add docs/appcast.xml
+        git commit -m "Update appcast for v${VERSION}"
+        git push origin HEAD:main

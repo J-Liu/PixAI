@@ -3,6 +3,7 @@
 
 import AppKit
 import UniformTypeIdentifiers
+import Sparkle
 
 /// The application delegate. Sets up the menu bar and manages viewer windows.
 /// Closing a window (Cmd+W) does NOT quit the app; Cmd+N opens a new blank window.
@@ -77,12 +78,9 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             _ = self?.makeNewWindow(paths: [])
         }
 
-        // Check for Updates: open the GitHub releases page (hardcoded URL, no
-        // real version check).
-        MenuBuilder.checkForUpdatesCallback = {
-            if let url = URL(string: "https://github.com/J-Liu/PixAI/releases") {
-                NSWorkspace.shared.open(url)
-            }
+        // Check for Updates: use Sparkle for automatic updates.
+        MenuBuilder.checkForUpdatesCallback = { [weak self] in
+            self?.checkForUpdates()
         }
 
         // Preferences (Cmd+,): show the shared Preferences window.
@@ -232,5 +230,17 @@ class PixAIApp: NSObject, NSApplicationDelegate {
                 PreferencesWindow.shared.showAIModelsTab()
             }
         }
+    }
+
+    // MARK: - Sparkle Updates
+
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
+
+    private func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
     }
 }

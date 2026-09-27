@@ -12,28 +12,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="PixAI.app"
 APP_BUNDLE="$SCRIPT_DIR/$APP_NAME"
-BUILD_OUTPUT="$SCRIPT_DIR/.build/arm64-apple-macosx/release/PixAI"
+BUILD_OUTPUT="$SCRIPT_DIR/.build/release/PixAI"
+SPARKLE_FRAMEWORK="$SCRIPT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 
 echo "🔨 Building PixAI..."
 cd "$SCRIPT_DIR"
-rm -rf .build/module-cache
-mkdir -p .build/arm64-apple-macosx/release
 
-# CoreML-based build (no ExecuTorch dependencies)
-SWIFT_PACKAGE_NO_SANDBOX=1 xcrun swiftc \
-    -O \
-    -whole-module-optimization \
-    -enable-bare-slash-regex \
-    -enable-testing \
-    -parse-as-library \
-    -module-name PixAI \
-    -emit-executable \
-    -o "$BUILD_OUTPUT" \
-    -module-cache-path "$SCRIPT_DIR/.build/module-cache" \
-    -Xcc -fmodules-cache-path="$SCRIPT_DIR/.build/module-cache" \
-    -framework CoreML -framework Vision -framework Accelerate -framework CoreImage \
-    -lsqlite3 -lc++ \
-    $(find Sources -name "*.swift" | tr '\n' ' ')
+# Build with Swift Package Manager (downloads Sparkle automatically)
+swift build -c release
 
 echo "✅ Build successful: $BUILD_OUTPUT"
 
@@ -72,6 +58,22 @@ if [ -f "$SCRIPT_DIR/Resources/Info.plist" ]; then
 else
     echo "   ⚠️ Warning: Info.plist not found at Resources/Info.plist"
 fi
+
+# Copy Sparkle framework
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    echo "   📦 Sparkle framework copied"
+else
+    echo "   ⚠️ Warning: Sparkle framework not found at $SPARKLE_FRAMEWORK"
+    echo "      Run 'swift build' first to download the framework."
+fi
+
+# Sign the app bundle (ad-hoc signature for distribution)
+echo "🔏 Signing app bundle..."
+codesign --force --deep --sign - --identifier com.jialiu.pixai "$APP_BUNDLE"
+echo "   ✅ App signed"
+
 echo ""
 echo "✅ Packaging complete: $APP_BUNDLE"
 echo "   Run with: open \"$APP_BUNDLE\""
