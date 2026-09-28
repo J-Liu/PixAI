@@ -88,6 +88,10 @@ final class AppConfig {
         static let toolbarHiddenAlpha: Double = 0.3
         /// Slideshow end behavior: "stop" (stop at last), "first" (return to first), "loop" (continuous loop)
         static let slideshowEndMode: String = "stop"
+        /// Update check frequency: "startup", "daily", "weekly", "monthly", "never"
+        static let updateCheckFrequency: String = "startup"
+        /// Last update check time (ISO8601 string, empty means never checked).
+        static let lastUpdateCheck: String = ""
     }
 
     /// Allowed range for the image cache count.
@@ -141,6 +145,9 @@ final class AppConfig {
         var toolbarHiddenAlpha: Double?
         // Slideshow
         var slideshowEndMode: String?
+        // Update
+        var updateCheckFrequency: String?
+        var lastUpdateCheck: String?
     }
 
     private let fileURL: URL
@@ -192,6 +199,9 @@ final class AppConfig {
     private var _toolbarHiddenAlpha: Double = Defaults.toolbarHiddenAlpha
     // Slideshow
     private var _slideshowEndMode: String = Defaults.slideshowEndMode
+    // Update
+    private var _updateCheckFrequency: String = Defaults.updateCheckFrequency
+    private var _lastUpdateCheck: String = Defaults.lastUpdateCheck
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -827,6 +837,78 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Update check settings
+
+    /// Update check frequency: "startup", "daily", "weekly", "monthly", "never" (default: "startup").
+    var updateCheckFrequency: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _updateCheckFrequency
+        }
+        set {
+            let normalized = Self.normalizeUpdateFrequency(newValue)
+            lock.lock()
+            let changed = _updateCheckFrequency != normalized
+            if changed { _updateCheckFrequency = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeUpdateFrequency(_ value: String) -> String {
+        switch value {
+        case "startup", "daily", "weekly", "monthly", "never": return value
+        default: return "startup"
+        }
+    }
+
+    /// Last update check time (ISO8601 string).
+    var lastUpdateCheck: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _lastUpdateCheck
+        }
+        set {
+            lock.lock()
+            let changed = _lastUpdateCheck != newValue
+            if changed { _lastUpdateCheck = newValue }
+            lock.unlock()
+            if changed { save() }
+        }
+    }
+
+    /// Record that an update check was just performed.
+    func recordUpdateCheck() {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        lastUpdateCheck = formatter.string(from: Date())
+    }
+
+    /// Check if automatic update check should run based on frequency setting.
+    func shouldCheckForUpdates() -> Bool {
+        let frequency = updateCheckFrequency
+        if frequency == "never" { return false }
+        if frequency == "startup" { return true }
+
+        let lastCheck = lastUpdateCheck
+        guard !lastCheck.isEmpty else { return true }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        guard let lastDate = formatter.date(from: lastCheck) else { return true }
+
+        let now = Date()
+        let interval = now.timeIntervalSince(lastDate)
+        let day: TimeInterval = 86400
+
+        switch frequency {
+        case "daily": return interval >= day
+        case "weekly": return interval >= day * 7
+        case "monthly": return interval >= day * 30
+        default: return true
+        }
+    }
+
     static func normalizeCropMode(_ value: String) -> String {
         switch value {
         case "select": return "select"
@@ -1025,6 +1107,8 @@ final class AppConfig {
         if let v = payload.cropMode { _cropMode = Self.normalizeCropMode(v) }
         if let v = payload.toolbarHiddenAlpha { _toolbarHiddenAlpha = min(max(v, 0), 1) }
         if let v = payload.slideshowEndMode { _slideshowEndMode = Self.normalizeSlideshowEndMode(v) }
+        if let v = payload.updateCheckFrequency { _updateCheckFrequency = Self.normalizeUpdateFrequency(v) }
+        if let v = payload.lastUpdateCheck, !v.isEmpty { _lastUpdateCheck = v }
         lock.unlock()
     }
 
@@ -1066,7 +1150,9 @@ final class AppConfig {
             watermarkFeatherRadius: _watermarkFeatherRadius,
             cropMode: _cropMode,
             toolbarHiddenAlpha: _toolbarHiddenAlpha,
-            slideshowEndMode: _slideshowEndMode
+            slideshowEndMode: _slideshowEndMode,
+            updateCheckFrequency: _updateCheckFrequency,
+            lastUpdateCheck: _lastUpdateCheck.isEmpty ? nil : _lastUpdateCheck
         )
         lock.unlock()
         do {

@@ -8,6 +8,9 @@ import Sparkle
 /// The application delegate. Sets up the menu bar and manages viewer windows.
 /// Closing a window (Cmd+W) does NOT quit the app; Cmd+N opens a new blank window.
 class PixAIApp: NSObject, NSApplicationDelegate {
+    /// Shared instance for access from Preferences window.
+    static weak var shared: PixAIApp?
+
     /// Paths passed from command-line arguments (files or folders).
     private let paths: [String]
     /// Whether to launch in fullscreen mode.
@@ -25,6 +28,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         self.paths = commandPaths
         self.isFullscreen = isFullscreenMode
         super.init()
+        Self.shared = self
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -122,6 +126,18 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         // Startup AI-model check (config: ask to download when missing).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             self?.checkAIModelsOnStartup()
+        }
+
+        // Auto update check based on frequency setting
+        checkForUpdatesOnStartup()
+    }
+
+    private func checkForUpdatesOnStartup() {
+        guard AppConfig.shared.shouldCheckForUpdates() else { return }
+        // Delay to let the app settle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.updaterController.checkForUpdates(nil)
+            AppConfig.shared.recordUpdateCheck()
         }
     }
 
@@ -242,5 +258,11 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
     private func checkForUpdates() {
         updaterController.checkForUpdates(nil)
+        AppConfig.shared.recordUpdateCheck()
+    }
+
+    /// Called from Preferences window "Check Now" button.
+    static func checkForUpdatesFromPreferences() {
+        shared?.checkForUpdates()
     }
 }

@@ -33,6 +33,8 @@ final class PreferencesWindow: NSObject {
     private var logPathField: NSTextField!
     private var toolbarHiddenAlphaField: NSTextField!
     private var toolbarHiddenAlphaStepper: NSStepper!
+    private var updateFrequencyPopup: NSPopUpButton!
+    private var checkUpdatesButton: NSButton!
 
     // AI - Enhance tab
     private var enhanceVibranceField: NSTextField!
@@ -389,6 +391,19 @@ final class PreferencesWindow: NSObject {
         toolbarHiddenAlphaStepper.target = self
         toolbarHiddenAlphaStepper.action = #selector(toolbarHiddenAlphaStepperChanged(_:))
         box.addSubview(toolbarHiddenAlphaStepper)
+        rowY -= 28
+
+        // Update check frequency
+        let updateLabel = makeLabel(box, text: t("Check for updates:"), x: 14, y: rowY - 16)
+        updateFrequencyPopup = makePopup(box, items: [t("On startup"), t("Daily"), t("Weekly"), t("Monthly"), t("Never")], x: updateLabel.frame.maxX + 10, y: rowY - 18, width: 120)
+        updateFrequencyPopup.target = self
+        updateFrequencyPopup.action = #selector(updateFrequencyChanged(_:))
+        checkUpdatesButton = NSButton(frame: NSRect(x: updateFrequencyPopup.frame.maxX + 16, y: rowY - 21, width: 140, height: 26))
+        checkUpdatesButton.title = t("Check Now")
+        checkUpdatesButton.bezelStyle = .rounded
+        checkUpdatesButton.target = self
+        checkUpdatesButton.action = #selector(checkForUpdatesNow(_:))
+        box.addSubview(checkUpdatesButton)
     }
 
     // MARK: - AI Tab
@@ -1059,6 +1074,20 @@ final class PreferencesWindow: NSObject {
                 stepper.doubleValue = toolbarAlpha
             }
 
+            // Update check frequency
+            let updateFreq = AppConfig.shared.updateCheckFrequency
+            let updateFreqIdx: Int
+            switch updateFreq {
+            case "daily": updateFreqIdx = 1
+            case "weekly": updateFreqIdx = 2
+            case "monthly": updateFreqIdx = 3
+            case "never": updateFreqIdx = 4
+            default: updateFreqIdx = 0
+            }
+            if self.updateFrequencyPopup.indexOfSelectedItem != updateFreqIdx {
+                self.updateFrequencyPopup.selectItem(at: updateFreqIdx)
+            }
+
             let vibrance = AppConfig.shared.enhanceVibrance
             let vibranceStr = String(format: "%.2f", vibrance)
             if self.enhanceVibranceField.stringValue != vibranceStr { self.enhanceVibranceField.stringValue = vibranceStr }
@@ -1329,6 +1358,22 @@ final class PreferencesWindow: NSObject {
 
     @objc private func toggleCropLivePhotoConfirm(_ sender: NSButton) {
         AppConfig.shared.cropLivePhotoConfirm = (sender.state == .on)
+    }
+
+    @objc private func updateFrequencyChanged(_ sender: NSPopUpButton) {
+        let frequency: String
+        switch sender.indexOfSelectedItem {
+        case 1: frequency = "daily"
+        case 2: frequency = "weekly"
+        case 3: frequency = "monthly"
+        case 4: frequency = "never"
+        default: frequency = "startup"
+        }
+        AppConfig.shared.updateCheckFrequency = frequency
+    }
+
+    @objc private func checkForUpdatesNow(_ sender: NSButton) {
+        PixAIApp.checkForUpdatesFromPreferences()
     }
 
     // MARK: - AI Enhance Actions

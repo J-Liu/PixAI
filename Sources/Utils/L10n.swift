@@ -324,6 +324,14 @@ final class L10n {
         "Browse...": "浏览...",
         "Restore Defaults": "恢复默认",
         "Restore This Page Defaults": "恢复本页默认",
+        // ── Update check ───────────────────────────────────────────
+        "Check for updates:": "检查更新：",
+        "On startup": "每次启动",
+        "Daily": "每天",
+        "Weekly": "每周",
+        "Monthly": "每月",
+        "Never": "永不",
+        "Check Now": "立即检查",
 
         // ── Shortcuts help window ────────────────────────────────────
         "Keyboard Shortcuts": "键盘快捷键",
@@ -607,6 +615,14 @@ final class L10n {
         "Browse...": "瀏覽...",
         "Restore Defaults": "恢復預設",
         "Restore This Page Defaults": "恢復本頁預設",
+        // ── Update check ───────────────────────────────────────────
+        "Check for updates:": "檢查更新：",
+        "On startup": "每次啟動",
+        "Daily": "每天",
+        "Weekly": "每週",
+        "Monthly": "每月",
+        "Never": "永不",
+        "Check Now": "立即檢查",
 
         // ── Shortcuts help window ────────────────────────────────────
         "Keyboard Shortcuts": "鍵盤快捷鍵",
