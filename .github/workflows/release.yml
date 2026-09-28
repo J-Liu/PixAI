@@ -28,6 +28,32 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-spm-
 
+    - name: Import signing certificate
+      run: |
+        # Decode .p12 from secret
+        echo "${{ secrets.SIGNING_CERTIFICATE }}" | base64 --decode > /tmp/cert.p12
+
+        # Create and unlock a temporary keychain
+        security create-keychain -p "" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "" build.keychain
+
+        # Import the .p12
+        security import /tmp/cert.p12 -k build.keychain \
+          -P "${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}" \
+          -T /usr/bin/codesign
+
+        # Allow codesign to access the key without prompting
+        security set-key-partition-list -S apple-tool:,apple:,codesign: \
+          -s -k "" build.keychain
+
+        # Export the certificate part as PEM and add it as trusted
+        security find-certificate -c "Local Development Signing" -p build.keychain > /tmp/cert.pem
+        sudo security add-trusted-cert -d -r trustRoot \
+          -k /Library/Keychains/System.keychain /tmp/cert.pem
+
+        rm /tmp/cert.p12 /tmp/cert.pem
+
     - name: Build and package
       run: |
         chmod +x build.sh

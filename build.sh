@@ -73,9 +73,9 @@ else
     echo "      Run 'swift build' first to download the framework."
 fi
 
-# Sign the app bundle (ad-hoc signature for distribution)
+# Sign with local certificate (stable identity for TCC)
 echo "🔏 Signing app bundle..."
-codesign --force --deep --sign - --identifier com.jialiu.pixai "$APP_BUNDLE"
+codesign --force --deep --sign "Local Development Signing" "$APP_BUNDLE"
 echo "   ✅ App signed"
 
 echo ""
