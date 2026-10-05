@@ -2018,6 +2018,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         let candidate = toCheck.removeFirst()
                         var candidateSurvives = true
                         var newSurvivors = Set<URL>()
+                        var toTrashNow: URL? = nil // File to delete immediately
 
                         // Compare candidate with each survivor
                         for survivor in survivors {
@@ -2048,12 +2049,38 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                     // Survivor wins, candidate is eliminated
                                     newSurvivors.insert(survivor)
                                     candidateSurvives = false
-                                    // Remove candidate from newSurvivors if it was added earlier
+                                    toTrashNow = candidate
                                     newSurvivors.remove(candidate)
                                 } else {
                                     // Candidate wins, survivor is eliminated
                                     newSurvivors.insert(candidate)
+                                    toTrashNow = survivor
                                     // Survivor loses, don't add it
+                                }
+
+                                // Delete immediately if one was eliminated
+                                if let toDelete = toTrashNow {
+                                    do {
+                                        try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
+                                        trashed.insert(toDelete)
+                                        Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
+
+                                        // Update queue in real-time
+                                        if let idx = imageURLs.firstIndex(of: toDelete) {
+                                            imageURLs.remove(at: idx)
+                                            aiStates.removeValue(forKey: toDelete)
+                                            if idx < currentIndex {
+                                                currentIndex -= 1
+                                            } else if idx == currentIndex {
+                                                if currentIndex >= imageURLs.count {
+                                                    currentIndex = max(0, imageURLs.count - 1)
+                                                }
+                                            }
+                                        }
+                                    } catch {
+                                        Logger.shared.log("AI batch dedup: trash failed for \(toDelete.lastPathComponent): \(error.localizedDescription)")
+                                    }
+                                    toTrashNow = nil
                                 }
                             } else {
                                 // Keep both
@@ -2069,12 +2096,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
                         survivors = newSurvivors
                     }
-
-                    // Only delete if not cancelled
-                    if !self.batchCancelled {
-                        // Delete images not in survivors
-                        toTrash = live.filter { !survivors.contains($0) }
-                    }
                 }
 
                 for u in toTrash {
@@ -2082,6 +2103,21 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         try FileManager.default.trashItem(at: u, resultingItemURL: nil)
                         trashed.insert(u)
                         Logger.shared.log("AI batch dedup: moved \(u.lastPathComponent) to Trash")
+
+                        // Update queue in real-time
+                        if let idx = imageURLs.firstIndex(of: u) {
+                            imageURLs.remove(at: idx)
+                            aiStates.removeValue(forKey: u)
+                            // Adjust current index if needed
+                            if idx < currentIndex {
+                                currentIndex -= 1
+                            } else if idx == currentIndex {
+                                // Current image was deleted, load next/previous
+                                if currentIndex >= imageURLs.count {
+                                    currentIndex = max(0, imageURLs.count - 1)
+                                }
+                            }
+                        }
                     } catch {
                         Logger.shared.log("AI batch dedup: trash failed for \(u.lastPathComponent): \(error.localizedDescription)")
                     }
@@ -2095,19 +2131,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     cont.addButton(withTitle: L10n.shared.t("Yes"))
                     cont.addButton(withTitle: L10n.shared.t("No"))
                     if cont.runModal() != .alertFirstButtonReturn { break }
-                }
-            }
-
-            // Apply the removals to the queue (keep the current image stable).
-            if !trashed.isEmpty {
-                let currentURL = imageURLs.indices.contains(currentIndex) ? imageURLs[currentIndex] : nil
-                imageURLs.removeAll { trashed.contains($0) }
-                for u in trashed { aiStates.removeValue(forKey: u) }
-                ImageCache.shared.removeAll()
-                if let cur = currentURL, let idx = imageURLs.firstIndex(of: cur) {
-                    currentIndex = idx
-                } else if !imageURLs.isEmpty {
-                    currentIndex = min(currentIndex, imageURLs.count - 1)
                 }
             }
         }
@@ -2634,6 +2657,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         let candidate = toCheck.removeFirst()
                         var candidateSurvives = true
                         var newSurvivors = Set<URL>()
+                        var toTrashNow: URL? = nil // File to delete immediately
 
                         // Compare candidate with each survivor
                         for survivor in survivors {
@@ -2664,12 +2688,38 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                     // Survivor wins, candidate is eliminated
                                     newSurvivors.insert(survivor)
                                     candidateSurvives = false
-                                    // Remove candidate from newSurvivors if it was added earlier
+                                    toTrashNow = candidate
                                     newSurvivors.remove(candidate)
                                 } else {
                                     // Candidate wins, survivor is eliminated
                                     newSurvivors.insert(candidate)
+                                    toTrashNow = survivor
                                     // Survivor loses, don't add it
+                                }
+
+                                // Delete immediately if one was eliminated
+                                if let toDelete = toTrashNow {
+                                    do {
+                                        try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
+                                        trashed.insert(toDelete)
+                                        Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
+
+                                        // Update queue in real-time
+                                        if let idx = imageURLs.firstIndex(of: toDelete) {
+                                            imageURLs.remove(at: idx)
+                                            aiStates.removeValue(forKey: toDelete)
+                                            if idx < currentIndex {
+                                                currentIndex -= 1
+                                            } else if idx == currentIndex {
+                                                if currentIndex >= imageURLs.count {
+                                                    currentIndex = max(0, imageURLs.count - 1)
+                                                }
+                                            }
+                                        }
+                                    } catch {
+                                        Logger.shared.log("AI batch dedup: trash failed for \(toDelete.lastPathComponent): \(error.localizedDescription)")
+                                    }
+                                    toTrashNow = nil
                                 }
                             } else {
                                 // Keep both
@@ -2684,12 +2734,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         }
 
                         survivors = newSurvivors
-                    }
-
-                    // Only delete if not cancelled
-                    if !self.batchCancelled {
-                        // Delete images not in survivors
-                        toTrash = live.filter { !survivors.contains($0) }
                     }
                 }
 
