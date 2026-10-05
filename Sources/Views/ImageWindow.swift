@@ -1978,6 +1978,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 let live = group.indices.compactMap { i in urls.indices.contains(i) ? urls[i] : nil }
                 guard live.count >= 2 else { continue }
 
+                // Filter out already-deleted files
+                let existingFiles = live.filter { FileManager.default.fileExists(atPath: $0.path) }
+                guard existingFiles.count >= 2 else { continue }
+
                 var toTrash: [URL] = []
                 if live.count == 2 {
                     // Side-by-side comparison; default selection = best image.
@@ -2023,6 +2027,12 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         // Compare candidate with each survivor
                         for survivor in survivors {
                             if self.batchCancelled { break }
+
+                            // Skip if either file was already deleted
+                            guard FileManager.default.fileExists(atPath: survivor.path),
+                                  FileManager.default.fileExists(atPath: candidate.path) else {
+                                continue
+                            }
 
                             let keepURL: URL? = await withCheckedContinuation { cont in
                                 DedupComparisonWindow.present(
@@ -2618,22 +2628,26 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 let live = group.indices.compactMap { i in urls.indices.contains(i) ? urls[i] : nil }
                 guard live.count >= 2 else { continue }
 
+                // Filter out already-deleted files
+                let existingFiles = live.filter { FileManager.default.fileExists(atPath: $0.path) }
+                guard existingFiles.count >= 2 else { continue }
+
                 var toTrash: [URL] = []
-                if live.count == 2 {
+                if existingFiles.count == 2 {
                     let best = DuplicateDetector.bestIndex(in: group, urls: urls, dewatermarkedFlags: [:])
                     let defaultSide: Int = (group.indices[1] == best) ? 1 : 0
                     let keepURL: URL? = await withCheckedContinuation { cont in
                         DedupComparisonWindow.present(
                             over: self.window,
-                            leftURL: live[0],
-                            rightURL: live[1],
+                            leftURL: existingFiles[0],
+                            rightURL: existingFiles[1],
                             initialSelection: defaultSide,
                             onConfirm: { side in
                                 // side: 0 = left, 1 = right, 2 = keep both
                                 if side == 2 {
                                     cont.resume(returning: nil)
                                 } else {
-                                    cont.resume(returning: side == 0 ? live[0] : live[1])
+                                    cont.resume(returning: side == 0 ? existingFiles[0] : existingFiles[1])
                                 }
                             },
                             onCancelAll: {
@@ -2644,13 +2658,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     }
                     // Only delete if user explicitly chose one to keep
                     // keepURL == nil means "keep both" or "cancelled" - don't delete anything
-                    if let keep = keepURL, live.contains(keep) {
-                        toTrash = live.filter { $0 != keep }
+                    if let keep = keepURL, existingFiles.contains(keep) {
+                        toTrash = existingFiles.filter { $0 != keep }
                     }
                 } else {
                     // >2 members: iterative pairwise comparison
-                    var survivors = Set([live[0]]) // Start with first image
-                    var toCheck = Array(live.dropFirst()) // Remaining to compare
+                    var survivors = Set([existingFiles[0]]) // Start with first image
+                    var toCheck = Array(existingFiles.dropFirst()) // Remaining to compare
 
                     while !toCheck.isEmpty && !self.batchCancelled {
                         let candidate = toCheck.removeFirst()
@@ -2661,6 +2675,12 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                         // Compare candidate with each survivor
                         for survivor in survivors {
                             if self.batchCancelled { break }
+
+                            // Skip if either file was already deleted
+                            guard FileManager.default.fileExists(atPath: survivor.path),
+                                  FileManager.default.fileExists(atPath: candidate.path) else {
+                                continue
+                            }
 
                             let keepURL: URL? = await withCheckedContinuation { cont in
                                 DedupComparisonWindow.present(

@@ -316,6 +316,16 @@ private final class DedupStatusBar: NSView {
     }
 
     func update(with url: URL) {
+        // Check if file exists
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            // File was deleted, show placeholder
+            let t = L10n.shared.t
+            filenameLabel.stringValue = truncateFilenameMiddle(url.lastPathComponent, maxChars: Int(bounds.width / 7 - 30))
+            fileSizeLabel.stringValue = t("Deleted")
+            resolutionLabel.stringValue = ""
+            return
+        }
+
         // Filename with middle truncation
         let filename = url.lastPathComponent
         filenameLabel.stringValue = truncateFilenameMiddle(filename, maxChars: Int(bounds.width / 7 - 30))
