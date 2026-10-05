@@ -2062,7 +2062,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                 if let toDelete = toTrashNow {
                                     do {
                                         try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
-                                        trashed.insert(toDelete)
                                         Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
 
                                         // Update queue in real-time
@@ -2701,7 +2700,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                 if let toDelete = toTrashNow {
                                     do {
                                         try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
-                                        trashed.insert(toDelete)
                                         Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
 
                                         // Update queue in real-time
