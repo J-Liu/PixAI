@@ -87,6 +87,7 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         let keepBothButton = NSButton(frame: NSRect(x: size.width / 2 - 80, y: 16, width: 160, height: 32))
         keepBothButton.title = t("Keep Both (B)")
         keepBothButton.bezelStyle = .rounded
+        keepBothButton.contentTintColor = .white
         keepBothButton.target = nil
         keepBothButton.action = nil
         root.addSubview(keepBothButton)
