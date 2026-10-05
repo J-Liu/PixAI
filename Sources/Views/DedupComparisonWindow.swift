@@ -13,6 +13,9 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
     private let rightView: ClickableImageView
     private let leftBadge: NSTextField
     private let rightBadge: NSTextField
+    private let statusBar: DedupStatusBar
+    private let leftURL: URL
+    private let rightURL: URL
     private var selection: Int = 0     // 0 = left, 1 = right
     private var onConfirm: ((Int) -> Void)?
     /// Called when the user presses Esc: cancel the entire dedup batch.
@@ -21,12 +24,16 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
     static var active: DedupComparisonWindow?
 
     private init(panel: NSPanel, leftView: ClickableImageView, rightView: ClickableImageView,
-                 leftBadge: NSTextField, rightBadge: NSTextField) {
+                 leftBadge: NSTextField, rightBadge: NSTextField, statusBar: DedupStatusBar,
+                 leftURL: URL, rightURL: URL) {
         self.panel = panel
         self.leftView = leftView
         self.rightView = rightView
         self.leftBadge = leftBadge
         self.rightBadge = rightBadge
+        self.statusBar = statusBar
+        self.leftURL = leftURL
+        self.rightURL = rightURL
         super.init()
         panel.delegate = self
     }
@@ -42,7 +49,7 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         // Only one comparison at a time.
         active?.close()
 
-        let size = NSSize(width: 1040, height: 680)
+        let size = NSSize(width: 1040, height: 730)
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .resizable],
@@ -58,11 +65,16 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor(white: 0.12, alpha: 1).cgColor
 
+        // Status bar at bottom
+        let statusBarHeight: CGFloat = 28
+        let statusBar = DedupStatusBar(frame: NSRect(x: 0, y: 0, width: size.width, height: statusBarHeight))
+        root.addSubview(statusBar)
+
         func makePane(_ x: CGFloat, url: URL) -> (ClickableImageView, NSTextField) {
             let pad: CGFloat = 16
             let paneW = size.width / 2 - pad * 3
-            let paneH = size.height - 150
-            let iv = ClickableImageView(frame: NSRect(x: x + pad, y: 104, width: paneW, height: paneH))
+            let paneH = size.height - 150 - statusBarHeight
+            let iv = ClickableImageView(frame: NSRect(x: x + pad, y: 104 + statusBarHeight, width: paneW, height: paneH))
             iv.imageScaling = .scaleProportionallyUpOrDown
             iv.wantsLayer = true
             iv.layer?.backgroundColor = NSColor(white: 0.18, alpha: 1).cgColor
@@ -73,7 +85,7 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
             badge.font = NSFont.systemFont(ofSize: 13, weight: .bold)
             badge.textColor = AutoHideToolbar.buttonColor
             badge.alignment = .center
-            badge.frame = NSRect(x: x + pad, y: 70, width: paneW, height: 24)
+            badge.frame = NSRect(x: x + pad, y: 70 + statusBarHeight, width: paneW, height: 24)
             root.addSubview(iv)
             root.addSubview(badge)
             return (iv, badge)
@@ -84,7 +96,7 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
 
         // Keep Both button
         let t = L10n.shared.t
-        let keepBothButton = NSButton(frame: NSRect(x: size.width / 2 - 80, y: 16, width: 160, height: 32))
+        let keepBothButton = NSButton(frame: NSRect(x: size.width / 2 - 80, y: 16 + 28, width: 160, height: 32))
         keepBothButton.title = t("Keep Both (B)")
         keepBothButton.bezelStyle = .rounded
         keepBothButton.contentTintColor = .white
@@ -101,7 +113,8 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         panel.setFrame(f, display: true)
 
         let win = DedupComparisonWindow(panel: panel, leftView: leftView, rightView: rightView,
-                                        leftBadge: leftBadge, rightBadge: rightBadge)
+                                        leftBadge: leftBadge, rightBadge: rightBadge, statusBar: statusBar,
+                                        leftURL: leftURL, rightURL: rightURL)
         win.onConfirm = onConfirm
         win.onCancelAll = onCancelAll
         win.selection = (initialSelection == 1) ? 1 : 0
@@ -159,6 +172,10 @@ final class DedupComparisonWindow: NSObject, NSWindowDelegate {
         let t = L10n.shared.t
         leftBadge.stringValue = leftSelected ? t("← KEEP (Enter)") : ""
         rightBadge.stringValue = !leftSelected ? t("KEEP (Enter) →") : ""
+
+        // Update status bar with selected image info
+        let selectedURL = leftSelected ? leftURL : rightURL
+        statusBar.update(with: selectedURL)
     }
 
     private func close() {
@@ -235,5 +252,108 @@ private final class ClickableImageView: NSImageView {
 
     override func mouseDown(with event: NSEvent) {
         onClick?()
+    }
+}
+
+/// Status bar for dedup comparison window showing selected image info.
+private final class DedupStatusBar: NSView {
+    private let filenameLabel: NSTextField
+    private let fileSizeLabel: NSTextField
+    private let resolutionLabel: NSTextField
+
+    override init(frame frameRect: NSRect) {
+        filenameLabel = Self.createLabel()
+        fileSizeLabel = Self.createLabel()
+        resolutionLabel = Self.createLabel()
+
+        super.init(frame: frameRect)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.9).cgColor
+
+        addSubview(filenameLabel)
+        addSubview(fileSizeLabel)
+        addSubview(resolutionLabel)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private static func createLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        label.textColor = NSColor(white: 0.92, alpha: 1)
+        label.alignment = .left
+        label.lineBreakMode = .byTruncatingMiddle
+        label.isEditable = false
+        label.isBezeled = false
+        label.isBordered = false
+        return label
+    }
+
+    override func layout() {
+        super.layout()
+
+        let y = (bounds.height - 16) / 2
+        let charWidth: CGFloat = 7
+        let gap: CGFloat = 5 * charWidth
+        var x: CGFloat = 12
+
+        // Filename (flexible width)
+        let filenameWidth = bounds.width - 40 * charWidth - gap * 2
+        filenameLabel.frame = NSRect(x: x, y: y, width: filenameWidth, height: 16)
+        x += filenameWidth + gap
+
+        // File size (10 chars)
+        let fileSizeWidth = 10 * charWidth
+        fileSizeLabel.frame = NSRect(x: x, y: y, width: fileSizeWidth, height: 16)
+        x += fileSizeWidth + gap
+
+        // Resolution (18 chars)
+        let resolutionWidth = 18 * charWidth
+        resolutionLabel.frame = NSRect(x: x, y: y, width: resolutionWidth, height: 16)
+    }
+
+    func update(with url: URL) {
+        // Filename with middle truncation
+        let filename = url.lastPathComponent
+        filenameLabel.stringValue = truncateFilenameMiddle(filename, maxChars: Int(bounds.width / 7 - 30))
+
+        // File size
+        var fileSizeStr = ""
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let fileSize = attrs[.size] as? Int64 {
+            fileSizeStr = formatFileSize(fileSize)
+        }
+        fileSizeLabel.stringValue = fileSizeStr
+
+        // Resolution
+        var resolutionStr = ""
+        if let image = NSImage(contentsOf: url),
+           let rep = image.representations.first {
+            resolutionStr = "\(rep.pixelsWide) × \(rep.pixelsHigh)"
+        }
+        resolutionLabel.stringValue = resolutionStr
+    }
+
+    private func formatFileSize(_ bytes: Int64) -> String {
+        let kb = Double(bytes) / 1024
+        let mb = kb / 1024
+        if mb >= 1 {
+            return String(format: "%.1f MB", mb)
+        } else if kb >= 1 {
+            return String(format: "%.0f KB", kb)
+        } else {
+            return "\(bytes) B"
+        }
+    }
+
+    private func truncateFilenameMiddle(_ filename: String, maxChars: Int) -> String {
+        if filename.count <= maxChars { return filename }
+        let keep = (maxChars - 3) / 2
+        let prefix = String(filename.prefix(keep))
+        let suffix = String(filename.suffix(keep))
+        return prefix + "~~~" + suffix
     }
 }
