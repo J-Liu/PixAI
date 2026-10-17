@@ -92,6 +92,16 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             PreferencesWindow.shared.show()
         }
 
+        // Open Recent file: open the selected file.
+        MenuBuilder.openRecentCallback = { [weak self] url in
+            guard let self = self else { return }
+            if let target = self.activeWindow() {
+                target.loadImages(from: [url])
+            } else {
+                _ = self.makeNewWindow(paths: [url])
+            }
+        }
+
         // Menu validation + action routing use the active viewer window.
         MenuBuilder.activeWindowProvider = { [weak self] in self?.activeWindow() }
 
@@ -200,6 +210,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         Logger.shared.log("openFile called: \(filename)")
         let url = URL(fileURLWithPath: filename)
+        AppConfig.shared.addRecentFile(url.path)
         if let win = activeWindow() {
             win.loadImages(from: [url])
         } else {
@@ -212,6 +223,9 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         Logger.shared.log("openFiles called: \(filenames.count) files")
         let urls = filenames.map { URL(fileURLWithPath: $0) }
+        for url in urls {
+            AppConfig.shared.addRecentFile(url.path)
+        }
         if let win = activeWindow() {
             win.loadImages(from: urls)
         } else {

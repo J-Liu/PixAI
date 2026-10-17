@@ -35,6 +35,7 @@ final class PreferencesWindow: NSObject {
     private var toolbarHiddenAlphaStepper: NSStepper!
     private var updateFrequencyPopup: NSPopUpButton!
     private var checkUpdatesButton: NSButton!
+    private var maxRecentFilesField: NSTextField!
 
     // AI - Enhance tab
     private var enhanceVibranceField: NSTextField!
@@ -404,6 +405,18 @@ final class PreferencesWindow: NSObject {
         checkUpdatesButton.target = self
         checkUpdatesButton.action = #selector(checkForUpdatesNow(_:))
         box.addSubview(checkUpdatesButton)
+        rowY -= 28
+
+        // Max recent files
+        let recentLabel = makeLabel(box, text: t("Max recent files (0–50):"), x: 14, y: rowY - 16)
+        maxRecentFilesField = NSTextField(frame: NSRect(x: recentLabel.frame.maxX + 10, y: rowY - 20, width: 60, height: 24))
+        maxRecentFilesField.isBezeled = true
+        maxRecentFilesField.bezelStyle = .roundedBezel
+        maxRecentFilesField.isEditable = true
+        maxRecentFilesField.stringValue = String(AppConfig.shared.maxRecentFiles)
+        maxRecentFilesField.target = self
+        maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
+        box.addSubview(maxRecentFilesField)
     }
 
     // MARK: - AI Tab
@@ -1088,6 +1101,13 @@ final class PreferencesWindow: NSObject {
                 self.updateFrequencyPopup.selectItem(at: updateFreqIdx)
             }
 
+            // Max recent files
+            let maxRecent = AppConfig.shared.maxRecentFiles
+            let maxRecentStr = String(maxRecent)
+            if self.maxRecentFilesField.stringValue != maxRecentStr {
+                self.maxRecentFilesField.stringValue = maxRecentStr
+            }
+
             let vibrance = AppConfig.shared.enhanceVibrance
             let vibranceStr = String(format: "%.2f", vibrance)
             if self.enhanceVibranceField.stringValue != vibranceStr { self.enhanceVibranceField.stringValue = vibranceStr }
@@ -1374,6 +1394,16 @@ final class PreferencesWindow: NSObject {
 
     @objc private func checkForUpdatesNow(_ sender: NSButton) {
         PixAIApp.checkForUpdatesFromPreferences()
+    }
+
+    @objc private func maxRecentFilesFieldChanged(_ sender: NSTextField) {
+        guard let value = Int(sender.stringValue.replacingOccurrences(of: " ", with: "")) else {
+            syncControlsFromConfig()
+            return
+        }
+        let clamped = min(max(value, 0), 50)
+        sender.integerValue = clamped
+        AppConfig.shared.maxRecentFiles = clamped
     }
 
     // MARK: - AI Enhance Actions

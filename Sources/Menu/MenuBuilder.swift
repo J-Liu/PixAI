@@ -13,6 +13,9 @@ class MenuBuilder {
     /// Optional callbacks (set by PixAIApp).
     static var openFileCallback: (() -> Void)?
 
+    /// Optional callback for opening a recent file (set by PixAIApp).
+    static var openRecentCallback: ((URL) -> Void)?
+
     /// Optional callback for the New Window action (set by PixAIApp).
     static var newWindowCallback: (() -> Void)?
 
@@ -84,6 +87,16 @@ class MenuBuilder {
         let fileMenu = NSMenu(title: t("File"))
 
         actionItem(fileMenu, t("Open..."), #selector(MenuActions.openFile(_:)), key: "o")
+
+        // Open Recent submenu
+        let openRecentItem = NSMenuItem(title: t("Open Recent"), action: nil, keyEquivalent: "")
+        let openRecentMenu = NSMenu(title: t("Open Recent"))
+        openRecentMenu.autoenablesItems = false
+        openRecentMenu.delegate = OpenRecentMenuDelegate.shared
+        buildOpenRecentMenu(openRecentMenu)
+        openRecentItem.submenu = openRecentMenu
+        fileMenu.addItem(openRecentItem)
+
         actionItem(fileMenu, t("New Window"), #selector(MenuActions.newWindow(_:)), key: "n")
         fileMenu.addItem(NSMenuItem.separator())
         actionItem(fileMenu, t("Save"), #selector(MenuActions.save(_:)), key: "s")
@@ -197,6 +210,39 @@ class MenuBuilder {
 
         return mainMenu
     }
+
+    /// Build the Open Recent submenu with recent files list and Clear menu item.
+    static func buildOpenRecentMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let t = L10n.shared.t
+        let actions = MenuActions.shared
+
+        let recentFiles = AppConfig.shared.recentFiles
+        let maxItems = AppConfig.shared.maxRecentFiles
+
+        // Add recent files
+        for path in recentFiles.prefix(maxItems) {
+            let url = URL(fileURLWithPath: path)
+            let item = NSMenuItem(title: url.lastPathComponent, action: #selector(MenuActions.openRecentFile(_:)), keyEquivalent: "")
+            item.target = actions
+            item.representedObject = url
+            item.toolTip = path
+            menu.addItem(item)
+        }
+
+        // Add separator and Clear item if there are recent files
+        if !recentFiles.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            let clearItem = NSMenuItem(title: t("Clear Menu"), action: #selector(MenuActions.clearRecentFiles(_:)), keyEquivalent: "")
+            clearItem.target = actions
+            menu.addItem(clearItem)
+        } else {
+            // No recent files - show placeholder
+            let emptyItem = NSMenuItem(title: t("No Recent Files"), action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+        }
+    }
 }
 
 /// Target for all custom menu items. Implements `NSMenuItemValidation` so
@@ -235,6 +281,22 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     @objc func openFile(_ sender: Any?) {
         Logger.shared.log("MenuBuilder.openFile called")
         MenuBuilder.openFileCallback?()
+    }
+
+    @objc func openRecentFile(_ sender: Any?) {
+        guard let menuItem = sender as? NSMenuItem,
+              let url = menuItem.representedObject as? URL else { return }
+        Logger.shared.log("MenuBuilder.openRecentFile called: \(url.path)")
+        MenuBuilder.openRecentCallback?(url)
+    }
+
+    @objc func clearRecentFiles(_ sender: Any?) {
+        Logger.shared.log("MenuBuilder.clearRecentFiles called")
+        AppConfig.shared.clearRecentFiles()
+        // Rebuild the menu
+        if let menu = (sender as? NSMenuItem)?.menu {
+            MenuBuilder.buildOpenRecentMenu(menu)
+        }
     }
 
     @objc func newWindow(_ sender: Any?) {
@@ -303,5 +365,14 @@ final class MenuActions: NSObject, NSMenuItemValidation {
             break
         }
         return win.hasCurrentImage && !win.isBatchRunning
+    }
+}
+
+/// Menu delegate that rebuilds the Open Recent menu when it's about to be displayed.
+private class OpenRecentMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = OpenRecentMenuDelegate()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        MenuBuilder.buildOpenRecentMenu(menu)
     }
 }

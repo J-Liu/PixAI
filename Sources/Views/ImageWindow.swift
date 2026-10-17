@@ -546,6 +546,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     let dir = firstUrl.isFileURL && firstUrl.pathExtension.isEmpty ? firstUrl : firstUrl.deletingLastPathComponent()
                     AppConfig.shared.lastOpenDirectory = dir.path
                 }
+                // Add to recent files
+                for url in panel.urls {
+                    AppConfig.shared.addRecentFile(url.path)
+                }
                 self.loadImages(from: panel.urls)
             } else {
                 Logger.shared.log("Open panel cancelled")

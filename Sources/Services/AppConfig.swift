@@ -92,6 +92,8 @@ final class AppConfig {
         static let updateCheckFrequency: String = "startup"
         /// Last update check time (ISO8601 string, empty means never checked).
         static let lastUpdateCheck: String = ""
+        /// Maximum number of recent files to remember (default 20, range 0...50).
+        static let maxRecentFiles = 20
     }
 
     /// Allowed range for the image cache count.
@@ -148,6 +150,9 @@ final class AppConfig {
         // Update
         var updateCheckFrequency: String?
         var lastUpdateCheck: String?
+        // Recent files
+        var maxRecentFiles: Int?
+        var recentFiles: [String]?
     }
 
     private let fileURL: URL
@@ -202,6 +207,9 @@ final class AppConfig {
     // Update
     private var _updateCheckFrequency: String = Defaults.updateCheckFrequency
     private var _lastUpdateCheck: String = Defaults.lastUpdateCheck
+    // Recent files
+    private var _maxRecentFiles: Int = Defaults.maxRecentFiles
+    private var _recentFiles: [String] = []
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -909,6 +917,65 @@ final class AppConfig {
         }
     }
 
+    // MARK: - Recent files settings
+
+    /// Maximum number of recent files to remember (default 20, range 0...50).
+    var maxRecentFiles: Int {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _maxRecentFiles
+        }
+        set {
+            let clamped = min(max(newValue, 0), 50)
+            lock.lock()
+            let changed = _maxRecentFiles != clamped
+            if changed { _maxRecentFiles = clamped }
+            // Trim if reduced
+            if _recentFiles.count > clamped {
+                _recentFiles = Array(_recentFiles.prefix(clamped))
+            }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// List of recently opened file paths.
+    var recentFiles: [String] {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _recentFiles
+        }
+    }
+
+    /// Add a file path to the recent list (moves to front if already present).
+    func addRecentFile(_ path: String) {
+        let expanded = (path as NSString).expandingTildeInPath
+        guard !expanded.isEmpty else { return }
+
+        lock.lock()
+        // Remove if already present
+        _recentFiles.removeAll { $0 == expanded }
+        // Add to front
+        _recentFiles.insert(expanded, at: 0)
+        // Trim to max
+        let max = _maxRecentFiles
+        if _recentFiles.count > max {
+            _recentFiles = Array(_recentFiles.prefix(max))
+        }
+        lock.unlock()
+        save()
+        notifyChange()
+    }
+
+    /// Clear all recent files.
+    func clearRecentFiles() {
+        lock.lock()
+        let changed = !_recentFiles.isEmpty
+        _recentFiles = []
+        lock.unlock()
+        if changed { save(); notifyChange() }
+    }
+
     static func normalizeCropMode(_ value: String) -> String {
         switch value {
         case "select": return "select"
@@ -1109,6 +1176,9 @@ final class AppConfig {
         if let v = payload.slideshowEndMode { _slideshowEndMode = Self.normalizeSlideshowEndMode(v) }
         if let v = payload.updateCheckFrequency { _updateCheckFrequency = Self.normalizeUpdateFrequency(v) }
         if let v = payload.lastUpdateCheck, !v.isEmpty { _lastUpdateCheck = v }
+        // Recent files
+        if let v = payload.maxRecentFiles { _maxRecentFiles = min(max(v, 0), 50) }
+        if let v = payload.recentFiles { _recentFiles = v.filter { !$0.isEmpty } }
         lock.unlock()
     }
 
@@ -1152,7 +1222,9 @@ final class AppConfig {
             toolbarHiddenAlpha: _toolbarHiddenAlpha,
             slideshowEndMode: _slideshowEndMode,
             updateCheckFrequency: _updateCheckFrequency,
-            lastUpdateCheck: _lastUpdateCheck.isEmpty ? nil : _lastUpdateCheck
+            lastUpdateCheck: _lastUpdateCheck.isEmpty ? nil : _lastUpdateCheck,
+            maxRecentFiles: _maxRecentFiles,
+            recentFiles: _recentFiles.isEmpty ? nil : _recentFiles
         )
         lock.unlock()
         do {

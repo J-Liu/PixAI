@@ -334,6 +334,12 @@ final class L10n {
         "Never": "永不",
         "Check Now": "立即检查",
 
+        // ── Recent files ───────────────────────────────────────
+        "Open Recent": "最近打开",
+        "Clear Menu": "清除列表",
+        "No Recent Files": "无最近文件",
+        "Max recent files (0–50):": "最近文件数量（0–50）：",
+
         // ── Shortcuts help window ────────────────────────────────────
         "Keyboard Shortcuts": "键盘快捷键",
         "Previous image (arrows / WASD / HJKL)": "上一张图片（方向键 / WASD / HJKL）",
@@ -625,6 +631,12 @@ final class L10n {
         "Monthly": "每月",
         "Never": "永不",
         "Check Now": "立即檢查",
+
+        // ── Recent files ───────────────────────────────────────
+        "Open Recent": "最近開啟",
+        "Clear Menu": "清除列表",
+        "No Recent Files": "無最近檔案",
+        "Max recent files (0–50):": "最近檔案數量（0–50）：",
 
         // ── Shortcuts help window ────────────────────────────────────
         "Keyboard Shortcuts": "鍵盤快捷鍵",
