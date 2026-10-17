@@ -109,7 +109,7 @@ final class PreferencesWindow: NSObject {
     // MARK: - Building
 
     private func buildWindow() {
-        let contentSize = NSSize(width: 600, height: 580)
+        let contentSize = NSSize(width: 600, height: 610)
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable],
