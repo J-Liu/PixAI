@@ -27,7 +27,7 @@ class StatusBarView: NSView {
     private static let fileSizeChars: CGFloat = 10
     private static let resolutionChars: CGFloat = 18
     private static let zoomGroupChars: CGFloat = 17  // [-] [100%] [+] [fit]
-    private static let indexChars: CGFloat = 10
+    private static let indexChars: CGFloat = 12  // Enough for "9999 / 9999"
     private static let aiMarkChars: CGFloat = 15
 
     init(onZoomIn: @escaping () -> Void,
@@ -42,7 +42,7 @@ class StatusBarView: NSView {
         fileSizeLabel = Self.createLabel()
         resolutionLabel = Self.createLabel()
         zoomField = Self.createEditableField(width: 50, alignment: .center)
-        indexLabel = Self.createLabel()
+        indexLabel = Self.createLabel(alignment: .right)
         aiMarkLabel = Self.createLabel()
 
         zoomOutButton = NSButton()
