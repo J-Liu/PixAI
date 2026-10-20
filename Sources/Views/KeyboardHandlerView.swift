@@ -246,9 +246,8 @@ class KeyboardHandlerView: NSView {
         case ("p", _), (_, 35):
             onStartOrStopSlideshow()
             return
-        // Esc / Enter: exit the slideshow if active, otherwise exit full screen
-        // (only while in full screen).
-        case ("\u{1b}", _), (_, 53), ("\r", _), (_, 36):
+        // Esc: exit slideshow/crop/batch or exit fullscreen
+        case ("\u{1b}", _), (_, 53):
             if isCropModeActive() {
                 onCancelCrop()
             } else if isWatermarkSelectionModeActive() {
@@ -266,6 +265,10 @@ class KeyboardHandlerView: NSView {
             } else {
                 super.keyDown(with: event)
             }
+            return
+        // Enter: toggle fullscreen (enter if window, exit if fullscreen)
+        case ("\r", _), (_, 36):
+            onToggleFullscreen()
             return
         // ?: show the keyboard-shortcuts help window (both English and Chinese full-width question mark).
         case ("?", _), ("？", _):
