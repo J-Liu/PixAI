@@ -146,7 +146,8 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         guard AppConfig.shared.shouldCheckForUpdates() else { return }
         // Delay to let the app settle
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.updaterController.checkForUpdates(nil)
+            // Use background check - only shows UI if update is found
+            self?.updaterController.updater.checkForUpdatesInBackground()
             AppConfig.shared.recordUpdateCheck()
         }
     }
