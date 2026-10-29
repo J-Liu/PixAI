@@ -63,7 +63,7 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       run: |
         VERSION="${GITHUB_REF_NAME#v}"
-        zip -r "PixAI-${VERSION}.zip" PixAI.app
+        ditto -c -k --keepParent PixAI.app "PixAI-${VERSION}.zip"
 
     - name: Sign update
       if: startsWith(github.ref, 'refs/tags/')

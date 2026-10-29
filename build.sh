@@ -66,7 +66,7 @@ fi
 # Copy Sparkle framework
 if [ -d "$SPARKLE_FRAMEWORK" ]; then
     mkdir -p "$APP_BUNDLE/Contents/Frameworks"
-    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    cp -a "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     echo "   📦 Sparkle framework copied"
 else
     echo "   ⚠️ Warning: Sparkle framework not found at $SPARKLE_FRAMEWORK"
