@@ -3,15 +3,30 @@
 
 import AppKit
 
-final class PreferencesWindow: NSObject {
-    static let shared = PreferencesWindow()
+// MARK: - FocusableContainerView
 
-    private var window: NSWindow?
+/// A container view that accepts first responder status and ends editing on click.
+/// This allows clicking anywhere in the preferences window to commit text field changes.
+final class FocusableContainerView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(nil)
+    }
+}
+
+// MARK: - PreferencesWindow
+
+/// The Preferences window (Cmd+, / PixAI ▸ Preferences...).
+/// Uses NSStackView-based layout similar to Keystarter SettingsWindow.
+final class PreferencesWindow: NSWindow {
+
     private var tabView: NSTabView!
     private var aiTabView: NSTabView!
 
-    private let labelWidth: CGFloat = 180
-    private let controlWidth: CGFloat = 200
+    // Layout constants
+    private let labelWidth: CGFloat = 160
+    private let controlWidth: CGFloat = 240
     private let rowSpacing: CGFloat = 12
 
     // Controls – General
@@ -85,48 +100,63 @@ final class PreferencesWindow: NSObject {
     private var changeObserver: NSObjectProtocol?
     private var l10nObserver: NSObjectProtocol?
 
-    private override init() { super.init() }
+    init() {
+        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
+        let width: CGFloat = 700
+        let height: CGFloat = 600
+        let x = screenFrame.midX - width / 2
+        let y = screenFrame.midY - height / 2
+        let frame = NSRect(x: x, y: y, width: width, height: height)
 
-    // MARK: - Public
+        super.init(
+            contentRect: frame,
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
 
-    func show() {
-        if window == nil { buildWindow() }
-        syncControlsFromConfig()
-        // If currently on About tab, switch to General
-        if let selected = tabView.selectedTabViewItem,
-           (selected.identifier as? String) == "about",
-           tabView.numberOfTabViewItems > 0 {
-            tabView.selectTabViewItem(at: 0)
-        }
-        presentWindow()
+        self.title = L10n.shared.t("Preferences")
+        self.isReleasedWhenClosed = false
+        self.minSize = NSSize(width: 700, height: 500)
+
+        setupUI()
+        setupKeyHandlers()
     }
 
-    func showAboutTab() {
-        if window == nil { buildWindow() }
-        syncControlsFromConfig()
-        selectTab("about")
-        presentWindow()
-    }
+    // MARK: - Public Methods
 
-    func showAIModelsTab() {
-        if window == nil { buildWindow() }
+    func showWindow() {
         syncControlsFromConfig()
-        selectTab("ai")
-        if let aiTab = aiTabView, aiTab.numberOfTabViewItems > 4 {
-            aiTab.selectTabViewItem(at: 4)
-        }
-        presentWindow()
-    }
-
-    private func presentWindow() {
-        guard let window = window else { return }
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(nil)
+        center()
+        makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func selectTab(_ identifier: String) {
+    func showAboutTab() {
+        // If currently on About tab, stay; otherwise switch to About
+        let currentIdentifier = tabView.selectedTabViewItem?.identifier as? String
+        if currentIdentifier == "about" {
+            showWindow()
+            return
+        }
+        selectTab(withIdentifier: "about")
+        showWindow()
+    }
+
+    func showGeneralTab() {
+        selectTab(withIdentifier: "general")
+        showWindow()
+    }
+
+    func showAIModelsTab() {
+        selectTab(withIdentifier: "ai")
+        if let aiTab = aiTabView, aiTab.numberOfTabViewItems > 4 {
+            aiTab.selectTabViewItem(at: 4)
+        }
+        showWindow()
+    }
+
+    private func selectTab(withIdentifier identifier: String) {
         for item in tabView.tabViewItems {
             if (item.identifier as? String) == identifier {
                 tabView.selectTabViewItem(item)
@@ -135,40 +165,38 @@ final class PreferencesWindow: NSObject {
         }
     }
 
-    // MARK: - Build Window
+    // MARK: - Setup
 
-    private func buildWindow() {
-        let width: CGFloat = 600
-        let height: CGFloat = 640
-        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-        let frame = NSRect(
-            x: screenFrame.midX - width / 2,
-            y: screenFrame.midY - height / 2,
-            width: width, height: height
-        )
+    private func setupUI() {
+        let container = FocusableContainerView()
+        contentView = container
 
-        let win = NSWindow(
-            contentRect: frame,
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        win.title = L10n.shared.t("Preferences")
-        win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 600, height: 550)
+        tabView = NSTabView(frame: container.bounds.insetBy(dx: 10, dy: 10))
+        tabView.autoresizingMask = [.width, .height]
 
-        tabView = NSTabView()
-        tabView.translatesAutoresizingMaskIntoConstraints = false
-        win.contentView!.addSubview(tabView)
-        NSLayoutConstraint.activate([
-            tabView.topAnchor.constraint(equalTo: win.contentView!.topAnchor, constant: 10),
-            tabView.bottomAnchor.constraint(equalTo: win.contentView!.bottomAnchor, constant: -10),
-            tabView.leadingAnchor.constraint(equalTo: win.contentView!.leadingAnchor, constant: 10),
-            tabView.trailingAnchor.constraint(equalTo: win.contentView!.trailingAnchor, constant: -10)
-        ])
+        let generalItem = NSTabViewItem(identifier: "general")
+        generalItem.label = L10n.shared.t("General")
+        generalItem.view = createGeneralTab()
+        tabView.addTabViewItem(generalItem)
 
-        rebuildTabs()
+        let aiItem = NSTabViewItem(identifier: "ai")
+        aiItem.label = L10n.shared.t("AI")
+        aiItem.view = createAITab()
+        tabView.addTabViewItem(aiItem)
 
+        let advancedItem = NSTabViewItem(identifier: "advanced")
+        advancedItem.label = L10n.shared.t("Advanced")
+        advancedItem.view = createAdvancedTab()
+        tabView.addTabViewItem(advancedItem)
+
+        let aboutItem = NSTabViewItem(identifier: "about")
+        aboutItem.label = L10n.shared.t("About")
+        aboutItem.view = createAboutTab()
+        tabView.addTabViewItem(aboutItem)
+
+        container.addSubview(tabView)
+
+        // Observers
         changeObserver = NotificationCenter.default.addObserver(
             forName: AppConfig.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.syncControlsFromConfig() }
@@ -177,10 +205,13 @@ final class PreferencesWindow: NSObject {
             forName: L10n.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            let wasVisible = self.window?.isVisible ?? false
-            self.window?.close()
-            self.window = nil
-            if wasVisible { self.show() }
+            let wasVisible = self.isVisible
+            self.close()
+            if wasVisible {
+                // Recreate window with new localization
+                _ = PreferencesWindow()
+                PreferencesWindow.shared.showWindow()
+            }
         }
 
         pluginObserver = NotificationCenter.default.addObserver(
@@ -188,35 +219,36 @@ final class PreferencesWindow: NSObject {
         ) { [weak self] _ in self?.syncModelRows() }
 
         tabView.delegate = self
-        window = win
     }
 
-    private func rebuildTabs() {
-        while let tab = tabView.tabViewItems.first { tabView.removeTabViewItem(tab) }
-        let t = L10n.shared.t
-
-        let generalItem = NSTabViewItem(identifier: "general")
-        generalItem.label = t("General")
-        generalItem.view = buildGeneralTab()
-        tabView.addTabViewItem(generalItem)
-
-        let aiItem = NSTabViewItem(identifier: "ai")
-        aiItem.label = t("AI")
-        aiItem.view = buildAITab()
-        tabView.addTabViewItem(aiItem)
-
-        let advancedItem = NSTabViewItem(identifier: "advanced")
-        advancedItem.label = t("Advanced")
-        advancedItem.view = buildAdvancedTab()
-        tabView.addTabViewItem(advancedItem)
-
-        let aboutItem = NSTabViewItem(identifier: "about")
-        aboutItem.label = t("About")
-        aboutItem.view = buildAboutTab()
-        tabView.addTabViewItem(aboutItem)
+    private func setupKeyHandlers() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.isVisible else { return event }
+            if event.keyCode == 53 { // Esc
+                self.close()
+                return nil
+            }
+            if event.modifierFlags.contains(.command) && event.keyCode == 13 { // Cmd+W
+                self.close()
+                return nil
+            }
+            return event
+        }
     }
 
     // MARK: - Layout Helpers
+
+    private func wrapInTopAlignedContainer(_ stack: NSStackView) -> NSView {
+        let container = NSView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor)
+        ])
+        return container
+    }
 
     private func makeRow(label: String, control: NSView) -> NSStackView {
         let labelField = NSTextField(labelWithString: label)
@@ -246,25 +278,37 @@ final class PreferencesWindow: NSObject {
         return label
     }
 
-    private func wrapInScroll(_ stack: NSStackView) -> NSView {
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = stack
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor)
-        ])
-        return scrollView
+    private func addStepperRow(
+        to stack: NSStackView, label: String, value: String,
+        min: Double, max: Double, increment: Double,
+        fieldAction: Selector, stepperAction: Selector,
+        fieldOut: @escaping (NSTextField) -> Void,
+        stepperOut: @escaping (NSStepper) -> Void
+    ) {
+        let field = NSTextField()
+        field.alignment = .center
+        field.stringValue = value
+        field.widthAnchor.constraint(equalToConstant: 70).isActive = true
+        field.target = self
+        field.action = fieldAction
+        fieldOut(field)
+
+        let stepper = NSStepper()
+        stepper.minValue = min; stepper.maxValue = max; stepper.increment = increment
+        stepper.valueWraps = false
+        stepper.doubleValue = Double(value) ?? min
+        stepper.target = self
+        stepper.action = stepperAction
+        stepperOut(stepper)
+
+        let row = NSStackView(views: [field, stepper])
+        row.orientation = .horizontal; row.spacing = 4; row.alignment = .centerY
+        stack.addArrangedSubview(makeRow(label: label, control: row))
     }
 
     // MARK: - General Tab
 
-    private func buildGeneralTab() -> NSView {
+    private func createGeneralTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
@@ -292,7 +336,7 @@ final class PreferencesWindow: NSObject {
         liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
         stack.addArrangedSubview(makeRow(label: "", control: liveMutedCheckbox))
 
-        let languagePopup = NSPopUpButton()
+        languagePopup = NSPopUpButton()
         for lang in ["English", "简体中文", "繁體中文"] { languagePopup.addItem(withTitle: lang) }
         let langIdx: Int
         switch AppConfig.shared.uiLanguage {
@@ -303,71 +347,45 @@ final class PreferencesWindow: NSObject {
         languagePopup.selectItem(at: langIdx)
         languagePopup.target = self
         languagePopup.action = #selector(languageChanged(_:))
-        self.languagePopup = languagePopup
         stack.addArrangedSubview(makeRow(label: t("Language"), control: languagePopup))
 
-        let openDirModePopup = NSPopUpButton()
+        openDirModePopup = NSPopUpButton()
         openDirModePopup.addItem(withTitle: t("Last open"))
         openDirModePopup.addItem(withTitle: t("Choose..."))
         openDirModePopup.selectItem(at: AppConfig.shared.openPanelDirectoryMode == "custom" ? 1 : 0)
         openDirModePopup.target = self
         openDirModePopup.action = #selector(openDirModeChanged(_:))
-        self.openDirModePopup = openDirModePopup
 
-        let openDirField = NSTextField()
+        openDirField = NSTextField()
         openDirField.isEditable = false
         openDirField.isBezeled = true
         openDirField.bezelStyle = .roundedBezel
         openDirField.backgroundColor = .controlBackgroundColor
         openDirField.focusRingType = .none
-        let currentDir = AppConfig.shared.getOpenPanelDirectory()
-        openDirField.stringValue = currentDir?.lastPathComponent ?? ""
+        openDirField.stringValue = AppConfig.shared.getOpenPanelDirectory()?.lastPathComponent ?? ""
         openDirField.widthAnchor.constraint(equalToConstant: controlWidth).isActive = true
-        self.openDirField = openDirField
 
         let dirRow = NSStackView(views: [openDirModePopup, openDirField])
-        dirRow.orientation = .horizontal
-        dirRow.spacing = 8
-        dirRow.alignment = .centerY
+        dirRow.orientation = .horizontal; dirRow.spacing = 8; dirRow.alignment = .centerY
         stack.addArrangedSubview(makeRow(label: t("Default directory"), control: dirRow))
 
-        let transitionField = NSTextField()
-        transitionField.alignment = .center
-        transitionField.stringValue = String(format: "%.1f", AppConfig.shared.imageTransitionDuration)
-        transitionField.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        transitionField.target = self
-        transitionField.action = #selector(transitionFieldChanged(_:))
-        self.transitionField = transitionField
-        let transitionStepper = NSStepper()
-        transitionStepper.minValue = 0; transitionStepper.maxValue = 2; transitionStepper.increment = 0.1
-        transitionStepper.valueWraps = false
-        transitionStepper.doubleValue = AppConfig.shared.imageTransitionDuration
-        transitionStepper.target = self
-        transitionStepper.action = #selector(transitionStepperChanged(_:))
-        self.transitionStepper = transitionStepper
-        let transRow = NSStackView(views: [transitionField, transitionStepper])
-        transRow.orientation = .horizontal; transRow.spacing = 4; transRow.alignment = .centerY
-        stack.addArrangedSubview(makeRow(label: t("Image transition duration (0–2 s, 0 = off)"), control: transRow))
+        addStepperRow(to: stack, label: t("Image transition duration (0–2 s, 0 = off)"),
+                      value: String(format: "%.1f", AppConfig.shared.imageTransitionDuration),
+                      min: 0, max: 2, increment: 0.1,
+                      fieldAction: #selector(transitionFieldChanged(_:)),
+                      stepperAction: #selector(transitionStepperChanged(_:)),
+                      fieldOut: { self.transitionField = $0 },
+                      stepperOut: { self.transitionStepper = $0 })
 
-        let intervalField = NSTextField()
-        intervalField.alignment = .center
-        intervalField.stringValue = String(Int(AppConfig.shared.slideshowInterval))
-        intervalField.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        intervalField.target = self
-        intervalField.action = #selector(intervalFieldChanged(_:))
-        self.intervalField = intervalField
-        let intervalStepper = NSStepper()
-        intervalStepper.minValue = 1; intervalStepper.maxValue = 600; intervalStepper.increment = 1
-        intervalStepper.valueWraps = false
-        intervalStepper.integerValue = Int(AppConfig.shared.slideshowInterval)
-        intervalStepper.target = self
-        intervalStepper.action = #selector(intervalStepperChanged(_:))
-        self.intervalStepper = intervalStepper
-        let intRow = NSStackView(views: [intervalField, intervalStepper])
-        intRow.orientation = .horizontal; intRow.spacing = 4; intRow.alignment = .centerY
-        stack.addArrangedSubview(makeRow(label: t("Slideshow interval (1–600 s)"), control: intRow))
+        addStepperRow(to: stack, label: t("Slideshow interval (1–600 s)"),
+                      value: String(Int(AppConfig.shared.slideshowInterval)),
+                      min: 1, max: 600, increment: 1,
+                      fieldAction: #selector(intervalFieldChanged(_:)),
+                      stepperAction: #selector(intervalStepperChanged(_:)),
+                      fieldOut: { self.intervalField = $0 },
+                      stepperOut: { self.intervalStepper = $0 })
 
-        let slideshowEndModePopup = NSPopUpButton()
+        slideshowEndModePopup = NSPopUpButton()
         slideshowEndModePopup.addItem(withTitle: t("Stop at last image"))
         slideshowEndModePopup.addItem(withTitle: t("Return to first image"))
         slideshowEndModePopup.addItem(withTitle: t("Continuous loop"))
@@ -378,39 +396,27 @@ final class PreferencesWindow: NSObject {
         }
         slideshowEndModePopup.target = self
         slideshowEndModePopup.action = #selector(slideshowEndModeChanged(_:))
-        self.slideshowEndModePopup = slideshowEndModePopup
         stack.addArrangedSubview(makeRow(label: t("When slideshow ends"), control: slideshowEndModePopup))
 
-        let cropModePopup = NSPopUpButton()
+        cropModePopup = NSPopUpButton()
         cropModePopup.addItem(withTitle: t("Full image"))
         cropModePopup.addItem(withTitle: t("Drag to select"))
         cropModePopup.selectItem(at: AppConfig.shared.cropMode == "select" ? 1 : 0)
         cropModePopup.target = self
         cropModePopup.action = #selector(cropModeChanged(_:))
-        self.cropModePopup = cropModePopup
         stack.addArrangedSubview(makeRow(label: t("Crop region selection"), control: cropModePopup))
 
-        let toolbarAlphaField = NSTextField()
-        toolbarAlphaField.alignment = .center
-        toolbarAlphaField.stringValue = String(format: "%.1f", AppConfig.shared.toolbarHiddenAlpha)
-        toolbarAlphaField.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        toolbarAlphaField.target = self
-        toolbarAlphaField.action = #selector(toolbarHiddenAlphaFieldChanged(_:))
-        self.toolbarHiddenAlphaField = toolbarAlphaField
-        let toolbarAlphaStepper = NSStepper()
-        toolbarAlphaStepper.minValue = 0; toolbarAlphaStepper.maxValue = 1; toolbarAlphaStepper.increment = 0.1
-        toolbarAlphaStepper.valueWraps = false
-        toolbarAlphaStepper.doubleValue = AppConfig.shared.toolbarHiddenAlpha
-        toolbarAlphaStepper.target = self
-        toolbarAlphaStepper.action = #selector(toolbarHiddenAlphaStepperChanged(_:))
-        self.toolbarHiddenAlphaStepper = toolbarAlphaStepper
-        let alphaRow = NSStackView(views: [toolbarAlphaField, toolbarAlphaStepper])
-        alphaRow.orientation = .horizontal; alphaRow.spacing = 4; alphaRow.alignment = .centerY
-        stack.addArrangedSubview(makeRow(label: t("Toolbar hidden opacity (0–1)"), control: alphaRow))
+        addStepperRow(to: stack, label: t("Toolbar hidden opacity (0–1)"),
+                      value: String(format: "%.1f", AppConfig.shared.toolbarHiddenAlpha),
+                      min: 0, max: 1, increment: 0.1,
+                      fieldAction: #selector(toolbarHiddenAlphaFieldChanged(_:)),
+                      stepperAction: #selector(toolbarHiddenAlphaStepperChanged(_:)),
+                      fieldOut: { self.toolbarHiddenAlphaField = $0 },
+                      stepperOut: { self.toolbarHiddenAlphaStepper = $0 })
 
-        let updateFreqPopup = NSPopUpButton()
+        updateFrequencyPopup = NSPopUpButton()
         for title in [t("On startup"), t("Daily"), t("Weekly"), t("Monthly"), t("Never")] {
-            updateFreqPopup.addItem(withTitle: title)
+            updateFrequencyPopup.addItem(withTitle: title)
         }
         let freqIdx: Int
         switch AppConfig.shared.updateCheckFrequency {
@@ -420,87 +426,83 @@ final class PreferencesWindow: NSObject {
         case "never": freqIdx = 4
         default: freqIdx = 0
         }
-        updateFreqPopup.selectItem(at: freqIdx)
-        updateFreqPopup.target = self
-        updateFreqPopup.action = #selector(updateFrequencyChanged(_:))
-        self.updateFrequencyPopup = updateFreqPopup
+        updateFrequencyPopup.selectItem(at: freqIdx)
+        updateFrequencyPopup.target = self
+        updateFrequencyPopup.action = #selector(updateFrequencyChanged(_:))
 
-        let checkNowBtn = NSButton(title: t("Check Now"), target: self, action: #selector(checkForUpdatesNow(_:)))
-        checkNowBtn.bezelStyle = .rounded
-        self.checkUpdatesButton = checkNowBtn
+        checkUpdatesButton = NSButton(title: t("Check Now"), target: self, action: #selector(checkForUpdatesNow(_:)))
+        checkUpdatesButton.bezelStyle = .rounded
 
-        let updateRow = NSStackView(views: [updateFreqPopup, checkNowBtn])
+        let updateRow = NSStackView(views: [updateFrequencyPopup, checkUpdatesButton])
         updateRow.orientation = .horizontal; updateRow.spacing = 12; updateRow.alignment = .centerY
         stack.addArrangedSubview(makeRow(label: t("Check for updates"), control: updateRow))
 
-        let maxRecentField = NSTextField()
-        maxRecentField.stringValue = String(AppConfig.shared.maxRecentFiles)
-        maxRecentField.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        maxRecentField.target = self
-        maxRecentField.action = #selector(maxRecentFilesFieldChanged(_:))
-        self.maxRecentFilesField = maxRecentField
-        stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentField))
+        maxRecentFilesField = NSTextField()
+        maxRecentFilesField.stringValue = String(AppConfig.shared.maxRecentFiles)
+        maxRecentFilesField.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        maxRecentFilesField.target = self
+        maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.allowsFloats = false
+        formatter.minimum = 0
+        formatter.maximum = 50
+        maxRecentFilesField.formatter = formatter
+        stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentFilesField))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
     // MARK: - AI Tab
 
-    private func buildAITab() -> NSView {
+    private func createAITab() -> NSView {
         let container = NSView()
         let t = L10n.shared.t
 
-        aiTabView = NSTabView()
-        aiTabView.translatesAutoresizingMaskIntoConstraints = false
+        aiTabView = NSTabView(frame: container.bounds.insetBy(dx: 10, dy: 10))
+        aiTabView.autoresizingMask = [.width, .height]
+
+        let enhanceItem = NSTabViewItem(identifier: "enhance")
+        enhanceItem.label = t("Quality Enhance")
+        enhanceItem.view = createEnhanceSubTab()
+        aiTabView.addTabViewItem(enhanceItem)
+
+        let upscaleItem = NSTabViewItem(identifier: "upscale")
+        upscaleItem.label = t("Super Resolution")
+        upscaleItem.view = createUpscaleSubTab()
+        aiTabView.addTabViewItem(upscaleItem)
+
+        let dewatermarkItem = NSTabViewItem(identifier: "dewatermark")
+        dewatermarkItem.label = t("Remove Watermark")
+        dewatermarkItem.view = createDewatermarkSubTab()
+        aiTabView.addTabViewItem(dewatermarkItem)
+
+        let dedupItem = NSTabViewItem(identifier: "dedup")
+        dedupItem.label = t("AI Dedup")
+        dedupItem.view = createDedupSubTab()
+        aiTabView.addTabViewItem(dedupItem)
+
+        let oneClickItem = NSTabViewItem(identifier: "oneclick")
+        oneClickItem.label = t("One-click Enhance")
+        oneClickItem.view = createOneClickSubTab()
+        aiTabView.addTabViewItem(oneClickItem)
+
+        let modelsItem = NSTabViewItem(identifier: "models")
+        modelsItem.label = t("AI Models")
+        modelsItem.view = createModelsSubTab()
+        aiTabView.addTabViewItem(modelsItem)
+
         container.addSubview(aiTabView)
-        NSLayoutConstraint.activate([
-            aiTabView.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            aiTabView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            aiTabView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
-            aiTabView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4)
-        ])
-
-        let enhanceTab = NSTabViewItem(identifier: "enhance")
-        enhanceTab.label = t("Quality Enhance")
-        enhanceTab.view = buildEnhanceSubTab()
-        aiTabView.addTabViewItem(enhanceTab)
-
-        let upscaleTab = NSTabViewItem(identifier: "upscale")
-        upscaleTab.label = t("Super Resolution")
-        upscaleTab.view = buildUpscaleSubTab()
-        aiTabView.addTabViewItem(upscaleTab)
-
-        let dewatermarkTab = NSTabViewItem(identifier: "dewatermark")
-        dewatermarkTab.label = t("Remove Watermark")
-        dewatermarkTab.view = buildDewatermarkSubTab()
-        aiTabView.addTabViewItem(dewatermarkTab)
-
-        let dedupTab = NSTabViewItem(identifier: "dedup")
-        dedupTab.label = t("AI Dedup")
-        dedupTab.view = buildDedupSubTab()
-        aiTabView.addTabViewItem(dedupTab)
-
-        let oneClickTab = NSTabViewItem(identifier: "oneclick")
-        oneClickTab.label = t("One-click Enhance")
-        oneClickTab.view = buildOneClickSubTab()
-        aiTabView.addTabViewItem(oneClickTab)
-
-        let modelsTab = NSTabViewItem(identifier: "models")
-        modelsTab.label = t("AI Models")
-        modelsTab.view = buildModelsSubTab()
-        aiTabView.addTabViewItem(modelsTab)
-
-        aiTabView.delegate = self
         return container
     }
 
-    private func buildEnhanceSubTab() -> NSView {
+    private func createEnhanceSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
         addStepperRow(to: stack, label: t("Vibrance (0–1)"),
                       value: String(format: "%.2f", AppConfig.shared.enhanceVibrance),
-                      min: 0, max: 1, increment: 0.05, format: "%.2f",
+                      min: 0, max: 1, increment: 0.05,
                       fieldAction: #selector(enhanceVibranceFieldChanged(_:)),
                       stepperAction: #selector(enhanceVibranceStepperChanged(_:)),
                       fieldOut: { self.enhanceVibranceField = $0 },
@@ -508,7 +510,7 @@ final class PreferencesWindow: NSObject {
 
         addStepperRow(to: stack, label: t("Contrast (0.5–2.0, 1.0 = off)"),
                       value: String(format: "%.2f", AppConfig.shared.enhanceContrast),
-                      min: 0.5, max: 2.0, increment: 0.05, format: "%.2f",
+                      min: 0.5, max: 2.0, increment: 0.05,
                       fieldAction: #selector(enhanceContrastFieldChanged(_:)),
                       stepperAction: #selector(enhanceContrastStepperChanged(_:)),
                       fieldOut: { self.enhanceContrastField = $0 },
@@ -516,7 +518,7 @@ final class PreferencesWindow: NSObject {
 
         addStepperRow(to: stack, label: t("Sharpness (0–1)"),
                       value: String(format: "%.2f", AppConfig.shared.enhanceSharpness),
-                      min: 0, max: 1, increment: 0.05, format: "%.2f",
+                      min: 0, max: 1, increment: 0.05,
                       fieldAction: #selector(enhanceSharpnessFieldChanged(_:)),
                       stepperAction: #selector(enhanceSharpnessStepperChanged(_:)),
                       fieldOut: { self.enhanceSharpnessField = $0 },
@@ -526,10 +528,10 @@ final class PreferencesWindow: NSObject {
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
-    private func buildUpscaleSubTab() -> NSView {
+    private func createUpscaleSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
@@ -540,7 +542,7 @@ final class PreferencesWindow: NSObject {
 
             addStepperRow(to: stack, label: t("Small image threshold (px, longest side)"),
                           value: String(AppConfig.shared.smallImageMaxSide),
-                          min: 64, max: 8192, increment: 128, format: "%d",
+                          min: 64, max: 8192, increment: 128,
                           fieldAction: #selector(smallImageThresholdFieldChanged(_:)),
                           stepperAction: #selector(smallImageThresholdStepperChanged(_:)),
                           fieldOut: { self.smallImageThresholdField = $0 },
@@ -555,10 +557,10 @@ final class PreferencesWindow: NSObject {
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
-    private func buildDewatermarkSubTab() -> NSView {
+    private func createDewatermarkSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
@@ -566,18 +568,17 @@ final class PreferencesWindow: NSObject {
         let lamaReady = PluginManager.shared.isReady(.lama)
 
         if u2netReady || lamaReady {
-            let modePopup = NSPopUpButton()
-            modePopup.addItem(withTitle: t("Auto (detect watermark automatically)"))
-            modePopup.addItem(withTitle: t("Manual (select region manually)"))
-            if AppConfig.shared.watermarkMode == "manual" { modePopup.selectItem(at: 1) }
+            watermarkModePopup = NSPopUpButton()
+            watermarkModePopup.addItem(withTitle: t("Auto (detect watermark automatically)"))
+            watermarkModePopup.addItem(withTitle: t("Manual (select region manually)"))
+            if AppConfig.shared.watermarkMode == "manual" { watermarkModePopup.selectItem(at: 1) }
             if !u2netReady {
-                modePopup.item(at: 0)?.isEnabled = false
-                modePopup.selectItem(at: 1)
+                watermarkModePopup.item(at: 0)?.isEnabled = false
+                watermarkModePopup.selectItem(at: 1)
             }
-            modePopup.target = self
-            modePopup.action = #selector(watermarkModeChanged(_:))
-            self.watermarkModePopup = modePopup
-            stack.addArrangedSubview(makeRow(label: t("Mode"), control: modePopup))
+            watermarkModePopup.target = self
+            watermarkModePopup.action = #selector(watermarkModeChanged(_:))
+            stack.addArrangedSubview(makeRow(label: t("Mode"), control: watermarkModePopup))
 
             aiAutoDewatermarkCheckbox = NSButton(checkboxWithTitle: t("Auto remove watermark on image load"), target: self, action: #selector(toggleAutoDewatermark(_:)))
             aiAutoDewatermarkCheckbox.state = AppConfig.shared.aiAutoDewatermarkEnabled ? .on : .off
@@ -586,7 +587,7 @@ final class PreferencesWindow: NSObject {
             if u2netReady {
                 addStepperRow(to: stack, label: t("Detection sensitivity (0.1–0.9)"),
                               value: String(format: "%.2f", AppConfig.shared.watermarkMaskThreshold),
-                              min: 0.1, max: 0.9, increment: 0.05, format: "%.2f",
+                              min: 0.1, max: 0.9, increment: 0.05,
                               fieldAction: #selector(watermarkThresholdFieldChanged(_:)),
                               stepperAction: #selector(watermarkThresholdStepperChanged(_:)),
                               fieldOut: { self.watermarkThresholdField = $0 },
@@ -594,7 +595,7 @@ final class PreferencesWindow: NSObject {
 
                 addStepperRow(to: stack, label: t("Min. watermark size (0.0001–0.1)"),
                               value: String(format: "%.4f", AppConfig.shared.watermarkMinMaskFraction),
-                              min: 0.0001, max: 0.1, increment: 0.0001, format: "%.4f",
+                              min: 0.0001, max: 0.1, increment: 0.0001,
                               fieldAction: #selector(watermarkMinFractionFieldChanged(_:)),
                               stepperAction: #selector(watermarkMinFractionStepperChanged(_:)),
                               fieldOut: { self.watermarkMinFractionField = $0 },
@@ -603,7 +604,7 @@ final class PreferencesWindow: NSObject {
 
             addStepperRow(to: stack, label: t("Mask edge feather (0–10 px)"),
                           value: String(AppConfig.shared.watermarkFeatherRadius),
-                          min: 0, max: 10, increment: 1, format: "%d",
+                          min: 0, max: 10, increment: 1,
                           fieldAction: #selector(watermarkFeatherFieldChanged(_:)),
                           stepperAction: #selector(watermarkFeatherStepperChanged(_:)),
                           fieldOut: { self.watermarkFeatherField = $0 },
@@ -621,16 +622,16 @@ final class PreferencesWindow: NSObject {
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
-    private func buildDedupSubTab() -> NSView {
+    private func createDedupSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
         addStepperRow(to: stack, label: t("Similarity threshold (0.70–0.99, higher = stricter)"),
                       value: String(format: "%.2f", AppConfig.shared.dedupThreshold),
-                      min: 0.70, max: 0.99, increment: 0.01, format: "%.2f",
+                      min: 0.70, max: 0.99, increment: 0.01,
                       fieldAction: #selector(dedupThresholdFieldChanged(_:)),
                       stepperAction: #selector(dedupThresholdStepperChanged(_:)),
                       fieldOut: { self.dedupThresholdField = $0 },
@@ -644,41 +645,39 @@ final class PreferencesWindow: NSObject {
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
-    private func buildOneClickSubTab() -> NSView {
+    private func createOneClickSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
-        let modePopup = NSPopUpButton()
-        modePopup.addItem(withTitle: t("Both (dedup + dewatermark)"))
-        modePopup.addItem(withTitle: t("Dedup only"))
-        modePopup.addItem(withTitle: t("Dewatermark only"))
+        enhanceModePopup = NSPopUpButton()
+        enhanceModePopup.addItem(withTitle: t("Both (dedup + dewatermark)"))
+        enhanceModePopup.addItem(withTitle: t("Dedup only"))
+        enhanceModePopup.addItem(withTitle: t("Dewatermark only"))
         switch AppConfig.shared.aiEnhanceMode {
-        case "dedupOnly": modePopup.selectItem(at: 1)
-        case "watermarkOnly": modePopup.selectItem(at: 2)
-        default: modePopup.selectItem(at: 0)
+        case "dedupOnly": enhanceModePopup.selectItem(at: 1)
+        case "watermarkOnly": enhanceModePopup.selectItem(at: 2)
+        default: enhanceModePopup.selectItem(at: 0)
         }
-        modePopup.target = self
-        modePopup.action = #selector(enhanceModeChanged(_:))
-        self.enhanceModePopup = modePopup
-        stack.addArrangedSubview(makeRow(label: t("One-click enhance"), control: modePopup))
+        enhanceModePopup.target = self
+        enhanceModePopup.action = #selector(enhanceModeChanged(_:))
+        stack.addArrangedSubview(makeRow(label: t("One-click enhance"), control: enhanceModePopup))
 
-        let statusLabel = NSTextField(labelWithString: "")
-        statusLabel.textColor = .secondaryLabelColor
-        self.oneClickStatusLabel = statusLabel
-        stack.addArrangedSubview(makeRow(label: "", control: statusLabel))
+        oneClickStatusLabel = NSTextField(labelWithString: "")
+        oneClickStatusLabel.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(makeRow(label: "", control: oneClickStatusLabel))
         updateOneClickStatus()
 
         let restoreBtn = NSButton(title: t("Restore This Page Defaults"), target: self, action: #selector(restoreOneClickDefaults(_:)))
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
-    private func buildModelsSubTab() -> NSView {
+    private func createModelsSubTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
@@ -731,12 +730,12 @@ final class PreferencesWindow: NSObject {
         }
         syncModelRows()
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
     // MARK: - Advanced Tab
 
-    private func buildAdvancedTab() -> NSView {
+    private func createAdvancedTab() -> NSView {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
@@ -746,62 +745,60 @@ final class PreferencesWindow: NSObject {
         proxyEnabledCheckbox.state = AppConfig.shared.proxyEnabled ? .on : .off
         stack.addArrangedSubview(makeRow(label: "", control: proxyEnabledCheckbox))
 
-        let proxyTypePopup = NSPopUpButton()
+        proxyTypePopup = NSPopUpButton()
         proxyTypePopup.addItem(withTitle: "HTTP")
         proxyTypePopup.addItem(withTitle: "SOCKS")
         proxyTypePopup.selectItem(at: AppConfig.shared.proxyType == "socks" ? 1 : 0)
         proxyTypePopup.target = self
         proxyTypePopup.action = #selector(proxyTypeChanged(_:))
-        self.proxyTypePopup = proxyTypePopup
         stack.addArrangedSubview(makeRow(label: t("Type"), control: proxyTypePopup))
 
-        let proxyHostField = NSTextField()
+        proxyHostField = NSTextField()
         proxyHostField.placeholderString = "127.0.0.1"
         proxyHostField.stringValue = AppConfig.shared.proxyHost
         proxyHostField.widthAnchor.constraint(equalToConstant: controlWidth).isActive = true
         proxyHostField.target = self
         proxyHostField.action = #selector(proxyHostFieldChanged(_:))
-        self.proxyHostField = proxyHostField
         stack.addArrangedSubview(makeRow(label: t("Host"), control: proxyHostField))
 
-        let proxyPortField = NSTextField()
+        proxyPortField = NSTextField()
         proxyPortField.alignment = .center
         proxyPortField.stringValue = String(AppConfig.shared.proxyPort)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .none
-        proxyPortField.formatter = formatter
+        let portFormatter = NumberFormatter()
+        portFormatter.numberStyle = .none
+        proxyPortField.formatter = portFormatter
         proxyPortField.widthAnchor.constraint(equalToConstant: 80).isActive = true
         proxyPortField.target = self
         proxyPortField.action = #selector(proxyPortFieldChanged(_:))
-        self.proxyPortField = proxyPortField
-        let proxyPortStepper = NSStepper()
+
+        proxyPortStepper = NSStepper()
         proxyPortStepper.minValue = 1; proxyPortStepper.maxValue = 65535; proxyPortStepper.increment = 1
         proxyPortStepper.valueWraps = false
         proxyPortStepper.integerValue = AppConfig.shared.proxyPort
         proxyPortStepper.target = self
         proxyPortStepper.action = #selector(proxyPortStepperChanged(_:))
-        self.proxyPortStepper = proxyPortStepper
+
         let portRow = NSStackView(views: [proxyPortField, proxyPortStepper])
         portRow.orientation = .horizontal; portRow.spacing = 4; portRow.alignment = .centerY
         stack.addArrangedSubview(makeRow(label: t("Port"), control: portRow))
 
         stack.addArrangedSubview(sectionHeader(t("Image Cache")))
 
-        let cacheField = NSTextField()
+        cacheField = NSTextField()
         cacheField.alignment = .center
         cacheField.stringValue = String(AppConfig.shared.imageCacheCount)
         cacheField.widthAnchor.constraint(equalToConstant: 60).isActive = true
         cacheField.target = self
         cacheField.action = #selector(cacheFieldChanged(_:))
-        self.cacheField = cacheField
-        let cacheStepper = NSStepper()
+
+        cacheStepper = NSStepper()
         cacheStepper.minValue = Double(AppConfig.cacheCountRange.lowerBound)
         cacheStepper.maxValue = Double(AppConfig.cacheCountRange.upperBound)
         cacheStepper.increment = 1; cacheStepper.valueWraps = false
         cacheStepper.integerValue = AppConfig.shared.imageCacheCount
         cacheStepper.target = self
         cacheStepper.action = #selector(cacheStepperChanged(_:))
-        self.cacheStepper = cacheStepper
+
         let cacheRow = NSStackView(views: [cacheField, cacheStepper])
         cacheRow.orientation = .horizontal; cacheRow.spacing = 4; cacheRow.alignment = .centerY
         stack.addArrangedSubview(makeRow(label: t("Cached images (1–20)"), control: cacheRow))
@@ -812,13 +809,12 @@ final class PreferencesWindow: NSObject {
         logEnabledCheckbox.state = AppConfig.shared.logEnabled ? .on : .off
         stack.addArrangedSubview(makeRow(label: "", control: logEnabledCheckbox))
 
-        let logPathField = NSTextField()
+        logPathField = NSTextField()
         logPathField.stringValue = AppConfig.shared.logPath
         logPathField.placeholderString = AppConfig.Defaults.logPath()
-        logPathField.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        logPathField.widthAnchor.constraint(equalToConstant: 320).isActive = true
         logPathField.target = self
         logPathField.action = #selector(logPathFieldChanged(_:))
-        self.logPathField = logPathField
 
         let browseBtn = NSButton(title: t("Browse..."), target: self, action: #selector(browseLogPath(_:)))
         browseBtn.bezelStyle = .rounded
@@ -830,12 +826,12 @@ final class PreferencesWindow: NSObject {
         restoreBtn.bezelStyle = .rounded
         stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
 
-        return wrapInScroll(stack)
+        return wrapInTopAlignedContainer(stack)
     }
 
     // MARK: - About Tab
 
-    private func buildAboutTab() -> NSView {
+    private func createAboutTab() -> NSView {
         let container = NSView()
         let t = L10n.shared.t
 
@@ -900,40 +896,9 @@ final class PreferencesWindow: NSObject {
         return container
     }
 
-    // MARK: - Stepper Row Helper
-
-    private func addStepperRow(
-        to stack: NSStackView, label: String, value: String,
-        min: Double, max: Double, increment: Double, format: String,
-        fieldAction: Selector, stepperAction: Selector,
-        fieldOut: @escaping (NSTextField) -> Void,
-        stepperOut: @escaping (NSStepper) -> Void
-    ) {
-        let field = NSTextField()
-        field.alignment = .center
-        field.stringValue = value
-        field.widthAnchor.constraint(equalToConstant: 70).isActive = true
-        field.target = self
-        field.action = fieldAction
-        fieldOut(field)
-
-        let stepper = NSStepper()
-        stepper.minValue = min; stepper.maxValue = max; stepper.increment = increment
-        stepper.valueWraps = false
-        stepper.doubleValue = Double(value) ?? min
-        stepper.target = self
-        stepper.action = stepperAction
-        stepperOut(stepper)
-
-        let row = NSStackView(views: [field, stepper])
-        row.orientation = .horizontal; row.spacing = 4; row.alignment = .centerY
-        stack.addArrangedSubview(makeRow(label: label, control: row))
-    }
-
     // MARK: - Syncing
 
     private func syncControlsFromConfig() {
-        guard window != nil else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
@@ -1109,7 +1074,6 @@ final class PreferencesWindow: NSObject {
 
     @objc private func openDirModeChanged(_ sender: NSPopUpButton) {
         if sender.indexOfSelectedItem == 1 {
-            guard let window = window else { return }
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
@@ -1122,7 +1086,7 @@ final class PreferencesWindow: NSObject {
                 startDir = FileManager.default.homeDirectoryForCurrentUser
             }
             panel.directoryURL = startDir
-            panel.beginSheetModal(for: window) { [weak self] response in
+            panel.beginSheetModal(for: self) { [weak self] response in
                 if response == .OK, let dir = panel.url {
                     AppConfig.shared.openPanelDirectoryMode = "custom"
                     AppConfig.shared.customOpenDirectory = dir.path
@@ -1435,7 +1399,6 @@ final class PreferencesWindow: NSObject {
     }
 
     @objc private func browseLogPath(_ sender: Any?) {
-        guard let window = window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -1448,7 +1411,7 @@ final class PreferencesWindow: NSObject {
             startDir = FileManager.default.homeDirectoryForCurrentUser
         }
         panel.directoryURL = startDir
-        panel.beginSheetModal(for: window) { [weak self] response in
+        panel.beginSheetModal(for: self) { [weak self] response in
             guard response == .OK, let dir = panel.url else { return }
             let path = dir.appendingPathComponent("PixAI.log").path
             AppConfig.shared.logPath = path
@@ -1524,7 +1487,7 @@ final class PreferencesWindow: NSObject {
             alert.informativeText = t("Super-Resolution model is hosted on HuggingFace. Download may be slow or fail in mainland China. Enable proxy?")
             alert.addButton(withTitle: t("Enable Proxy"))
             alert.addButton(withTitle: t("Cancel"))
-            alert.beginSheetModal(for: window!) { [weak self] response in
+            alert.beginSheetModal(for: self) { [weak self] response in
                 if response == .alertFirstButtonReturn {
                     self?.switchToProxySettings()
                 }
@@ -1556,7 +1519,7 @@ final class PreferencesWindow: NSObject {
     }
 
     private func switchToProxySettings() {
-        selectTab("advanced")
+        selectTab(withIdentifier: "advanced")
         proxyEnabledCheckbox?.state = .on
         toggleProxyEnabled(proxyEnabledCheckbox!)
         proxyHostField?.becomeFirstResponder()
@@ -1658,8 +1621,16 @@ final class PreferencesWindow: NSObject {
     }
 }
 
+// MARK: - NSTabViewDelegate
+
 extension PreferencesWindow: NSTabViewDelegate {
     func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-        window?.makeFirstResponder(nil)
+        makeFirstResponder(nil)
     }
+}
+
+// MARK: - Shared Instance
+
+extension PreferencesWindow {
+    static let shared = PreferencesWindow()
 }

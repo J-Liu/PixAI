@@ -89,7 +89,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
         // Preferences (Cmd+,): show the shared Preferences window.
         MenuBuilder.preferencesCallback = {
-            PreferencesWindow.shared.show()
+            PreferencesWindow.shared.showGeneralTab()
         }
 
         // Open Recent file: open the selected file.
