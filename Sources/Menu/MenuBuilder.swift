@@ -254,18 +254,8 @@ final class MenuActions: NSObject, NSMenuItemValidation {
 
     // MARK: - Always-available actions
 
-    /// About panel with the project homepage link + copyright line.
     @objc func showAbout(_ sender: Any?) {
-        let credits = NSMutableAttributedString()
-        let homeURL = URL(string: "https://github.com/J-Liu/PixAI")!
-        credits.append(NSAttributedString(string: "https://github.com/J-Liu/PixAI", attributes: [
-            .link: homeURL,
-            .font: NSFont.systemFont(ofSize: 11)
-        ]))
-        credits.append(NSAttributedString(string: "\n\nCopyright © 2026 Jia Liu All rights reserved.", attributes: [
-            .font: NSFont.systemFont(ofSize: 11)
-        ]))
-        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        PreferencesWindow.shared.showAboutTab()
     }
 
     @objc func checkForUpdates(_ sender: Any?) {
