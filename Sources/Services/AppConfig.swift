@@ -990,8 +990,16 @@ final class AppConfig {
         }
     }
 
+    /// Normalize language code for storage. "system" is preserved.
     static func normalizeLanguage(_ value: String) -> String {
-        // "system" resolves to the user's system language preference
+        switch value {
+        case "system", "zh", "zh-Hant", "en": return value
+        default: return "system"
+        }
+    }
+
+    /// Resolve "system" to actual language code for display.
+    static func resolveLanguage(_ value: String) -> String {
         if value == "system" {
             let preferredLang = Locale.preferredLanguages.first ?? "en"
             if preferredLang.hasPrefix("zh-Hant") || preferredLang.hasPrefix("zh_TW") || preferredLang.hasPrefix("zh_HK") {
@@ -1001,12 +1009,7 @@ final class AppConfig {
             }
             return "en"
         }
-        switch value {
-        case "zh": return "zh"
-        case "zh-Hant": return "zh-Hant"
-        case "en": return "en"
-        default: return "en"
-        }
+        return value
     }
 
     static func normalizeEnhanceMode(_ value: String) -> String {

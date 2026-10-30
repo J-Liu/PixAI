@@ -24,14 +24,14 @@ final class L10n {
     private let lock = NSLock()
 
     private init() {
-        languageCode = AppConfig.normalizeLanguage(AppConfig.shared.uiLanguage)
+        languageCode = AppConfig.resolveLanguage(AppConfig.shared.uiLanguage)
         NotificationCenter.default.addObserver(
             forName: AppConfig.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            let new = AppConfig.normalizeLanguage(AppConfig.shared.uiLanguage)
+            let new = AppConfig.resolveLanguage(AppConfig.shared.uiLanguage)
             self.lock.lock()
             let changed = new != self.languageCode
             if changed { self.languageCode = new }
