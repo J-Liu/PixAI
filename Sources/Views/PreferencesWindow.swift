@@ -542,6 +542,10 @@ final class PreferencesWindow: NSWindow {
         maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
         stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentFilesField))
 
+        let restoreBtn = NSButton(title: t("Restore This Page Defaults"), target: self, action: #selector(restoreGeneralDefaults(_:)))
+        restoreBtn.bezelStyle = .rounded
+        stack.addArrangedSubview(makeRow(label: "", control: restoreBtn))
+
         return wrapInTopAlignedContainer(stack)
     }
 
@@ -1521,6 +1525,24 @@ final class PreferencesWindow: NSWindow {
     }
 
     // MARK: - Restore Defaults
+
+    @objc private func restoreGeneralDefaults(_ sender: Any?) {
+        AppConfig.shared.quitOnLastWindowClosed = AppConfig.Defaults.quitOnLastWindowClosed
+        AppConfig.shared.deleteConfirmationEnabled = AppConfig.Defaults.deleteConfirmationEnabled
+        AppConfig.shared.modelCheckPromptEnabled = AppConfig.Defaults.modelCheckPromptEnabled
+        AppConfig.shared.cropLivePhotoConfirm = AppConfig.Defaults.cropLivePhotoConfirm
+        AppConfig.shared.livePhotoAutoPlay = AppConfig.Defaults.livePhotoAutoPlay
+        AppConfig.shared.livePhotoMuted = AppConfig.Defaults.livePhotoMuted
+        AppConfig.shared.uiLanguage = AppConfig.Defaults.uiLanguage
+        AppConfig.shared.openPanelDirectoryMode = AppConfig.Defaults.openPanelDirectoryMode
+        AppConfig.shared.imageTransitionDuration = AppConfig.Defaults.imageTransitionDuration
+        AppConfig.shared.slideshowInterval = AppConfig.Defaults.slideshowInterval
+        AppConfig.shared.slideshowEndMode = AppConfig.Defaults.slideshowEndMode
+        AppConfig.shared.cropMode = AppConfig.Defaults.cropMode
+        AppConfig.shared.toolbarHiddenAlpha = AppConfig.Defaults.toolbarHiddenAlpha
+        AppConfig.shared.updateCheckFrequency = AppConfig.Defaults.updateCheckFrequency
+        AppConfig.shared.maxRecentFiles = AppConfig.Defaults.maxRecentFiles
+    }
 
     @objc private func restoreEnhanceDefaults(_ sender: Any?) {
         AppConfig.shared.enhanceVibrance = AppConfig.Defaults.enhanceVibrance
