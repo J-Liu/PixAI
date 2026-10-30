@@ -338,7 +338,8 @@ final class PreferencesWindow: NSWindow {
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor)
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor)
         ])
         return container
     }
@@ -557,6 +558,7 @@ final class PreferencesWindow: NSWindow {
 
         aiTabView = NSTabView(frame: container.bounds.insetBy(dx: 10, dy: 10))
         aiTabView.autoresizingMask = [.width, .height]
+        aiTabView.translatesAutoresizingMaskIntoConstraints = false
 
         let enhanceItem = NSTabViewItem(identifier: "enhance")
         enhanceItem.label = t("Quality Enhance")
@@ -589,6 +591,12 @@ final class PreferencesWindow: NSWindow {
         aiTabView.addTabViewItem(modelsItem)
 
         container.addSubview(aiTabView)
+        NSLayoutConstraint.activate([
+            aiTabView.topAnchor.constraint(equalTo: container.topAnchor),
+            aiTabView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            aiTabView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            aiTabView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
         return container
     }
 
