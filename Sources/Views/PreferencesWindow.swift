@@ -82,7 +82,7 @@ final class PreferencesWindow: NSWindow {
     private var aiTabView: NSTabView!
 
     // Layout constants
-    private let labelWidth: CGFloat = 220
+    private let labelWidth: CGFloat = 260
     private let controlWidth: CGFloat = 240
     private let rowSpacing: CGFloat = 12
 
@@ -159,7 +159,7 @@ final class PreferencesWindow: NSWindow {
 
     init() {
         let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-        let width: CGFloat = 700
+        let width: CGFloat = 750
         let height: CGFloat = 600
         let x = screenFrame.midX - width / 2
         let y = screenFrame.midY - height / 2
@@ -174,7 +174,7 @@ final class PreferencesWindow: NSWindow {
 
         self.title = L10n.shared.t("Preferences")
         self.isReleasedWhenClosed = false
-        self.minSize = NSSize(width: 700, height: 500)
+        self.minSize = NSSize(width: 750, height: 500)
 
         setupUI()
         setupKeyHandlers()
@@ -262,13 +262,7 @@ final class PreferencesWindow: NSWindow {
             forName: L10n.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            let wasVisible = self.isVisible
-            self.close()
-            if wasVisible {
-                // Recreate window with new localization
-                _ = PreferencesWindow()
-                PreferencesWindow.shared.showWindow()
-            }
+            self.recreateUI()
         }
 
         pluginObserver = NotificationCenter.default.addObserver(
@@ -291,6 +285,48 @@ final class PreferencesWindow: NSWindow {
             }
             return event
         }
+    }
+
+    private func recreateUI() {
+        // Remember current tab
+        let currentTabId = tabView.selectedTabViewItem?.identifier as? String ?? "general"
+
+        // Remove all tabs
+        while let tab = tabView.tabViewItems.first {
+            tabView.removeTabViewItem(tab)
+        }
+
+        // Recreate all tabs with new localization
+        let t = L10n.shared.t
+
+        let generalItem = NSTabViewItem(identifier: "general")
+        generalItem.label = t("General")
+        generalItem.view = createGeneralTab()
+        tabView.addTabViewItem(generalItem)
+
+        let aiItem = NSTabViewItem(identifier: "ai")
+        aiItem.label = t("AI")
+        aiItem.view = createAITab()
+        tabView.addTabViewItem(aiItem)
+
+        let advancedItem = NSTabViewItem(identifier: "advanced")
+        advancedItem.label = t("Advanced")
+        advancedItem.view = createAdvancedTab()
+        tabView.addTabViewItem(advancedItem)
+
+        let aboutItem = NSTabViewItem(identifier: "about")
+        aboutItem.label = t("About")
+        aboutItem.view = createAboutTab()
+        tabView.addTabViewItem(aboutItem)
+
+        // Restore selected tab
+        selectTab(withIdentifier: currentTabId)
+
+        // Update window title
+        self.title = t("Preferences")
+
+        // Sync controls
+        syncControlsFromConfig()
     }
 
     // MARK: - Layout Helpers
