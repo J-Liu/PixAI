@@ -15,6 +15,63 @@ final class FocusableContainerView: NSView {
     }
 }
 
+// MARK: - NumericTextField
+
+/// A text field that only accepts numeric input (digits, decimal point, and minus sign).
+/// Pressing Enter commits the change and resigns first responder.
+final class NumericTextField: NSTextField, NSTextFieldDelegate {
+    private var allowsDecimal: Bool = true
+    private var allowsNegative: Bool = false
+
+    convenience init(allowsDecimal: Bool = true, allowsNegative: Bool = false) {
+        self.init()
+        self.allowsDecimal = allowsDecimal
+        self.allowsNegative = allowsNegative
+        self.delegate = self
+        self.bezelStyle = .roundedBezel
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Handle Enter key to commit and lose focus
+        if event.keyCode == 36 { // Return key
+            window?.makeFirstResponder(nil)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    // MARK: - NSTextFieldDelegate
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field == self else { return }
+        let filtered = filterNumeric(field.stringValue)
+        if field.stringValue != filtered {
+            // Restore to previous valid state
+            field.stringValue = filtered
+        }
+    }
+
+    private func filterNumeric(_ string: String) -> String {
+        var result = ""
+        var hasDecimal = false
+        var hasMinus = false
+
+        for char in string {
+            if char.isNumber {
+                result.append(char)
+            } else if char == "." && allowsDecimal && !hasDecimal {
+                result.append(char)
+                hasDecimal = true
+            } else if char == "-" && allowsNegative && !hasMinus && result.isEmpty {
+                result.append(char)
+                hasMinus = true
+            }
+            // Ignore all other characters
+        }
+        return result
+    }
+}
+
 // MARK: - PreferencesWindow
 
 /// The Preferences window (Cmd+, / PixAI ▸ Preferences...).
@@ -25,7 +82,7 @@ final class PreferencesWindow: NSWindow {
     private var aiTabView: NSTabView!
 
     // Layout constants
-    private let labelWidth: CGFloat = 160
+    private let labelWidth: CGFloat = 220
     private let controlWidth: CGFloat = 240
     private let rowSpacing: CGFloat = 12
 
@@ -285,7 +342,7 @@ final class PreferencesWindow: NSWindow {
         fieldOut: @escaping (NSTextField) -> Void,
         stepperOut: @escaping (NSStepper) -> Void
     ) {
-        let field = NSTextField()
+        let field = NumericTextField(allowsDecimal: increment < 1, allowsNegative: min < 0)
         field.alignment = .center
         field.stringValue = value
         field.widthAnchor.constraint(equalToConstant: 70).isActive = true
@@ -337,11 +394,16 @@ final class PreferencesWindow: NSWindow {
         stack.addArrangedSubview(makeRow(label: "", control: liveMutedCheckbox))
 
         languagePopup = NSPopUpButton()
-        for lang in ["English", "简体中文", "繁體中文"] { languagePopup.addItem(withTitle: lang) }
+        languagePopup.addItem(withTitle: t("Follow System"))
+        languagePopup.addItem(withTitle: "English")
+        languagePopup.addItem(withTitle: "简体中文")
+        languagePopup.addItem(withTitle: "繁體中文")
         let langIdx: Int
         switch AppConfig.shared.uiLanguage {
-        case "zh": langIdx = 1
-        case "zh-Hant": langIdx = 2
+        case "system": langIdx = 0
+        case "en": langIdx = 1
+        case "zh": langIdx = 2
+        case "zh-Hant": langIdx = 3
         default: langIdx = 0
         }
         languagePopup.selectItem(at: langIdx)
@@ -437,17 +499,11 @@ final class PreferencesWindow: NSWindow {
         updateRow.orientation = .horizontal; updateRow.spacing = 12; updateRow.alignment = .centerY
         stack.addArrangedSubview(makeRow(label: t("Check for updates"), control: updateRow))
 
-        maxRecentFilesField = NSTextField()
+        maxRecentFilesField = NumericTextField(allowsDecimal: false, allowsNegative: false)
         maxRecentFilesField.stringValue = String(AppConfig.shared.maxRecentFiles)
         maxRecentFilesField.widthAnchor.constraint(equalToConstant: 60).isActive = true
         maxRecentFilesField.target = self
         maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .none
-        formatter.allowsFloats = false
-        formatter.minimum = 0
-        formatter.maximum = 50
-        maxRecentFilesField.formatter = formatter
         stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentFilesField))
 
         return wrapInTopAlignedContainer(stack)
@@ -761,12 +817,9 @@ final class PreferencesWindow: NSWindow {
         proxyHostField.action = #selector(proxyHostFieldChanged(_:))
         stack.addArrangedSubview(makeRow(label: t("Host"), control: proxyHostField))
 
-        proxyPortField = NSTextField()
+        proxyPortField = NumericTextField(allowsDecimal: false, allowsNegative: false)
         proxyPortField.alignment = .center
         proxyPortField.stringValue = String(AppConfig.shared.proxyPort)
-        let portFormatter = NumberFormatter()
-        portFormatter.numberStyle = .none
-        proxyPortField.formatter = portFormatter
         proxyPortField.widthAnchor.constraint(equalToConstant: 80).isActive = true
         proxyPortField.target = self
         proxyPortField.action = #selector(proxyPortFieldChanged(_:))
@@ -784,7 +837,7 @@ final class PreferencesWindow: NSWindow {
 
         stack.addArrangedSubview(sectionHeader(t("Image Cache")))
 
-        cacheField = NSTextField()
+        cacheField = NumericTextField(allowsDecimal: false, allowsNegative: false)
         cacheField.alignment = .center
         cacheField.stringValue = String(AppConfig.shared.imageCacheCount)
         cacheField.widthAnchor.constraint(equalToConstant: 60).isActive = true
@@ -911,8 +964,10 @@ final class PreferencesWindow: NSWindow {
 
             let langIdx: Int
             switch AppConfig.shared.uiLanguage {
-            case "zh": langIdx = 1
-            case "zh-Hant": langIdx = 2
+            case "system": langIdx = 0
+            case "en": langIdx = 1
+            case "zh": langIdx = 2
+            case "zh-Hant": langIdx = 3
             default: langIdx = 0
             }
             if self.languagePopup.indexOfSelectedItem != langIdx { self.languagePopup.selectItem(at: langIdx) }
@@ -1065,9 +1120,11 @@ final class PreferencesWindow: NSWindow {
     @objc private func languageChanged(_ sender: NSPopUpButton) {
         let lang: String
         switch sender.indexOfSelectedItem {
-        case 1: lang = "zh"
-        case 2: lang = "zh-Hant"
-        default: lang = "en"
+        case 0: lang = "system"
+        case 1: lang = "en"
+        case 2: lang = "zh"
+        case 3: lang = "zh-Hant"
+        default: lang = "system"
         }
         AppConfig.shared.uiLanguage = lang
     }

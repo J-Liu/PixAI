@@ -51,7 +51,7 @@ final class AppConfig {
         /// Images with longest side ≤ this are considered "small" for auto-upscaling.
         static let smallImageMaxSide = 1024
         /// UI language: "en" (default) or "zh".
-        static let uiLanguage = "en"
+        static let uiLanguage = "system"
         /// Image switch fade duration in seconds; 0 disables the animation.
         static let imageTransitionDuration: Double = 0.1
         /// Ask at startup whether to download missing/corrupted AI models.
@@ -991,9 +991,20 @@ final class AppConfig {
     }
 
     static func normalizeLanguage(_ value: String) -> String {
+        // "system" resolves to the user's system language preference
+        if value == "system" {
+            let preferredLang = Locale.preferredLanguages.first ?? "en"
+            if preferredLang.hasPrefix("zh-Hant") || preferredLang.hasPrefix("zh_TW") || preferredLang.hasPrefix("zh_HK") {
+                return "zh-Hant"
+            } else if preferredLang.hasPrefix("zh") {
+                return "zh"
+            }
+            return "en"
+        }
         switch value {
         case "zh": return "zh"
         case "zh-Hant": return "zh-Hant"
+        case "en": return "en"
         default: return "en"
         }
     }
