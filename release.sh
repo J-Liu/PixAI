@@ -76,17 +76,13 @@ NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 
 echo -e "${GREEN}New tag: ${NEW_TAG}${NC}"
 
-# Find Info.plist
-INFO_PLIST="Sources/App/Info.plist"
+# Info.plist path
+INFO_PLIST="Resources/Info.plist"
 if [ ! -f "$INFO_PLIST" ]; then
-    # Try to find it
-    INFO_PLIST=$(find . -name "Info.plist" -not -path "*/.*" | head -1)
-    if [ -z "$INFO_PLIST" ]; then
-        echo -e "${RED}Error: Info.plist not found${NC}"
-        exit 1
-    fi
+    echo -e "${RED}Error: Info.plist not found at ${INFO_PLIST}${NC}"
+    exit 1
 fi
-echo -e "${GREEN}Found Info.plist: ${INFO_PLIST}${NC}"
+echo -e "${GREEN}Info.plist: ${INFO_PLIST}${NC}"
 
 # Get current version from Info.plist
 CURRENT_BUNDLE=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$INFO_PLIST" 2>/dev/null || echo "1")
