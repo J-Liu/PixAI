@@ -512,6 +512,31 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         positionLoadSpinner()
     }
 
+    // MARK: - Fullscreen & Power Management
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        Logger.shared.log("Entered fullscreen mode")
+        updatePowerAssertion()
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        Logger.shared.log("Exited fullscreen mode")
+        updatePowerAssertion()
+    }
+
+    /// Update power assertion based on fullscreen + slideshow playing state.
+    /// Keep system awake only when in fullscreen AND slideshow is playing.
+    private func updatePowerAssertion() {
+        let isFullscreen = window.styleMask.contains(.fullScreen)
+        let isPlaying = slideshow.isPlaying
+
+        if isFullscreen && isPlaying {
+            PowerAssertion.shared.enable(reason: "Fullscreen slideshow playback")
+        } else {
+            PowerAssertion.shared.disable()
+        }
+    }
+
     // MARK: - NSWindowDelegate
 
     /// Called when the user tries to close the window. Return false to prevent closing.
@@ -3833,6 +3858,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         Logger.shared.log("Slideshow started: \(imageURLs.count) images, \(slideshow.interval)s each")
         slideshow.start()
         updatePlayPauseIcon()
+        updatePowerAssertion()
     }
 
     /// Pause the running slideshow (Space key / toolbar button).
@@ -3841,6 +3867,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         Logger.shared.log("Slideshow paused at index \(currentIndex)")
         slideshow.pause()
         updatePlayPauseIcon()
+        updatePowerAssertion()
     }
 
     /// Resume a paused slideshow (Space key / toolbar button).
@@ -3849,6 +3876,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         Logger.shared.log("Slideshow resumed at index \(currentIndex)")
         slideshow.resume()
         updatePlayPauseIcon()
+        updatePowerAssertion()
     }
 
     /// Stop the slideshow (P key).
@@ -3949,6 +3977,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func endSlideshow(finished: Bool) {
         slideshow.stop()
         updatePlayPauseIcon()
+        updatePowerAssertion()
         if finished {
             Logger.shared.log("Slideshow finished at the last image")
             showStatusBarHint(L10n.shared.t("Playback ended"), for: 3.0)
