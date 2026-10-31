@@ -36,6 +36,10 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         AppConfig.shared.logLoadedState()
         Logger.shared.log("applicationDidFinishLaunching")
 
+        // Disable Sparkle's built-in automatic check - we handle it ourselves
+        // to avoid showing progress dialogs (silent background check only).
+        updaterController.updater.automaticallyChecksForUpdates = false
+
         // Clear the image cache when the system signals a memory warning
         // (Dispatch memory-pressure source — macOS has no AppKit equivalent
         // of UIApplication.didReceiveMemoryWarningNotification).
