@@ -272,7 +272,7 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
-        userDriverDelegate: nil
+        userDriverDelegate: SparkleUserDriverDelegate()
     )
 
     private func checkForUpdates() {
@@ -283,5 +283,21 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     /// Called from Preferences window "Check Now" button.
     static func checkForUpdatesFromPreferences() {
         shared?.checkForUpdates()
+    }
+}
+
+/// Delegate for Sparkle's standard user driver to ensure update dialogs are shown
+/// when new versions are found during background checks.
+private class SparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    /// Always allow the update dialog to be shown for scheduled/background checks.
+    /// Return YES to let Sparkle handle showing the update dialog automatically.
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        Logger.shared.log("Sparkle: showing scheduled update \(update.displayVersionString), immediateFocus=\(immediateFocus)")
+        return true
+    }
+
+    /// Called before an update will be shown to the user.
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        Logger.shared.log("Sparkle: will show update \(update.displayVersionString), handleShowing=\(handleShowingUpdate), userInitiated=\(state.userInitiated)")
     }
 }
