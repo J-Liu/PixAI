@@ -35,6 +35,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// counterclockwise). Reset to 0 whenever a new image is loaded or a rotation
     /// is saved; discarded entirely when the window closes.
     private var rotationSteps: Int = 0
+    /// Horizontal flip state (true = flipped). Reset when a new image is loaded or saved.
+    private var flipHorizontal: Bool = false
+    /// Vertical flip state (true = flipped). Reset when a new image is loaded or saved.
+    private var flipVertical: Bool = false
     /// Files already shown the >50 MB warning for (once per file per window).
     private var largeFileWarned: Set<URL> = []
     /// True while the displayed image is a downscaled thumbnail of a huge file.
@@ -293,6 +297,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             onRotateCounterclockwiseTap: { [weak self] in
                 Logger.shared.log("Toolbar rotate-counterclockwise button tapped")
                 self?.rotateCounterclockwise()
+            },
+            onFlipHorizontalTap: { [weak self] in
+                Logger.shared.log("Toolbar flip-horizontal button tapped")
+                self?.flipHorizontalAction()
+            },
+            onFlipVerticalTap: { [weak self] in
+                Logger.shared.log("Toolbar flip-vertical button tapped")
+                self?.flipVerticalAction()
             },
             onSaveTap: { [weak self] in
                 Logger.shared.log("Toolbar save button tapped")
@@ -759,6 +771,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         if let cached = ImageCache.shared.image(for: url) {
             self.baseImage = cached
             self.rotationSteps = 0
+            self.flipHorizontal = false
+            self.flipVertical = false
             // The cache remembers whether this entry is a huge-image thumbnail.
             self.currentImageIsScaled = ImageCache.shared.isScaled(url)
             // Cheap header probe so the crop-mode guards know the format here too.
@@ -809,6 +823,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 // rotation of the previous image is discarded here (per spec).
                 self.baseImage = decoded.image
                 self.rotationSteps = 0
+                self.flipHorizontal = false
+                self.flipVertical = false
                 self.currentImageIsScaled = scaled
                 self.currentFormat = decoded.format
 
@@ -1424,21 +1440,40 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         applyRotation()
     }
 
+    /// Flip the current image horizontally (mirror left-right).
+    func flipHorizontalAction() {
+        guard !batchRunning, !cropMode, baseImage != nil else { return }
+        flipHorizontal.toggle()
+        applyRotation()
+    }
+
+    /// Flip the current image vertically (mirror top-bottom).
+    func flipVerticalAction() {
+        guard !batchRunning, !cropMode, baseImage != nil else { return }
+        flipVertical.toggle()
+        applyRotation()
+    }
+
     /// Redraw the displayed image from the ORIGINAL image at the accumulated
     /// angle, so quality never degrades no matter how many times it is rotated.
     private func applyRotation() {
         guard let base = currentSourceImage else { return }
-        let displayed = base.rotatedClockwise(by: rotationSteps * 90) ?? base
+        var displayed = base.rotatedClockwise(by: rotationSteps * 90) ?? base
+
+        // Apply flips if enabled
+        if flipHorizontal || flipVertical {
+            displayed = displayed.flipped(horizontal: flipHorizontal, vertical: flipVertical) ?? displayed
+        }
 
         // A temporary rotation desynchronizes the still from its companion video,
         // so suppress Live Photo playback until the rotation is undone or saved.
-        if (rotationSteps * 90) % 360 != 0 {
+        if (rotationSteps * 90) % 360 != 0 || flipHorizontal || flipVertical {
             container?.imageView?.livePhotoURL = nil
         }
 
         container?.imageView?.image = displayed
 
-        if (rotationSteps * 90) % 360 == 0, imageURLs.indices.contains(currentIndex) {
+        if (rotationSteps * 90) % 360 == 0 && !flipHorizontal && !flipVertical, imageURLs.indices.contains(currentIndex) {
             // Back to the original orientation: restore Live Photo support.
             attachLivePhoto(for: imageURLs[currentIndex])
         }
@@ -1469,18 +1504,23 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         let netDegrees = rotationSteps * 90
         let hasRotation = (netDegrees % 360) != 0
+        let hasFlip = flipHorizontal || flipVertical
         let hasAITransform = aiStates[url]?.activeKind != nil
         let hadAIOperation = aiStates[url]?.hasComputedResult ?? false
         let hasPastedOverlays = !pastedOverlays.isEmpty
 
-        // Allow save if there's rotation, active AI transform, any AI operation, or pasted overlays
-        if !hasRotation && !hasAITransform && !cropMode && !hadAIOperation && !hasPastedOverlays {
-            Logger.shared.log("Save ignored: no rotation and no AI transform")
+        // Allow save if there's rotation, flip, active AI transform, any AI operation, or pasted overlays
+        if !hasRotation && !hasFlip && !hasAITransform && !cropMode && !hadAIOperation && !hasPastedOverlays {
+            Logger.shared.log("Save ignored: no rotation/flip and no AI transform")
             showStatusMessage(L10n.shared.t("Nothing to save"))
             return
         }
 
-        let toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
+        var toSave = hasRotation ? (source.rotatedClockwise(by: netDegrees) ?? source) : source
+        // Apply flip if enabled
+        if hasFlip {
+            toSave = toSave.flipped(horizontal: flipHorizontal, vertical: flipVertical) ?? toSave
+        }
         guard var cgImage = toSave.sourceCGImage else {
             Logger.shared.log("Save failed: could not produce image for \(url)")
             showStatusMessage(L10n.shared.t("Save failed"))
@@ -1583,9 +1623,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
 
             // The file now matches the displayed image.
-            if hasRotation {
+            if hasRotation || hasFlip {
                 baseImage = toSave
                 rotationSteps = 0
+                flipHorizontal = false
+                flipVertical = false
             }
             // Restore Live Photo support (suppressed while rotated). Cropped
             // Live Photos stay still (attachLivePhoto skips suppressed URLs).
@@ -2211,6 +2253,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         } else {
             baseImage = nil
             rotationSteps = 0
+            flipHorizontal = false
+            flipVertical = false
             window.title = "PixAI"
             container?.imageView?.image = nil
             container?.imageView?.livePhotoURL = nil
@@ -3581,6 +3625,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
             // Reset rotation for current image
             rotationSteps = 0
+            flipHorizontal = false
+            flipVertical = false
         }
         let remaining = getUnsavedImageURLs()
         if remaining.isEmpty {
@@ -3796,6 +3842,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         imageURLs.remove(at: wasIndex)
         baseImage = nil
         rotationSteps = 0
+        flipHorizontal = false
+        flipVertical = false
 
         if imageURLs.isEmpty {
             // All files deleted → empty state.
@@ -4183,6 +4231,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
               let cropped = cg.cropping(to: rect) else { return false }
         baseImage = Self.nsImage(from: cropped)
         rotationSteps = 0
+        flipHorizontal = false
+        flipVertical = false
         if imageURLs.indices.contains(currentIndex) {
             let url = imageURLs[currentIndex]
             aiStates[url] = nil
@@ -4343,6 +4393,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         _ = item(t("Rotate Clockwise"), #selector(contextRotateCW))
         _ = item(t("Rotate Counterclockwise"), #selector(contextRotateCCW))
+        _ = item(t("Flip Horizontal"), #selector(contextFlipHorizontal))
+        _ = item(t("Flip Vertical"), #selector(contextFlipVertical))
         menu.addItem(.separator())
         _ = item(t("Zoom In"), #selector(contextZoomIn))
         _ = item(t("Zoom Out"), #selector(contextZoomOut))
@@ -4388,6 +4440,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc private func contextCrop() { toggleCropMode() }
     @objc private func contextRotateCW() { rotateClockwise() }
     @objc private func contextRotateCCW() { rotateCounterclockwise() }
+    @objc private func contextFlipHorizontal() { flipHorizontalAction() }
+    @objc private func contextFlipVertical() { flipVerticalAction() }
     @objc private func contextZoomIn() { container?.imageView?.zoomIn() }
     @objc private func contextZoomOut() { container?.imageView?.zoomOut() }
     @objc private func contextFitToggle() { container?.imageView?.toggleFitOr100Percent() }

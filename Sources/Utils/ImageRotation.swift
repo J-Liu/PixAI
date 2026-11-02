@@ -62,4 +62,31 @@ extension NSImage {
         guard let result = ctx.makeImage() else { return nil }
         return NSImage(cgImage: result, size: NSSize(width: outW, height: outH))
     }
+
+    /// A copy of this image flipped horizontally and/or vertically.
+    /// Returns self unchanged if both are false. The flip is an exact pixel
+    /// rearrangement (no interpolation), so quality is never degraded.
+    func flipped(horizontal: Bool, vertical: Bool) -> NSImage? {
+        guard horizontal || vertical else { return self }
+        guard let src = sourceCGImage else { return nil }
+
+        let w = src.width
+        let h = src.height
+
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: src.bitsPerComponent, bytesPerRow: 0,
+            space: src.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.interpolationQuality = .none
+        // Apply flip transforms
+        ctx.translateBy(x: CGFloat(w) / 2, y: CGFloat(h) / 2)
+        ctx.scaleBy(x: horizontal ? -1 : 1, y: vertical ? -1 : 1)
+        ctx.draw(src, in: CGRect(x: -CGFloat(w) / 2, y: -CGFloat(h) / 2, width: CGFloat(w), height: CGFloat(h)))
+
+        guard let result = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: result, size: NSSize(width: w, height: h))
+    }
 }

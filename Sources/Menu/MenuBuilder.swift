@@ -138,6 +138,9 @@ class MenuBuilder {
         actionItem(viewMenu, t("Rotate Clockwise"), #selector(MenuActions.rotateClockwiseAction(_:)))
         actionItem(viewMenu, t("Rotate Counterclockwise"), #selector(MenuActions.rotateCounterclockwiseAction(_:)), key: "r")
         viewMenu.addItem(NSMenuItem.separator())
+        actionItem(viewMenu, t("Flip Horizontal"), #selector(MenuActions.flipHorizontalAction(_:)))
+        actionItem(viewMenu, t("Flip Vertical"), #selector(MenuActions.flipVerticalAction(_:)))
+        viewMenu.addItem(NSMenuItem.separator())
         actionItem(viewMenu, t("Play/Pause"), #selector(MenuActions.playPause(_:)))
         actionItem(viewMenu, t("Start/Stop Slideshow"), #selector(MenuActions.startStopSlideshow(_:)))
         viewMenu.addItem(NSMenuItem.separator())
@@ -307,6 +310,8 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     @objc func crop(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleCropMode() }
     @objc func rotateClockwiseAction(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.rotateClockwise() }
     @objc func rotateCounterclockwiseAction(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.rotateCounterclockwise() }
+    @objc func flipHorizontalAction(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.flipHorizontalAction() }
+    @objc func flipVerticalAction(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.flipVerticalAction() }
     @objc func zoomIn(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.zoomIn() }
     @objc func zoomOut(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.zoomOut() }
     @objc func fitToggle(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.toggleFitOr100Percent() }
