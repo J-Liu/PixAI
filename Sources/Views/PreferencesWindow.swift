@@ -1620,14 +1620,6 @@ final class PreferencesWindow: NSWindow {
 
         PixAI is licensed under the GNU Affero General Public License v3.0 or later.
 
-        Additional Permission under Section 7
-
-        As an additional permission under section 7, you are allowed to distribute
-        the software through an app store, even if that store has restrictive terms
-        and conditions that are incompatible with the AGPL, provided that the source
-        is also available under the AGPL with or without this permission through a
-        channel without those restrictive terms and conditions.
-
         Copyright (C) 2026 Jia Liu
 
         Full license text:
