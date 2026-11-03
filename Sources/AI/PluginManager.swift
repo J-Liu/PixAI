@@ -112,7 +112,6 @@ final class PluginManager {
                 try FileManager.default.removeItem(at: marker)
             }
         } catch {
-            Logger.shared.log("PluginManager: failed to set enabled for \(plugin.id): \(error)")
         }
         postChange()
     }
@@ -123,7 +122,6 @@ final class PluginManager {
         do {
             try FileManager.default.removeItem(at: plugin.localDir)
         } catch {
-            Logger.shared.log("PluginManager: uninstall failed for \(plugin.id): \(error)")
         }
         lock.lock()
         states[plugin.id] = .notDownloaded
@@ -211,8 +209,8 @@ final class PluginManager {
             switch result {
             case .success:
                 self?.refreshStates()
-            case .failure(let error):
-                Logger.shared.log("PluginManager: download failed for \(plugin.id): \(error.localizedDescription)")
+            case .failure:
+                break
             }
         }
     }
@@ -252,7 +250,6 @@ final class PluginManager {
         try fm.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let remoteURL = URL(string: "\(plugin.downloadBaseURL)/\(file.path)")!
-        Logger.shared.log("PluginManager: downloading from \(remoteURL.absoluteString)")
 
         // Download with progress via delegate.
         let delegate = DownloadDelegate()
@@ -287,7 +284,6 @@ final class PluginManager {
         let taskError = task.error
         if wasCancelled || taskError != nil {
             if let error = taskError, (error as NSError).code != NSURLErrorCancelled {
-                Logger.shared.log("PluginManager: download error: \(error.localizedDescription)")
                 throw PluginError.downloadFailed(error.localizedDescription)
             } else {
                 throw PluginError.downloadFailed("cancelled")
@@ -295,7 +291,6 @@ final class PluginManager {
         }
 
         guard let location = delegate.location else {
-            Logger.shared.log("PluginManager: no temporary file delivered")
             throw PluginError.downloadFailed("no temporary file delivered")
         }
 
@@ -360,11 +355,7 @@ final class PluginManager {
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-            if let error = error {
-                Logger.shared.log("PluginManager: download task completed with error: \(error.localizedDescription)")
-            } else {
-                Logger.shared.log("PluginManager: download task completed successfully")
-            }
+            // Download completed (success or failure handled elsewhere)
         }
 
         // Handle redirects for ModelScope CDN
@@ -372,7 +363,6 @@ final class PluginManager {
                         willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest,
                         completionHandler: @escaping (URLRequest?) -> Void) {
-            Logger.shared.log("PluginManager: redirecting to \(request.url?.absoluteString ?? "unknown")")
             completionHandler(request)
         }
     }

@@ -262,29 +262,24 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     }
 
     @objc func checkForUpdates(_ sender: Any?) {
-        Logger.shared.log("MenuBuilder.checkForUpdates called")
         MenuBuilder.checkForUpdatesCallback?()
     }
 
     @objc func showPreferences(_ sender: Any?) {
-        Logger.shared.log("MenuBuilder.showPreferences called")
         MenuBuilder.preferencesCallback?()
     }
 
     @objc func openFile(_ sender: Any?) {
-        Logger.shared.log("MenuBuilder.openFile called")
         MenuBuilder.openFileCallback?()
     }
 
     @objc func openRecentFile(_ sender: Any?) {
         guard let menuItem = sender as? NSMenuItem,
               let url = menuItem.representedObject as? URL else { return }
-        Logger.shared.log("MenuBuilder.openRecentFile called: \(url.path)")
         MenuBuilder.openRecentCallback?(url)
     }
 
     @objc func clearRecentFiles(_ sender: Any?) {
-        Logger.shared.log("MenuBuilder.clearRecentFiles called")
         AppConfig.shared.clearRecentFiles()
         // Rebuild the menu
         if let menu = (sender as? NSMenuItem)?.menu {
@@ -293,7 +288,6 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     }
 
     @objc func newWindow(_ sender: Any?) {
-        Logger.shared.log("MenuBuilder.newWindow called")
         MenuBuilder.newWindowCallback?()
     }
 

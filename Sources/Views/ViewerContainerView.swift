@@ -140,7 +140,6 @@ class ViewerContainerView: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let urls = DragDropHelper.extractURLs(from: sender.draggingPasteboard)
         if !urls.isEmpty {
-            Logger.shared.log("Container drop: \(urls.count) URLs")
             onDrop(urls)
             return true
         }

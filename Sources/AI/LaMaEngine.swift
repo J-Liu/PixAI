@@ -46,7 +46,6 @@ final class LaMaEngine {
         lock.lock()
         model = loadedModel
         lock.unlock()
-        Logger.shared.log("LaMa: Core ML model loaded")
     }
 
     // MARK: - Inpainting
@@ -73,10 +72,6 @@ final class LaMaEngine {
         // which causes the mask to cover the entire image when mask coverage is > 50%
         // TODO: Fix featherMask to only expand from mask boundary pixels
         let processedMask = mask
-
-        // Debug: check mask before feathering
-        let trueCountBefore = processedMask.filter { $0 }.count
-        Logger.shared.log("LaMa: mask coverage = \(Double(trueCountBefore) / Double(w * h) * 100)%")
 
         // Get model input size (LaMa uses 800x800)
         let modelSize = 800
@@ -110,7 +105,6 @@ final class LaMaEngine {
     // MARK: - Input preparation
 
     private func prepareImageInput(_ cgImage: CGImage, size: Int) -> CGImage? {
-        Logger.shared.log("LaMa: preparing image input, original size = \(cgImage.width) x \(cgImage.height)")
 
         // Resize image to model size using CGContext
         guard let ctx = CGContext(
@@ -119,7 +113,6 @@ final class LaMaEngine {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            Logger.shared.log("LaMa: failed to create CGContext for resize")
             return nil
         }
 
@@ -127,7 +120,6 @@ final class LaMaEngine {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
 
         guard let resizedImage = ctx.makeImage() else {
-            Logger.shared.log("LaMa: failed to create resized CGImage")
             return nil
         }
 
@@ -169,7 +161,6 @@ final class LaMaEngine {
             intent: .defaultIntent
         )
 
-        Logger.shared.log("LaMa: mask input prepared, size = \(size) x \(size)")
         return cgImage
     }
 
@@ -192,7 +183,6 @@ final class LaMaEngine {
         )
 
         guard status == kCVReturnSuccess, let pb = pixelBuffer else {
-            Logger.shared.log("LaMa: failed to create BGRA pixel buffer")
             return nil
         }
 
@@ -209,7 +199,6 @@ final class LaMaEngine {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            Logger.shared.log("LaMa: failed to create CGContext")
             return nil
         }
 
@@ -217,13 +206,11 @@ final class LaMaEngine {
 
         // Debug: log input pixel values
         let ptr = basePtr.assumingMemoryBound(to: UInt8.self)
-        Logger.shared.log("LaMa: INPUT PIXEL BUFFER (BGRA):")
         var row0 = ""
         for x in 0..<4 {
             let idx = x * 4
             row0 += "[B=\(ptr[idx]),G=\(ptr[idx+1]),R=\(ptr[idx+2]),A=\(ptr[idx+3])] "
         }
-        Logger.shared.log("LaMa: input row 0: \(row0)")
 
         return pb
     }
@@ -246,7 +233,6 @@ final class LaMaEngine {
         )
 
         guard status == kCVReturnSuccess, let pb = pixelBuffer else {
-            Logger.shared.log("LaMa: failed to create grayscale pixel buffer")
             return nil
         }
 
@@ -268,7 +254,6 @@ final class LaMaEngine {
 
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        Logger.shared.log("LaMa: created grayscale pixelBuffer size=\(width)x\(height)")
         return pb
     }
 
@@ -337,7 +322,6 @@ final class LaMaEngine {
         // Shape: [1, 3, H, W] (batch, channels, height, width)
         let shape: [NSNumber] = [1, 3, height as NSNumber, width as NSNumber]
         guard let array = try? MLMultiArray(shape: shape, dataType: .float32) else {
-            Logger.shared.log("LaMa: failed to create MLMultiArray")
             return nil
         }
 
@@ -349,7 +333,6 @@ final class LaMaEngine {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            Logger.shared.log("LaMa: failed to create CGContext for image array")
             return nil
         }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -384,7 +367,6 @@ final class LaMaEngine {
         // Shape: [1, 1, H, W]
         let shape: [NSNumber] = [1, 1, height as NSNumber, width as NSNumber]
         guard let array = try? MLMultiArray(shape: shape, dataType: .float32) else {
-            Logger.shared.log("LaMa: failed to create mask MLMultiArray")
             return nil
         }
 
@@ -493,7 +475,6 @@ final class LaMaEngine {
         let ctx = CIContext()
 
         guard let cgImage = ctx.createCGImage(ciImage, from: ciImage.extent) else {
-            Logger.shared.log("LaMa: failed to create CGImage from CIImage")
             return nil
         }
 

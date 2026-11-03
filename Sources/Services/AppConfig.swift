@@ -50,8 +50,10 @@ final class AppConfig {
         static let proxyPort = 7890
         /// Images with longest side ≤ this are considered "small" for auto-upscaling.
         static let smallImageMaxSide = 1024
-        /// UI language: "en" (default) or "zh".
+        /// UI language: "system", "en", "zh", or "zh-Hant".
         static let uiLanguage = "system"
+        /// Theme: "system" (follow system), "light", or "dark".
+        static let theme = "system"
         /// Image switch fade duration in seconds; 0 disables the animation.
         static let imageTransitionDuration: Double = 0.1
         /// Ask at startup whether to download missing/corrupted AI models.
@@ -124,6 +126,7 @@ final class AppConfig {
         var smallImageMaxSide: Int?
         // UX / i18n
         var uiLanguage: String?
+        var theme: String?
         var imageTransitionDuration: Double?
         var modelCheckPromptEnabled: Bool?
         var cropLivePhotoConfirm: Bool?
@@ -181,6 +184,7 @@ final class AppConfig {
     private var _smallImageMaxSide: Int = Defaults.smallImageMaxSide
     // UX / i18n backing storage
     private var _uiLanguage: String = Defaults.uiLanguage
+    private var _theme: String = Defaults.theme
     private var _imageTransitionDuration: Double = Defaults.imageTransitionDuration
     private var _modelCheckPromptEnabled: Bool = Defaults.modelCheckPromptEnabled
     private var _cropLivePhotoConfirm: Bool = Defaults.cropLivePhotoConfirm
@@ -214,14 +218,6 @@ final class AppConfig {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
         load()
-    }
-
-    /// Log the loaded settings once at startup (call after Logger is up).
-    func logLoadedState() {
-        lock.lock()
-        let msg = "Config state: deleteConfirm=\(_deleteConfirmationEnabled), cacheCount=\(_imageCacheCount), interval=\(_slideshowInterval)s, quitOnLastClose=\(_quitOnLastWindowClosed), logEnabled=\(_logEnabled), logPath=\(_logPath), liveAutoPlay=\(_livePhotoAutoPlay), liveMuted=\(_livePhotoMuted)"
-        lock.unlock()
-        Logger.shared.log(msg)
     }
 
     // MARK: - Settings accessors
@@ -520,7 +516,7 @@ final class AppConfig {
 
     // MARK: - UX / i18n settings
 
-    /// UI language: "en" (default) or "zh".
+    /// UI language: "system", "en", "zh", or "zh-Hant".
     var uiLanguage: String {
         get {
             lock.lock(); defer { lock.unlock() }
@@ -531,6 +527,22 @@ final class AppConfig {
             lock.lock()
             let changed = _uiLanguage != normalized
             if changed { _uiLanguage = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    /// Theme: "system" (follow system), "light", or "dark".
+    var theme: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _theme
+        }
+        set {
+            let normalized = Self.normalizeTheme(newValue)
+            lock.lock()
+            let changed = _theme != normalized
+            if changed { _theme = normalized }
             lock.unlock()
             if changed { save(); notifyChange() }
         }
@@ -998,6 +1010,14 @@ final class AppConfig {
         }
     }
 
+    /// Normalize theme for storage. "system" is preserved.
+    static func normalizeTheme(_ value: String) -> String {
+        switch value {
+        case "system", "light", "dark": return value
+        default: return "system"
+        }
+    }
+
     /// Resolve "system" to actual language code for display.
     static func resolveLanguage(_ value: String) -> String {
         if value == "system" {
@@ -1168,6 +1188,7 @@ final class AppConfig {
         if let v = payload.proxyPort { _proxyPort = min(max(v, 1), 65535) }
         if let v = payload.smallImageMaxSide { _smallImageMaxSide = min(max(v, 64), 8192) }
         if let v = payload.uiLanguage { _uiLanguage = Self.normalizeLanguage(v) }
+        if let v = payload.theme { _theme = Self.normalizeTheme(v) }
         if let v = payload.imageTransitionDuration { _imageTransitionDuration = Self.clampTransitionDuration(v) }
         if let v = payload.modelCheckPromptEnabled { _modelCheckPromptEnabled = v }
         if let v = payload.cropLivePhotoConfirm { _cropLivePhotoConfirm = v }
@@ -1218,6 +1239,7 @@ final class AppConfig {
             proxyPort: _proxyPort,
             smallImageMaxSide: _smallImageMaxSide,
             uiLanguage: _uiLanguage,
+            theme: _theme,
             imageTransitionDuration: _imageTransitionDuration,
             modelCheckPromptEnabled: _modelCheckPromptEnabled,
             cropLivePhotoConfirm: _cropLivePhotoConfirm,

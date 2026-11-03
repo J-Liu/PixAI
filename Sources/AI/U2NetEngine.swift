@@ -50,7 +50,6 @@ final class U2NetEngine {
         lock.lock()
         model = loadedModel
         lock.unlock()
-        Logger.shared.log("U2Net: Core ML model loaded")
     }
 
     // MARK: - Watermark detection
@@ -103,17 +102,14 @@ final class U2NetEngine {
         let maskedCount = target.filter { $0 }.count
         let fraction = Double(maskedCount) / Double(w * h)
         if fraction < minMaskFraction {
-            Logger.shared.log("U2Net: no significant watermark detected (mask \(fraction), min threshold \(minMaskFraction))")
             return [Bool](repeating: false, count: w * h)
         }
 
         // Check max mask fraction - if mask is too large, it's likely a false positive (face, object)
         if fraction > maxMaskFraction {
-            Logger.shared.log("U2Net: mask too large (\(String(format: "%.2f%%", fraction * 100))), likely false positive, skipping (max threshold \(String(format: "%.2f%%", maxMaskFraction * 100)))")
             return [Bool](repeating: false, count: w * h)
         }
 
-        Logger.shared.log("U2Net: detected watermark covering \(String(format: "%.2f%%", fraction * 100)) of the image")
         return target
     }
 
@@ -151,18 +147,13 @@ final class U2NetEngine {
         }
 
         // Run prediction
-        Logger.shared.log("U2Net: input array shape = \(inputArray.shape)")
         let provider = U2NetInputProvider(input: inputArray)
-        Logger.shared.log("U2Net: provider featureNames = \(provider.featureNames)")
         let output = try model.prediction(from: provider)
         guard let saliency = output.featureValue(for: "saliency")?.multiArrayValue else {
             throw PluginManager.PluginError.downloadFailed("prediction failed")
         }
 
         // Extract saliency map
-        let shape = saliency.shape.map { $0.intValue }
-        Logger.shared.log("U2Net: output shape = \(shape)")
-
         var maskData = [Float](repeating: 0, count: 320 * 320)
         let outPtr = saliency.dataPointer.bindMemory(to: Float.self, capacity: 320 * 320)
 
@@ -174,7 +165,6 @@ final class U2NetEngine {
             if val < lo { lo = val }
             if val > hi { hi = val }
         }
-        Logger.shared.log("U2Net: output range = [\(lo), \(hi)]")
 
         // Normalize to [0, 1] range
         let range = max(hi - lo, 1e-6)

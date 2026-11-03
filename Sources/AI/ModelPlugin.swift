@@ -36,20 +36,16 @@ struct ModelPlugin: Equatable {
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let info = json["data"] as? [String: Any] else {
-                Logger.shared.log("IP detection: failed to parse response")
                 result = false
                 return
             }
             // location can be either a String or an Array [String]
             if let locationStr = info["location"] as? String {
                 result = locationStr.contains("中国") || locationStr.contains("China")
-                Logger.shared.log("IP detection: location=\(locationStr), isInChina=\(result)")
             } else if let locationArr = info["location"] as? [String] {
                 let locationStr = locationArr.joined(separator: " ")
                 result = locationArr.contains("中国") || locationStr.contains("China")
-                Logger.shared.log("IP detection: location=\(locationStr), isInChina=\(result)")
             } else {
-                Logger.shared.log("IP detection: location format unknown")
                 result = false
             }
         }
@@ -63,11 +59,9 @@ struct ModelPlugin: Equatable {
     var downloadBaseURL: String {
         if let mirrorRepo, Self.isInChina {
             let url = "https://modelscope.cn/models/\(mirrorRepo)/resolve/master"
-            Logger.shared.log("Using ModelScope mirror: \(url)")
             return url
         }
         let url = "https://huggingface.co/\(repo)/resolve/main"
-        Logger.shared.log("Using HuggingFace: \(url)")
         return url
     }
 

@@ -167,7 +167,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         // Container (light gray background) that accepts dropped images/folders.
         let container = ViewerContainerView(onDrop: { [weak self] urls in
-            Logger.shared.log("Container drop: \(urls.count) URLs")
             self?.loadImages(from: urls)
         })
         // Give the container its real size BEFORE it becomes the content view,
@@ -245,73 +244,56 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Floating auto-hide toolbar, bottom-center above the status bar.
         let toolbar = AutoHideToolbar(
             onLeftTap: { [weak self] in
-                Logger.shared.log("Toolbar left button tapped")
                 self?.goPrevious()
             },
             onRightTap: { [weak self] in
-                Logger.shared.log("Toolbar right button tapped")
                 self?.goNext()
             },
             onZoomInTap: { [weak self] in
-                Logger.shared.log("Toolbar zoom-in button tapped")
                 self?.container?.imageView?.zoomIn()
             },
             onZoomOutTap: { [weak self] in
-                Logger.shared.log("Toolbar zoom-out button tapped")
                 self?.container?.imageView?.zoomOut()
             },
             onFitToggleTap: { [weak self] in
-                Logger.shared.log("Toolbar fit/100% toggle tapped")
                 // Same alternating toggle as double-click; the view owns the state
                 // and onZoomChange syncs the toolbar icon afterwards.
                 self?.container?.imageView?.toggleFitOr100Percent()
             },
             onCropTap: { [weak self] in
-                Logger.shared.log("Toolbar crop button tapped")
                 self?.toggleCropMode()
             },
             onAIEnhanceQualityTap: { [weak self] in
-                Logger.shared.log("Toolbar AI quality-enhance button tapped")
                 self?.toggleAIEnhance()
             },
             onAIDewatermarkTap: { [weak self] in
-                Logger.shared.log("Toolbar AI dewatermark button tapped")
                 self?.toggleAIDewatermark()
             },
             onAIUpscaleTap: { [weak self] in
-                Logger.shared.log("Toolbar AI upscale button tapped")
                 self?.toggleAIUpscale()
             },
             onAIDedupTap: { [weak self] in
-                Logger.shared.log("Toolbar AI dedup button tapped")
                 self?.runAIDedup()
             },
             onPlayPauseTap: { [weak self] in
-                Logger.shared.log("Toolbar play/pause button tapped")
                 self?.togglePlayPause()
             },
             onRotateClockwiseTap: { [weak self] in
-                Logger.shared.log("Toolbar rotate-clockwise button tapped")
                 self?.rotateClockwise()
             },
             onRotateCounterclockwiseTap: { [weak self] in
-                Logger.shared.log("Toolbar rotate-counterclockwise button tapped")
                 self?.rotateCounterclockwise()
             },
             onFlipHorizontalTap: { [weak self] in
-                Logger.shared.log("Toolbar flip-horizontal button tapped")
                 self?.flipHorizontalAction()
             },
             onFlipVerticalTap: { [weak self] in
-                Logger.shared.log("Toolbar flip-vertical button tapped")
                 self?.flipVerticalAction()
             },
             onSaveTap: { [weak self] in
-                Logger.shared.log("Toolbar save button tapped")
                 self?.saveCurrentRotation()
             },
             onDeleteTap: { [weak self] in
-                Logger.shared.log("Toolbar delete button tapped")
                 self?.deleteCurrentImage()
             }
         )
@@ -327,11 +309,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Empty-state placeholder (big icon + hint), centered in the image area.
         let placeholder = PlaceholderView(
             onOpen: { [weak self] in
-                Logger.shared.log("Placeholder tapped, opening file panel")
                 self?.presentOpenPanel()
             },
             onDrop: { [weak self] urls in
-                Logger.shared.log("Placeholder drop: \(urls.count) URLs")
                 self?.loadImages(from: urls)
             }
         )
@@ -341,47 +321,36 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Keyboard handler on top (mouse events pass through to the views below).
         let keyboardHandler = KeyboardHandlerView(
             onPrevious: { [weak self] in
-                Logger.shared.log("Keyboard handler: previous")
                 self?.goPrevious()
             },
             onNext: { [weak self] in
-                Logger.shared.log("Keyboard handler: next")
                 self?.goNext()
             },
             onRotateClockwise: { [weak self] in
-                Logger.shared.log("Keyboard handler: rotate clockwise (R)")
                 self?.rotateClockwise()
             },
             onRotateCounterclockwise: { [weak self] in
-                Logger.shared.log("Keyboard handler: rotate counterclockwise (Cmd+R)")
                 self?.rotateCounterclockwise()
             },
             onSave: { [weak self] in
-                Logger.shared.log("Keyboard handler: save rotation (Cmd+S)")
                 self?.saveCurrentRotation()
             },
             onSaveAs: { [weak self] in
-                Logger.shared.log("Keyboard handler: save as (Cmd+Shift+S)")
                 self?.saveAsImage()
             },
             onDelete: { [weak self] in
-                Logger.shared.log("Keyboard handler: delete current image (Cmd+Delete)")
                 self?.deleteCurrentImage()
             },
             onToggleFullscreen: { [weak self] in
-                Logger.shared.log("Keyboard handler: toggle full screen (F)")
                 self?.toggleFullScreen()
             },
             onExitFullscreen: { [weak self] in
-                Logger.shared.log("Keyboard handler: exit full screen (Esc/Enter)")
                 self?.exitFullScreen()
             },
             onPlayPause: { [weak self] in
-                Logger.shared.log("Keyboard handler: play/pause (Space)")
                 self?.togglePlayPause()
             },
             onStartOrStopSlideshow: { [weak self] in
-                Logger.shared.log("Keyboard handler: start/stop slideshow (P)")
                 self?.startOrStopSlideshow()
             },
             isSlideshowActive: { [weak self] in
@@ -391,47 +360,39 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self?.batchRunning ?? false
             },
             onCancelBatch: { [weak self] in
-                Logger.shared.log("Keyboard handler: cancel AI batch (Esc)")
                 self?.cancelAIBatch()
             },
             isCropModeActive: { [weak self] in
                 self?.cropMode ?? false
             },
             onCancelCrop: { [weak self] in
-                Logger.shared.log("Keyboard handler: cancel crop (Esc)")
                 self?.exitCropMode()
             },
             isWatermarkSelectionModeActive: { [weak self] in
                 self?.watermarkSelectionMode ?? false
             },
             onCancelWatermarkSelection: { [weak self] in
-                Logger.shared.log("Keyboard handler: cancel watermark selection (Esc)")
                 self?.exitWatermarkSelectionMode()
             },
             isAIOperationActive: { [weak self] in
                 self?.aiOperationRunning ?? false
             },
             onCancelAIOperation: { [weak self] in
-                Logger.shared.log("Keyboard handler: cancel AI operation (Esc)")
                 self?.cancelAIOperation()
             },
             canUndoAI: { [weak self] in
                 self?.canUndoAI() ?? false
             },
             onUndo: { [weak self] in
-                Logger.shared.log("Keyboard handler: undo AI operation (Cmd+Z)")
                 self?.undoAI()
             },
             onCopy: { [weak self] in
-                Logger.shared.log("Keyboard handler: copy image (Cmd+C)")
                 self?.copyImage()
             },
             onPaste: { [weak self] in
-                Logger.shared.log("Keyboard handler: paste image (Cmd+V)")
                 self?.pasteImage()
             },
             onShowShortcuts: {
-                Logger.shared.log("Keyboard handler: show shortcuts help (?)")
                 ShortcutsHelpWindow.shared.show()
             }
         )
@@ -514,7 +475,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Center the window and show it.
     func show() {
         window.center()
-        Logger.shared.log("Window shown: \(window.frame)")
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -527,12 +487,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     // MARK: - Fullscreen & Power Management
 
     func windowDidEnterFullScreen(_ notification: Notification) {
-        Logger.shared.log("Entered fullscreen mode")
         updatePowerAssertion()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
-        Logger.shared.log("Exited fullscreen mode")
         updatePowerAssertion()
     }
 
@@ -567,7 +525,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     /// Open a file selection panel and load the chosen items.
     func presentOpenPanel() {
-        Logger.shared.log("openFile action triggered")
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = true
@@ -577,7 +534,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Use beginSheetModal to ensure the panel appears above the main window
         panel.beginSheetModal(for: self.window) { response in
             if response == .OK {
-                Logger.shared.log("Open panel selected \(panel.urls.count) items")
                 // Remember the directory for next time (from first selected URL)
                 if let firstUrl = panel.urls.first {
                     let dir = firstUrl.isFileURL && firstUrl.pathExtension.isEmpty ? firstUrl : firstUrl.deletingLastPathComponent()
@@ -589,7 +545,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
                 self.loadImages(from: panel.urls)
             } else {
-                Logger.shared.log("Open panel cancelled")
             }
         }
     }
@@ -601,7 +556,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         if cropMode { exitCropMode() }
         // A new image set invalidates any running slideshow.
         if slideshow.isActive {
-            Logger.shared.log("Slideshow stopped (new images loaded)")
             endSlideshow(finished: false)
         }
 
@@ -625,7 +579,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
         }
 
-        Logger.shared.log("loadImages: \(files.count) files, \(directories.count) directories")
 
         // Case 1: Single file -> find all images in the same directory (non-recursive), dragged file first
         // Exception: temp files (clipboard images from Cmd+N) should NOT trigger directory scanning
@@ -636,13 +589,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if isTempFile {
                 // Don't scan temp directory - just use this single file
                 imageUrls = [file]
-                Logger.shared.log("Temp file opened: skipping directory scan, using single file only")
             } else if FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path) {
                 let parentDir = file.deletingLastPathComponent()
                 // Scan the directory for all photo files
                 let allImages = scanDirectoryOnly(parentDir)
 
-                Logger.shared.log("Single file case: parentDir=\(parentDir), allImages.count=\(allImages.count)")
 
                 // Use all images (already sorted), then find the dragged file's index
                 imageUrls = allImages
@@ -651,7 +602,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 // Find the index of the dragged file in the sorted list
                 if let idx = imageUrls.firstIndex(of: file) {
                     initialLoadIndex = idx
-                    Logger.shared.log("Single file opened: found dragged file at index \(idx) in sorted list")
                 } else {
                     // Dragged file not in scan results (shouldn't happen), add it and re-sort
                     imageUrls.append(file)
@@ -660,7 +610,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     if let idx = imageUrls.firstIndex(of: file) {
                         initialLoadIndex = idx
                     }
-                    Logger.shared.log("Single file opened: added dragged file to list, re-sorted")
                 }
             } else {
                 // Parent doesn't exist, use the single file
@@ -670,13 +619,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Case 2: Multiple files (no directories) -> use exactly those files
         else if files.count > 1, directories.isEmpty {
             imageUrls = FileScanner.scan(urls: files)
-            Logger.shared.log("Multiple files opened: using exactly these \(files.count) files")
         }
         // Case 3: Directories (single or multiple) -> scan recursively
         else if !directories.isEmpty {
             let scanned = FileScanner.scan(urls: directories)
             imageUrls = scanned
-            Logger.shared.log("Directory/ies opened: scanned \(scanned.count) files from \(directories.count) directory(ies)")
         }
 
         // Edge case: mix of files and directories (shouldn't happen in normal usage)
@@ -685,7 +632,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             imageUrls = dirScans + FileScanner.scan(urls: files)
         }
 
-        Logger.shared.log("loadImages: total \(imageUrls.count) files in array")
 
         // Save overlays for current image BEFORE changing the URL list
         if currentIndex >= 0, currentIndex < imageURLs.count {
@@ -742,7 +688,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
             }
         } catch {
-            Logger.shared.log("Failed to scan directory \(directory): \(error)")
         }
         return results.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
@@ -757,7 +702,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         currentIndex = index
         let url = imageURLs[index]
 
-        Logger.shared.log("Loading image at index \(index): \(url)")
 
         // Large-file warning (spec: 大图警告): a single image over 50 MB shows
         // a warning, once per file per window session.
@@ -788,7 +732,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             self.loadOverlays(for: url)  // Load overlays after image is set in view
             self.updateWindowTitle()
             self.container?.placeholder?.isHidden = true
-            Logger.shared.log("Image cache hit for index \(index)")
             self.updateStatusBar()
             self.updateAIToolbarState()
             self.applyAutoAIIfNeeded(url: url)
@@ -815,7 +758,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 let (decoded, scaled) = try await self.decodeWithHugeImagePolicy(url: url)
                 // Discard out-of-order loads so the newest press always wins.
                 guard generation == self.loadGeneration else {
-                    Logger.shared.log("Discarding stale image load for index \(index)")
                     return
                 }
 
@@ -847,10 +789,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self.container?.placeholder?.isHidden = true
 
                 if scaled {
-                    Logger.shared.log("Huge image shown as scaled thumbnail: \(url)")
                     self.showStatusBarHint(L10n.shared.t("Shown scaled down (huge image thumbnail)"), for: 3.0)
                 } else {
-                    Logger.shared.log("Image loaded successfully (\(decoded.format.displayName)): \(decoded.image.size)")
                 }
 
                 // Refresh status bar (filename / size / zoom / index).
@@ -861,7 +801,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self.adjustSlideshowIntervalForAnimated()
             } catch {
                 guard generation == self.loadGeneration else { return }
-                Logger.shared.log("Failed to load image (unsupported format or decode error): \(url) — \(error.localizedDescription)")
                 self.currentFormat = nil
                 self.hideLoadSpinner()
                 self.showUnsupportedView()
@@ -880,7 +819,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
               let size = attrs[.size] as? Int64,
               size > ImageLimits.largeFileWarningBytes else { return }
 
-        Logger.shared.log("Large file warning: \(url.lastPathComponent) is \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) (> 50 MB)")
 
         let alert = NSAlert()
         let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
@@ -1009,13 +947,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // the companion video for such URLs within this window session.
         guard !livePhotoSuppressed.contains(url) else { return }
         let generation = loadGeneration
-        Logger.shared.log("attachLivePhoto: starting detection for \(url.lastPathComponent)")
         Task { @MainActor [weak self] in
             guard let self = self, self.loadGeneration == generation,
                   self.imageURLs.indices.contains(self.currentIndex),
                   self.imageURLs[self.currentIndex] == url else { return }
             let liveURL = await LivePhotoDetector.shared.companionVideoURL(for: url)
-            Logger.shared.log("attachLivePhoto: detection result = \(liveURL?.lastPathComponent ?? "nil")")
             self.container?.imageView?.livePhotoURL = liveURL
             // After Live Photo is attached, adjust slideshow interval
             self.adjustSlideshowIntervalForAnimated()
@@ -1491,7 +1427,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Check if this is a temp file (from clipboard) - prompt for save location
         let isTempFile = url.path.contains("/var/folders/") || url.lastPathComponent.hasPrefix("clipboard_")
         if isTempFile {
-            Logger.shared.log("Temp file detected, opening save panel")
             saveAsImage()
             return
         }
@@ -1511,7 +1446,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         // Allow save if there's rotation, flip, active AI transform, any AI operation, or pasted overlays
         if !hasRotation && !hasFlip && !hasAITransform && !cropMode && !hadAIOperation && !hasPastedOverlays {
-            Logger.shared.log("Save ignored: no rotation/flip and no AI transform")
             showStatusMessage(L10n.shared.t("Nothing to save"))
             return
         }
@@ -1522,7 +1456,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             toSave = toSave.flipped(horizontal: flipHorizontal, vertical: flipVertical) ?? toSave
         }
         guard var cgImage = toSave.sourceCGImage else {
-            Logger.shared.log("Save failed: could not produce image for \(url)")
             showStatusMessage(L10n.shared.t("Save failed"))
             return
         }
@@ -1533,7 +1466,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             let h = cgImage.height
             let colorSpace = CGColorSpaceCreateDeviceRGB()
             guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-                Logger.shared.log("Save failed: could not create context for overlay flattening")
                 showStatusMessage(L10n.shared.t("Save failed"))
                 return
             }
@@ -1565,12 +1497,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
 
             guard let flattened = ctx.makeImage() else {
-                Logger.shared.log("Save failed: could not flatten overlays")
                 showStatusMessage(L10n.shared.t("Save failed"))
                 return
             }
             cgImage = flattened
-            Logger.shared.log("Flattened \(pastedOverlays.count) overlay(s) onto image")
 
             // Mark overlays as saved so close-window prompt won't ask again
             overlaysSaved[url] = true
@@ -1589,11 +1519,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         if ext == "webp" {
             ext = "png"
             saveURL = url.deletingPathExtension().appendingPathExtension("png")
-            Logger.shared.log("WebP not supported for encoding, saving as PNG: \(saveURL.lastPathComponent)")
         }
 
         guard let data = Self.encodeImage(cgImage, fileExtension: ext) else {
-            Logger.shared.log("Save failed: unsupported format '\(ext)' for \(url)")
             showStatusMessage(L10n.shared.t("Save failed: unsupported format"))
             return
         }
@@ -1605,7 +1533,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if saveURL != url {
                 // Delete the old webp file
                 try? FileManager.default.removeItem(at: url)
-                Logger.shared.log("Deleted old WebP file: \(url.lastPathComponent)")
 
                 if let idx = imageURLs.firstIndex(of: url) {
                     imageURLs[idx] = saveURL
@@ -1618,7 +1545,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 // Reload the image from the new PNG file
                 if let newImage = NSImage(contentsOf: saveURL) {
                     baseImage = newImage
-                    Logger.shared.log("Reloaded image from new PNG file")
                 }
             }
 
@@ -1632,11 +1558,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             // Restore Live Photo support (suppressed while rotated). Cropped
             // Live Photos stay still (attachLivePhoto skips suppressed URLs).
             attachLivePhoto(for: saveURL)
-            Logger.shared.log("Saved image to \(saveURL)")
             showStatusMessage(L10n.shared.t("Saved"))
             if cropMode { exitCropMode() }
         } catch {
-            Logger.shared.log("Save failed for \(url): \(error)")
             showStatusMessage("Save failed: \(error.localizedDescription)")
         }
     }
@@ -1672,11 +1596,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
             do {
                 try data.write(to: dest, options: .atomic)
-                Logger.shared.log("Saved As to \(dest.path)")
                 self.showStatusMessage(L10n.shared.tf("Saved as %@", dest.lastPathComponent))
                 if self.cropMode { self.exitCropMode() }
             } catch {
-                Logger.shared.log("Save As failed for \(dest.path): \(error)")
                 self.showStatusMessage("Save failed: \(error.localizedDescription)")
             }
         }
@@ -1797,7 +1719,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     state.recordApplied(.upscale)
                     self.aiStates[url] = state
                 } else {
-                    Logger.shared.log("Auto upscale failed for \(url.lastPathComponent)")
                 }
             }
             if doDewatermark {
@@ -1856,7 +1777,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 AutoEnhance.enhance(cg)
             }.value
             guard !self.aiOperationCancelled else {
-                Logger.shared.log("AI enhance cancelled by user")
                 return
             }
             if let out = out {
@@ -1916,7 +1836,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
             }.value
             guard !self.aiOperationCancelled else {
-                Logger.shared.log("AI upscale cancelled by user")
                 return
             }
             if let out = out {
@@ -1966,7 +1885,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             // Synchronous heavy work: run off the main thread.
             let result = await Task.detached(priority: .userInitiated) { () -> (CGImage, Double)? in
                 guard WatermarkRemovalService.shared.isAvailable else {
-                    Logger.shared.log("Dewatermark: service not available")
                     return nil
                 }
                 do {
@@ -1976,12 +1894,10 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     }
                     return try WatermarkRemovalService.shared.removeWatermark(from: cg)
                 } catch {
-                    Logger.shared.log("Dewatermark error: \(error.localizedDescription)")
                     return nil
                 }
             }.value
             guard !self.aiOperationCancelled else {
-                Logger.shared.log("AI dewatermark cancelled by user")
                 return
             }
             if let (out, fraction) = result {
@@ -2143,7 +2059,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                 if let toDelete = toTrashNow {
                                     do {
                                         try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
-                                        Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
 
                                         // Update queue in real-time
                                         if let idx = imageURLs.firstIndex(of: toDelete) {
@@ -2158,7 +2073,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                             }
                                         }
                                     } catch {
-                                        Logger.shared.log("AI batch dedup: trash failed for \(toDelete.lastPathComponent): \(error.localizedDescription)")
                                     }
                                     toTrashNow = nil
                                 }
@@ -2182,7 +2096,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     do {
                         try FileManager.default.trashItem(at: u, resultingItemURL: nil)
                         trashed.insert(u)
-                        Logger.shared.log("AI batch dedup: moved \(u.lastPathComponent) to Trash")
 
                         // Update queue in real-time
                         if let idx = imageURLs.firstIndex(of: u) {
@@ -2199,7 +2112,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                             }
                         }
                     } catch {
-                        Logger.shared.log("AI batch dedup: trash failed for \(u.lastPathComponent): \(error.localizedDescription)")
                     }
                 }
 
@@ -2242,7 +2154,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
             } else {
                 setBatchProgress(1, indeterminate: false)
-                Logger.shared.log("AI batch: U2Net not downloaded — dewatermark phase skipped")
             }
         }
 
@@ -2389,7 +2300,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Cancel the current AI operation (Esc key).
     func cancelAIOperation() {
         guard aiOperationRunning else { return }
-        Logger.shared.log("AI operation cancelled by user (Esc)")
         aiOperationCancelled = true
         RealESRGANEngine.shared.isCancelled = true
         U2NetEngine.shared.isCancelled = true
@@ -2423,12 +2333,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Then try to undo AI operations
         guard let state = aiStates[url], state.canUndo else { return }
 
-        let undone = state.undo()
+        _ = state.undo()
         aiStates[url] = state
-
-        if let kind = undone {
-            Logger.shared.log("AI undo: \(kind.rawValue) undone")
-        }
 
         refreshCurrentDisplay()
     }
@@ -2472,7 +2378,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         // Show hint in status bar
         showStatusMessage(L10n.shared.t("Drag to select watermark region, Esc to cancel"))
-        Logger.shared.log("Manual watermark removal: entered selection mode")
     }
 
     /// Handle mouse down in selection mode - start selection.
@@ -2607,13 +2512,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     try LaMaEngine.shared.ensureLoaded()
                     return try LaMaEngine.shared.inpaint(image: cgImage, mask: maskCopy)
                 } catch {
-                    Logger.shared.log("Manual watermark removal error: \(error.localizedDescription)")
                     return nil
                 }
             }.value
 
             guard !self.aiOperationCancelled else {
-                Logger.shared.log("Manual watermark removal cancelled by user")
                 return
             }
 
@@ -2793,7 +2696,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                 if let toDelete = toTrashNow {
                                     do {
                                         try FileManager.default.trashItem(at: toDelete, resultingItemURL: nil)
-                                        Logger.shared.log("AI batch dedup: moved \(toDelete.lastPathComponent) to Trash")
 
                                         // Update queue in real-time
                                         if let idx = imageURLs.firstIndex(of: toDelete) {
@@ -2808,7 +2710,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                                             }
                                         }
                                     } catch {
-                                        Logger.shared.log("AI batch dedup: trash failed for \(toDelete.lastPathComponent): \(error.localizedDescription)")
                                     }
                                     toTrashNow = nil
                                 }
@@ -2900,7 +2801,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         pasteboard.writeObjects([nsImage])
 
         showStatusMessage(L10n.shared.t("Copied"))
-        Logger.shared.log("Copied image to clipboard (\(finalImage.width)x\(finalImage.height))")
     }
 
     /// Paste image from clipboard into the current window.
@@ -2909,7 +2809,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         // Check for image in pasteboard
         guard let image = NSImage(pasteboard: pasteboard) else {
-            Logger.shared.log("No image in clipboard")
             return
         }
 
@@ -2923,17 +2822,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             guard let tiffData = image.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
                   let pngData = bitmap.representation(using: .png, properties: [:]) else {
-                Logger.shared.log("Failed to create image data from clipboard")
                 return
             }
 
             do {
                 try pngData.write(to: tempURL)
                 loadImages(from: [tempURL])
-                Logger.shared.log("Loaded pasted image as new image")
                 showStatusMessage(L10n.shared.t("Pasted"))
             } catch {
-                Logger.shared.log("Failed to save pasted image: \(error)")
             }
             return
         }
@@ -2977,7 +2873,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
 
         overlay.select()
-        Logger.shared.log("Pasted image from clipboard as overlay")
         showStatusMessage(L10n.shared.t("Pasted"))
     }
 
@@ -2993,7 +2888,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             overlaysSaved[imageURLs[currentIndex]] = false
         }
 
-        Logger.shared.log("Deleted pasted overlay")
     }
 
     /// Record an overlay transform for undo.
@@ -3024,7 +2918,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             // Undo paste: remove the overlay
             overlay.removeFromSuperview()
             pastedOverlays.removeAll { $0 === overlay }
-            Logger.shared.log("Undid paste")
             // If no more overlays, mark as saved
             if pastedOverlays.isEmpty, currentIndex >= 0, currentIndex < imageURLs.count {
                 overlaysSaved[imageURLs[currentIndex]] = true
@@ -3035,7 +2928,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             overlay.frame = frame
             container?.imageView?.addSubview(overlay)
             pastedOverlays.append(overlay)
-            Logger.shared.log("Undid delete")
             // Overlay restored, mark as unsaved
             if currentIndex >= 0, currentIndex < imageURLs.count {
                 overlaysSaved[imageURLs[currentIndex]] = false
@@ -3045,24 +2937,20 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             // Undo transform: restore the old frame
             overlay.frame = oldFrame
             overlay.updateHandlePositions()
-            Logger.shared.log("Undid transform")
         }
     }
 
     /// Save current image's overlays to storage (called when switching images)
     private func saveCurrentOverlays() {
         guard currentIndex >= 0, currentIndex < imageURLs.count else {
-            Logger.shared.log("saveCurrentOverlays: invalid index")
             return
         }
         let currentURL = imageURLs[currentIndex]
 
-        Logger.shared.log("saveCurrentOverlays: currentIndex=\(currentIndex), URL=\(currentURL.lastPathComponent), \(pastedOverlays.count) overlay(s) in view")
 
         // Get image view for coordinate conversion
         guard let imageView = container?.imageView,
               let imageSize = imageView.cgPixelSize else {
-            Logger.shared.log("saveCurrentOverlays: no image view or image size")
             return
         }
 
@@ -3092,49 +2980,39 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     widthRatio: widthRatio,
                     heightRatio: heightRatio
                 ))
-                Logger.shared.log("saveCurrentOverlays: saved overlay with ratio x=\(xRatio), y=\(yRatio), w=\(widthRatio), h=\(heightRatio)")
             } else {
-                Logger.shared.log("saveCurrentOverlays: failed to convert overlay image to PNG")
             }
             // Always remove from superview, even if conversion fails
             overlay.removeFromSuperview()
-            Logger.shared.log("saveCurrentOverlays: removed overlay from superview")
         }
         pastedOverlays.removeAll()
 
         if !overlayDataArray.isEmpty || overlayStorage[currentURL] != nil {
             overlayStorage[currentURL] = overlayDataArray
-            Logger.shared.log("Saved \(overlayDataArray.count) overlay(s) for \(currentURL.lastPathComponent)")
         } else {
-            Logger.shared.log("No overlays to save for \(currentURL.lastPathComponent)")
         }
     }
 
     /// Load overlays for the given URL from storage
     private func loadOverlays(for url: URL) {
-        Logger.shared.log("loadOverlays: called for \(url.lastPathComponent)")
 
         // Clear any existing overlays first
         for overlay in pastedOverlays {
             overlay.removeFromSuperview()
-            Logger.shared.log("loadOverlays: cleared existing overlay from view")
         }
         pastedOverlays.removeAll()
 
         // Load saved overlays
         guard let overlayDataArray = overlayStorage[url], !overlayDataArray.isEmpty else {
-            Logger.shared.log("loadOverlays: No saved overlays for \(url.lastPathComponent)")
             return
         }
 
         // Get image view for coordinate conversion
         guard let imageView = container?.imageView,
               let imageSize = imageView.cgPixelSize else {
-            Logger.shared.log("loadOverlays: no image view or image size")
             return
         }
 
-        Logger.shared.log("loadOverlays: Found \(overlayDataArray.count) saved overlay(s)")
 
         for overlayData in overlayDataArray {
             if let image = NSImage(data: overlayData.imageData) {
@@ -3150,7 +3028,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 // Convert pixel coordinates to view coordinates
                 let viewFrame = imageView.viewRect(forPixelRect: pixelRect)
                 overlay.frame = viewFrame
-                Logger.shared.log("loadOverlays: converted ratio to pixel rect \(pixelRect), then to view frame \(viewFrame)")
 
                 overlay.onDelete = { [weak self, weak overlay] in
                     guard let self = self, let overlay = overlay else { return }
@@ -3165,10 +3042,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
                 container?.imageView?.addSubview(overlay)
                 pastedOverlays.append(overlay)
-                Logger.shared.log("loadOverlays: added overlay to view")
             }
         }
-        Logger.shared.log("Loaded \(pastedOverlays.count) overlay(s) for \(url.lastPathComponent)")
     }
 
     // MARK: - Unsaved Changes Check
@@ -3438,13 +3313,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc private func handleSaveAll() {
         guard let sheet = saveSheet else { return }
 
-        Logger.shared.log("handleSaveAll: called with \(unsavedURLs.count) unsaved URLs")
 
         // Check if any URLs are temp files
         let tempFiles = unsavedURLs.filter { $0.path.contains("/var/folders/") || $0.lastPathComponent.hasPrefix("clipboard_") }
         let regularFiles = unsavedURLs.filter { !$0.path.contains("/var/folders/") && !$0.lastPathComponent.hasPrefix("clipboard_") }
 
-        Logger.shared.log("handleSaveAll: \(tempFiles.count) temp files, \(regularFiles.count) regular files")
 
         if !tempFiles.isEmpty && regularFiles.isEmpty {
             // Only temp files - use async save with completion
@@ -3594,7 +3467,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 }
                 do {
                     try data.write(to: dest, options: .atomic)
-                    Logger.shared.log("Saved temp file to \(dest.path)")
                     self.showStatusMessage(L10n.shared.tf("Saved as %@", dest.lastPathComponent))
                     if self.cropMode { self.exitCropMode() }
                     // Mark as saved
@@ -3602,7 +3474,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                     self.overlaysSaved[url] = true
                     completion(true)
                 } catch {
-                    Logger.shared.log("Save failed for \(dest.path): \(error)")
                     self.showStatusMessage("Save failed: \(error.localizedDescription)")
                     completion(false)
                 }
@@ -3662,7 +3533,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func saveAllImages(urls: [URL]) {
         let savedIndex = currentIndex
 
-        Logger.shared.log("saveAllImages: starting with \(urls.count) URLs")
 
         // Save overlays for current image first
         saveCurrentOverlays()
@@ -3673,7 +3543,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         let hasCurrentRotation = (netDegrees % 360) != 0 && savedIndex < imageURLs.count
 
         for url in urls {
-            Logger.shared.log("saveAllImages: processing \(url.lastPathComponent)")
 
             // Get image from cache, or load from file
             var cachedImage = ImageCache.shared.image(for: url)
@@ -3682,15 +3551,12 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 if let data = try? Data(contentsOf: url),
                    let image = NSImage(data: data) {
                     cachedImage = image
-                    Logger.shared.log("saveAllImages: loaded image from file for \(url)")
                 } else {
-                    Logger.shared.log("saveAllImages: could not load image for \(url)")
                     continue
                 }
             }
 
             guard var sourceImage = cachedImage else {
-                Logger.shared.log("saveAllImages: no source image for \(url)")
                 continue
             }
 
@@ -3701,9 +3567,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             let aiState = aiStates[url]
             if let state = aiState, let kind = state.activeKind, let aiImage = state.image(for: kind) {
                 sourceImage = aiImage
-                Logger.shared.log("saveAllImages: using AI image for \(url), kind=\(kind)")
             } else {
-                Logger.shared.log("saveAllImages: using source image for \(url)")
             }
 
             // Apply rotation if this is the current image with rotation
@@ -3711,7 +3575,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if url == currentURL && hasCurrentRotation {
                 if let rotated = sourceImage.rotatedClockwise(by: netDegrees) {
                     finalImage = rotated
-                    Logger.shared.log("saveAllImages: applied \(netDegrees)° rotation for \(url)")
                 }
             }
 
@@ -3721,15 +3584,12 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
         // Restore to original index
         loadImage(at: savedIndex)
-        Logger.shared.log("saveAllImages: done")
     }
 
     /// Save image to file synchronously
     private func saveImageToFile(url: URL, image: NSImage, overlays: [OverlayData]) {
-        Logger.shared.log("saveImageToFile: starting for \(url.lastPathComponent), overlays=\(overlays.count)")
 
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            Logger.shared.log("saveImageToFile: could not get CGImage for \(url)")
             return
         }
 
@@ -3741,7 +3601,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             let colorSpace = CGColorSpaceCreateDeviceRGB()
             guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
                 finalImage = cgImage
-                Logger.shared.log("saveImageToFile: could not create context for overlay flattening")
                 return
             }
 
@@ -3775,7 +3634,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 return
             }
             finalImage = flattened
-            Logger.shared.log("saveImageToFile: flattened \(overlays.count) overlay(s) for \(url)")
         } else {
             finalImage = cgImage
         }
@@ -3783,18 +3641,15 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Encode and save
         let ext = url.pathExtension.lowercased()
         guard let data = Self.encodeImage(finalImage, fileExtension: ext) else {
-            Logger.shared.log("saveImageToFile: could not encode image for \(url)")
             return
         }
 
         do {
             try data.write(to: url, options: .atomic)
-            Logger.shared.log("saveImageToFile: saved \(url)")
 
             // Mark overlays as saved
             overlaysSaved[url] = true
         } catch {
-            Logger.shared.log("saveImageToFile: failed to save \(url): \(error)")
         }
     }
 
@@ -3832,7 +3687,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
-            Logger.shared.log("Move to Trash failed for \(url): \(error)")
             showStatusMessage(L10n.shared.tf("Delete failed: %@", error.localizedDescription))
             return
         }
@@ -3864,7 +3718,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             loadImage(at: newIndex)
         }
 
-        Logger.shared.log("Deleted \(url) (moved to Trash)")
         showStatusMessage(L10n.shared.t("Moved to Trash"))
     }
 
@@ -3903,7 +3756,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         guard !imageURLs.isEmpty else { return }
         // Read the configured interval (Preferences ▸ Slideshow) at start time.
         slideshow.interval = AppConfig.shared.slideshowInterval
-        Logger.shared.log("Slideshow started: \(imageURLs.count) images, \(slideshow.interval)s each")
         slideshow.start()
         updatePlayPauseIcon()
         updatePowerAssertion()
@@ -3912,7 +3764,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Pause the running slideshow (Space key / toolbar button).
     private func pauseSlideshow() {
         guard slideshow.isPlaying else { return }
-        Logger.shared.log("Slideshow paused at index \(currentIndex)")
         slideshow.pause()
         updatePlayPauseIcon()
         updatePowerAssertion()
@@ -3921,7 +3772,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Resume a paused slideshow (Space key / toolbar button).
     private func resumeSlideshow() {
         guard slideshow.state == .paused else { return }
-        Logger.shared.log("Slideshow resumed at index \(currentIndex)")
         slideshow.resume()
         updatePlayPauseIcon()
         updatePowerAssertion()
@@ -3930,7 +3780,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Stop the slideshow (P key).
     private func stopSlideshow() {
         guard slideshow.isActive else { return }
-        Logger.shared.log("Slideshow stopped")
         endSlideshow(finished: false)
     }
 
@@ -3980,24 +3829,20 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// After loading an image in slideshow mode, adjust the next interval for animated images or Live Photos.
     private func adjustSlideshowIntervalForAnimated() {
         guard slideshow.isPlaying else {
-            Logger.shared.log("Slideshow: adjustSlideshowIntervalForAnimated called but not playing")
             return
         }
 
         // Check for Live Photo first
         if let livePhotoURL = container?.imageView?.livePhotoURL {
-            Logger.shared.log("Slideshow: Found Live Photo, getting duration from \(livePhotoURL.lastPathComponent)")
             // Get Live Photo duration from the MOV file
             let asset = AVURLAsset(url: livePhotoURL)
             Task {
                 let duration = try? await asset.load(.duration)
                 let seconds = duration?.seconds ?? 0
-                Logger.shared.log("Slideshow: Live Photo duration = \(seconds)s")
                 await MainActor.run {
                     if seconds > 0 {
                         self.slideshow.currentSlideInterval = seconds
                         self.slideshow.restartCountdown()
-                        Logger.shared.log("Slideshow: Set interval to \(seconds)s and restarted countdown")
                     }
                 }
             }
@@ -4007,16 +3852,13 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Check for animated images (GIF or WebP)
         if isCurrentImageAnimated, let imageView = container?.imageView, !imageView.gifFrames.isEmpty {
             let totalDuration = imageView.gifFrames.reduce(0.0) { $0 + $1.delay }
-            Logger.shared.log("Slideshow: Animated image duration = \(totalDuration)s, frames = \(imageView.gifFrames.count)")
             // Use animation duration if > 0, otherwise fall back to default interval
             slideshow.currentSlideInterval = totalDuration > 0 ? totalDuration : nil
             slideshow.restartCountdown()
-            Logger.shared.log("Slideshow: Set interval to \(totalDuration)s and restarted countdown")
         } else {
             // Regular image: reset to default interval and restart countdown
             slideshow.currentSlideInterval = nil
             slideshow.restartCountdown()
-            Logger.shared.log("Slideshow: No Live Photo or animation, reset to default interval")
         }
     }
 
@@ -4027,7 +3869,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         updatePlayPauseIcon()
         updatePowerAssertion()
         if finished {
-            Logger.shared.log("Slideshow finished at the last image")
             showStatusBarHint(L10n.shared.t("Playback ended"), for: 3.0)
         }
     }
@@ -4055,7 +3896,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         guard !batchRunning, imageURLs.count > 1 else { return }
 
         if currentIndex == 0 {
-            Logger.shared.log("At first image, showing wrap-around message")
             blinkStatusBarHint(L10n.shared.t("First image, wrapping to last"))
         }
 
@@ -4074,17 +3914,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func goNext() {
         guard !batchRunning, imageURLs.count > 1 else { return }
 
-        Logger.shared.log("goNext: currentIndex before=\(currentIndex)")
 
         if currentIndex == imageURLs.count - 1 {
-            Logger.shared.log("At last image, showing wrap-around message")
             blinkStatusBarHint(L10n.shared.t("Last image, wrapping to first"))
         }
 
         // Save overlays before changing index
         saveCurrentOverlays()
         currentIndex = (currentIndex + 1) % imageURLs.count
-        Logger.shared.log("goNext: currentIndex after=\(currentIndex)")
         loadImage(at: currentIndex)
         // Manual jump during playback: keep playing with a fresh interval.
         if slideshow.isPlaying {
@@ -4331,7 +4168,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// the top of its loops and returns to browse mode.
     func cancelAIBatch() {
         guard batchRunning else { return }
-        Logger.shared.log("AI batch cancelled by user (Esc)")
         batchCancelled = true
     }
 
@@ -4551,19 +4387,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             case "z", "Z":
                 // Get undoManager from field editor (NSTextView)
                 let undoMgr: UndoManager? = editor?.undoManager ?? sheet.undoManager
-                Logger.shared.log("undo/redo: editor=\(editor != nil), undoMgr=\(undoMgr != nil), canUndo=\(undoMgr?.canUndo ?? false), canRedo=\(undoMgr?.canRedo ?? false)")
                 if let undoMgr = undoMgr {
                     if mods.contains(.shift) {
-                        Logger.shared.log("redo: canRedo=\(undoMgr.canRedo)")
                         if undoMgr.canRedo {
                             undoMgr.redo()
-                            Logger.shared.log("redo executed, now canRedo=\(undoMgr.canRedo)")
                         }
                     } else {
-                        Logger.shared.log("undo: canUndo=\(undoMgr.canUndo)")
                         if undoMgr.canUndo {
                             undoMgr.undo()
-                            Logger.shared.log("undo executed, now canRedo=\(undoMgr.canRedo)")
                         }
                     }
                 }
@@ -4623,10 +4454,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 updateStatusBar()
                 updateAIToolbarState()
             }
-            Logger.shared.log("Renamed \(url.lastPathComponent) → \(dest.lastPathComponent)")
             showStatusMessage(L10n.shared.tf("Renamed to %@", dest.lastPathComponent))
         } catch {
-            Logger.shared.log("Rename failed: \(error.localizedDescription)")
             showStatusMessage(L10n.shared.tf("Rename failed: %@", error.localizedDescription))
         }
     }

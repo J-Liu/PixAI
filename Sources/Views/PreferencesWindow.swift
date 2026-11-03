@@ -90,6 +90,7 @@ final class PreferencesWindow: NSWindow {
     private var quitCheckbox: NSButton!
     private var deleteConfirmCheckbox: NSButton!
     private var languagePopup: NSPopUpButton!
+    private var themePopup: NSPopUpButton!
     private var openDirModePopup: NSPopUpButton!
     private var openDirField: NSTextField!
     private var transitionField: NSTextField!
@@ -430,8 +431,26 @@ final class PreferencesWindow: NSWindow {
         liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
         stack.addArrangedSubview(makeRow(label: "", control: liveMutedCheckbox))
 
+        // Theme selection
+        themePopup = NSPopUpButton()
+        themePopup.addItem(withTitle: t("System Default"))
+        themePopup.addItem(withTitle: t("Light"))
+        themePopup.addItem(withTitle: t("Dark"))
+        let themeIdx: Int
+        switch AppConfig.shared.theme {
+        case "system": themeIdx = 0
+        case "light": themeIdx = 1
+        case "dark": themeIdx = 2
+        default: themeIdx = 0
+        }
+        themePopup.selectItem(at: themeIdx)
+        themePopup.target = self
+        themePopup.action = #selector(themeChanged(_:))
+        stack.addArrangedSubview(makeRow(label: t("Theme"), control: themePopup))
+
+        // Language selection
         languagePopup = NSPopUpButton()
-        languagePopup.addItem(withTitle: t("Follow System"))
+        languagePopup.addItem(withTitle: t("System Default"))
         languagePopup.addItem(withTitle: "English")
         languagePopup.addItem(withTitle: "简体中文")
         languagePopup.addItem(withTitle: "繁體中文")
@@ -1165,6 +1184,31 @@ final class PreferencesWindow: NSWindow {
         AppConfig.shared.livePhotoMuted = (sender.state == .on)
     }
 
+    @objc private func themeChanged(_ sender: NSPopUpButton) {
+        let theme: String
+        switch sender.indexOfSelectedItem {
+        case 0: theme = "system"
+        case 1: theme = "light"
+        case 2: theme = "dark"
+        default: theme = "system"
+        }
+        AppConfig.shared.theme = theme
+        applyTheme(theme)
+    }
+
+    private func applyTheme(_ theme: String) {
+        let appearance: NSAppearance?
+        switch theme {
+        case "light":
+            appearance = NSAppearance(named: .aqua)
+        case "dark":
+            appearance = NSAppearance(named: .darkAqua)
+        default:
+            appearance = nil // System default
+        }
+        NSApplication.shared.windows.forEach { $0.appearance = appearance }
+    }
+
     @objc private func languageChanged(_ sender: NSPopUpButton) {
         let lang: String
         switch sender.indexOfSelectedItem {
@@ -1542,6 +1586,8 @@ final class PreferencesWindow: NSWindow {
         AppConfig.shared.livePhotoAutoPlay = AppConfig.Defaults.livePhotoAutoPlay
         AppConfig.shared.livePhotoMuted = AppConfig.Defaults.livePhotoMuted
         AppConfig.shared.uiLanguage = AppConfig.Defaults.uiLanguage
+        AppConfig.shared.theme = AppConfig.Defaults.theme
+        applyTheme(AppConfig.Defaults.theme)
         AppConfig.shared.openPanelDirectoryMode = AppConfig.Defaults.openPanelDirectoryMode
         AppConfig.shared.imageTransitionDuration = AppConfig.Defaults.imageTransitionDuration
         AppConfig.shared.slideshowInterval = AppConfig.Defaults.slideshowInterval

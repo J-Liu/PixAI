@@ -51,11 +51,9 @@ final class RealESRGANEngine {
         // Compile to a persistent .mlmodelc cache (compileModel returns a temp path).
         let compiledURL = plugin.localDir.appendingPathComponent("RealESRGAN_x4.mlmodelc")
         if !FileManager.default.fileExists(atPath: compiledURL.path) {
-            Logger.shared.log("RealESRGAN: compiling model (first run)...")
             let tmpCompiled = try await MLModel.compileModel(at: mlpackageURL)
             try? FileManager.default.removeItem(at: compiledURL)
             try FileManager.default.moveItem(at: tmpCompiled, to: compiledURL)
-            Logger.shared.log("RealESRGAN: compiled → \(compiledURL.path)")
         }
 
         let config = MLModelConfiguration()
@@ -63,7 +61,6 @@ final class RealESRGANEngine {
         let loaded = try MLModel(contentsOf: compiledURL, configuration: config)
 
         storeModel(loaded)
-        Logger.shared.log("RealESRGAN: model loaded")
     }
 
     private func isModelLoaded() -> Bool {
@@ -91,20 +88,15 @@ final class RealESRGANEngine {
         isCancelled = false  // Reset at start
         try ensureLoadedSync()
         let w = cgImage.width, h = cgImage.height
-        Logger.shared.log("RealESRGAN: upscale called, image size: \(w)x\(h)")
         guard w > 0, h > 0 else { throw PluginManager.PluginError.downloadFailed("empty image") }
 
         if w <= tileInput && h <= tileInput {
-            Logger.shared.log("RealESRGAN: single pass mode (image <= 512x512)")
             // Single pass with edge-replicated padding.
             let padded = Self.padToSquare(cgImage, size: tileInput)
-            Logger.shared.log("RealESRGAN: padded to \(tileInput)x\(tileInput)")
             let out = try inferTile(padded)
             guard !isCancelled else {
-                Logger.shared.log("RealESRGAN: cancelled after single pass")
                 throw CancellationError()
             }
-            Logger.shared.log("RealESRGAN: inference complete, output size: \(out.count) bytes")
             guard let full = Self.bgraImage(bytes: out, width: tileOutput, height: tileOutput) else {
                 throw PluginManager.PluginError.downloadFailed("tile image creation failed")
             }
@@ -115,12 +107,10 @@ final class RealESRGANEngine {
             guard let result = full.cropping(to: cropRect) else {
                 throw PluginManager.PluginError.downloadFailed("crop failed")
             }
-            Logger.shared.log("RealESRGAN: crop complete, result size: \(result.width)x\(result.height)")
             report(progress, 1.0)
             return result
         }
 
-        Logger.shared.log("RealESRGAN: tiled mode (image > 512x512)")
         return try upscaleTiled(cgImage, progress: progress)
     }
 
@@ -170,14 +160,11 @@ final class RealESRGANEngine {
     private func upscaleTiled(_ cgImage: CGImage, progress: ((Double) -> Void)?) throws -> CGImage {
         let w = cgImage.width, h = cgImage.height
         let W = w * 4, H = h * 4
-        Logger.shared.log("RealESRGAN: upscaleTiled start, input=\(w)x\(h), output=\(W)x\(H)")
 
         let xs = tileOrigins(w)
         let ys = tileOrigins(h)
-        Logger.shared.log("RealESRGAN: tileOrigins xs=\(xs), ys=\(ys)")
 
         let bandCount = (h + bandInput - 1) / bandInput
-        Logger.shared.log("RealESRGAN: bandCount=\(bandCount)")
 
         // Total inference work: each tile is inferred once per band it touches.
         var totalWork = 0
@@ -189,24 +176,20 @@ final class RealESRGANEngine {
         var doneWork = 0
 
         // Final canvas: W×H RGBA8.
-        Logger.shared.log("RealESRGAN: creating canvas \(W)x\(H)")
         guard let canvas = CGContext(
             data: nil, width: W, height: H,
             bitsPerComponent: 8, bytesPerRow: W * 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            Logger.shared.log("RealESRGAN: ERROR - canvas allocation failed")
             throw PluginManager.PluginError.downloadFailed("canvas alloc failed")
         }
-        Logger.shared.log("RealESRGAN: canvas created successfully")
 
         // Cache of tile outputs (BGRA bytes) still needed by the next band.
         var tileCache: [Int: [UInt8]] = [:]   // key: ty*1000 + txIndex
 
         for band in 0..<bandCount {
             guard !isCancelled else {
-                Logger.shared.log("RealESRGAN: cancelled during band \(band)")
                 throw CancellationError()
             }
             let by = band * bandInput
@@ -218,19 +201,15 @@ final class RealESRGANEngine {
 
             let activeYs = ys.enumerated().filter { (_, ty) in ty + tileInput > by && ty < by + bh }
 
-            Logger.shared.log("RealESRGAN: band \(band), activeYs.count=\(activeYs.count), xs.count=\(xs.count)")
 
             for (yi, ty) in activeYs {
                 guard !isCancelled else {
-                    Logger.shared.log("RealESRGAN: cancelled during tile processing")
                     throw CancellationError()
                 }
                 for (xi, tx) in xs.enumerated() {
                     guard !isCancelled else {
-                        Logger.shared.log("RealESRGAN: cancelled during tile processing")
                         throw CancellationError()
                     }
-                    Logger.shared.log("RealESRGAN: processing tile yi=\(yi), ty=\(ty), xi=\(xi), tx=\(tx)")
                     let key = yi * 1000 + xi
                     var out: [UInt8]? = tileCache[key]
                     if out == nil {
@@ -240,33 +219,27 @@ final class RealESRGANEngine {
                         if tx + tileInput > w || ty + tileInput > h {
                             // Tile extends beyond image - need edge-replicated padding
                             guard let padded = Self.padTile(cgImage, tx: tx, ty: ty, tileSize: tileInput) else {
-                                Logger.shared.log("RealESRGAN: ERROR - tile padding failed")
                                 throw PluginManager.PluginError.downloadFailed("tile padding failed")
                             }
                             tileCG = padded
                         } else {
                             guard let cropped = cgImage.cropping(to: tileRect) else {
-                                Logger.shared.log("RealESRGAN: ERROR - tile crop failed")
                                 throw PluginManager.PluginError.downloadFailed("tile crop failed")
                             }
                             tileCG = cropped
                         }
                         out = try inferTile(tileCG)
-                        Logger.shared.log("RealESRGAN: tile inference complete, checking cancellation")
                         // Check cancellation immediately after synchronous inference
                         guard !isCancelled else {
-                            Logger.shared.log("RealESRGAN: cancelled after tile inference")
                             throw CancellationError()
                         }
                         doneWork += 1
                         report(progress, Double(doneWork) / Double(totalWork))
                     }
                     guard let tileOut = out else {
-                        Logger.shared.log("RealESRGAN: WARNING - tileOut is nil, skipping")
                         continue
                     }
 
-                    Logger.shared.log("RealESRGAN: blending tile, tileOut.count=\(tileOut.count)")
 
                     // Output rows of this tile that fall inside the current band.
                     // Clamp to tile's actual output range [ty*4, (ty+tileInput)*4)
@@ -279,7 +252,6 @@ final class RealESRGANEngine {
                     let tileOutXStart = tx * 4
                     let tileOutXEnd = (tx + tileInput) * 4
 
-                    Logger.shared.log("RealESRGAN: blending rows \(rowStart)..<\(rowEnd), cols \(tileOutXStart)..<\(tileOutXEnd)")
 
                     for r in rowStart..<rowEnd {
                         let ir = r / 4 - ty                       // row inside tile (input space)
@@ -300,7 +272,6 @@ final class RealESRGANEngine {
                             let dstIdx = bandRow * W * 4 + c * 4
                             // Bounds check
                             guard srcIdx + 3 < tileOut.count, dstIdx + 2 < accum.count else {
-                                Logger.shared.log("RealESRGAN: ERROR - array bounds exceeded srcIdx=\(srcIdx), dstIdx=\(dstIdx)")
                                 continue
                             }
                             // Accumulate in the same format as the output (no channel conversion during blending)
@@ -312,17 +283,14 @@ final class RealESRGANEngine {
                             weight[bandRow * W + c] += wt
                         }
                     }
-                    Logger.shared.log("RealESRGAN: tile blending complete")
                 }
             }
 
             // Normalize and write the band into the canvas (BGRA → RGBA).
             guard let canvasData = canvas.data else {
-                Logger.shared.log("RealESRGAN: ERROR - canvas data is nil")
                 throw PluginManager.PluginError.downloadFailed("canvas data nil")
             }
             let canvasBase = canvasData.assumingMemoryBound(to: UInt8.self)
-            Logger.shared.log("RealESRGAN: writing band \(band) to canvas, outH=\(outH), W=\(W)")
             for r in 0..<outH {
                 let canvasRow = (by * 4 + r) * W * 4
                 for c in 0..<W {
@@ -352,15 +320,11 @@ final class RealESRGANEngine {
 
         report(progress, 1.0)
         guard !isCancelled else {
-            Logger.shared.log("RealESRGAN: cancelled before final image creation")
             throw CancellationError()
         }
-        Logger.shared.log("RealESRGAN: upscaleTiled - creating final image, canvas size: \(W)x\(H)")
         guard let result = canvas.makeImage() else {
-            Logger.shared.log("RealESRGAN: upscaleTiled - ERROR: canvas.makeImage failed")
             throw PluginManager.PluginError.downloadFailed("canvas makeImage failed")
         }
-        Logger.shared.log("RealESRGAN: upscaleTiled - final image created: \(result.width)x\(result.height)")
         return result
     }
 
@@ -369,7 +333,6 @@ final class RealESRGANEngine {
     /// Run one 512×512 tile through the model; returns 2048×2048 BGRA bytes.
     private func inferTile(_ tileCG: CGImage) throws -> [UInt8] {
         let model = try lockedModel()
-        Logger.shared.log("RealESRGAN: inferTile start, tile size: \(tileCG.width)x\(tileCG.height)")
 
         // 512×512 ARGB input pixel buffer (matching Core ML output format).
         var pb: CVPixelBuffer?
@@ -384,7 +347,6 @@ final class RealESRGANEngine {
               let pixelBuffer = pb else {
             throw PluginManager.PluginError.downloadFailed("input pixel buffer failed")
         }
-        Logger.shared.log("RealESRGAN: inferTile - pixel buffer created")
 
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
@@ -400,21 +362,16 @@ final class RealESRGANEngine {
         ) else { throw PluginManager.PluginError.downloadFailed("input context failed") }
         ctx.interpolationQuality = CGInterpolationQuality.high
         ctx.draw(tileCG, in: CGRect(x: 0, y: 0, width: tileInput, height: tileInput))
-        Logger.shared.log("RealESRGAN: inferTile - input drawn to context")
 
         let provider = ESRGANInputProvider(pixelBuffer: pixelBuffer)
-        Logger.shared.log("RealESRGAN: inferTile - calling model.prediction")
         let output: MLFeatureProvider
         do {
             output = try model.prediction(from: provider)
         } catch {
-            Logger.shared.log("RealESRGAN: inferTile - model.prediction ERROR: \(error.localizedDescription)")
             throw error
         }
-        Logger.shared.log("RealESRGAN: inferTile - prediction returned")
         guard let outFeature = output.featureValue(for: "activation_out"),
               let outPB = outFeature.imageBufferValue else {
-            Logger.shared.log("RealESRGAN: inferTile - ERROR: missing activation_out feature")
             throw PluginManager.PluginError.downloadFailed("missing 'activation_out' image feature")
         }
 
@@ -422,16 +379,7 @@ final class RealESRGANEngine {
         let ow = CVPixelBufferGetWidth(outPB)
         let oh = CVPixelBufferGetHeight(outPB)
         let obpr = CVPixelBufferGetBytesPerRow(outPB)
-        let outFormat = CVPixelBufferGetPixelFormatType(outPB)
-        let formatStr = String(bytes: [
-            UInt8(outFormat & 0xFF),
-            UInt8((outFormat >> 8) & 0xFF),
-            UInt8((outFormat >> 16) & 0xFF),
-            UInt8((outFormat >> 24) & 0xFF)
-        ], encoding: .utf8) ?? "unknown"
-        Logger.shared.log("RealESRGAN: inferTile - output buffer: \(ow)x\(oh), format=\(formatStr), bytesPerRow=\(obpr)")
         var bytes = [UInt8](repeating: 0, count: ow * oh * 4)
-        Logger.shared.log("RealESRGAN: inferTile - copying \(ow)x\(oh) bytes, total=\(bytes.count)")
         CVPixelBufferLockBaseAddress(outPB, [])
         defer { CVPixelBufferUnlockBaseAddress(outPB, []) }
         guard let srcBase = CVPixelBufferGetBaseAddress(outPB) else {
@@ -444,7 +392,6 @@ final class RealESRGANEngine {
                 dst.baseAddress!.advanced(by: row * ow * 4).copyMemory(from: srcRow, byteCount: ow * 4)
             }
         }
-        Logger.shared.log("RealESRGAN: inferTile - bytes copied, returning \(bytes.count) bytes")
         return bytes
     }
 
@@ -454,7 +401,6 @@ final class RealESRGANEngine {
     /// borders (the image sits at the bottom-left in context coordinates, i.e.
     /// top-left in CGImage coordinates).
     private static func padToSquare(_ image: CGImage, size: Int) -> CGImage {
-        Logger.shared.log("RealESRGAN: padToSquare, input=\(image.width)x\(image.height), target=\(size)")
         let w = image.width, h = image.height
         guard w < size || h < size else { return image }
         let space = CGColorSpaceCreateDeviceRGB()

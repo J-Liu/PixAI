@@ -39,7 +39,6 @@ enum DuplicateDetector {
                             result[i] = obs
                         }
                     } catch {
-                        Logger.shared.log("DuplicateDetector: feature print failed for \(url.lastPathComponent): \(error.localizedDescription)")
                     }
                     progress?(Double(i + 1) / Double(urls.count))
                 }

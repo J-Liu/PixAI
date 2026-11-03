@@ -766,7 +766,6 @@ class ZoomableImageView: NSView {
             object: item,
             queue: .main
         ) { [weak self] _ in
-            Logger.shared.log("Live Photo playback failed")
             self?.stopLivePlayback()
         })
     }

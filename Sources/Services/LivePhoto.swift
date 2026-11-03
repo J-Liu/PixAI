@@ -90,7 +90,6 @@ final class LivePhotoDetector {
             // merely shares the file name — not a Live Photo.
             return nil
         } catch {
-            Logger.shared.log("LivePhotoDetector: failed to scan \(dir.path): \(error)")
             return nil
         }
     }

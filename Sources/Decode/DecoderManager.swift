@@ -118,7 +118,6 @@ final class DecoderManager {
         guard let decoder = decoder(for: format) else {
             throw DecodeError.noDecoderForFormat(format)
         }
-        Logger.shared.log("DecoderManager: \(url?.lastPathComponent ?? "<data>") -> \(format.displayName) via \(decoder.name)")
         return try await decoder.decode(data: data, url: url, format: format)
     }
 }

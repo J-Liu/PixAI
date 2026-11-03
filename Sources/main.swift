@@ -7,7 +7,6 @@ import AppKit
 var commandPaths: [String] = []
 var isFullscreenMode = false
 
-Logger.shared.log("Application starting")
 
 // Parse command-line arguments
 let args = CommandLine.arguments.dropFirst() // skip executable path
@@ -20,15 +19,9 @@ for arg in args {
         if FileManager.default.fileExists(atPath: url.path) {
             commandPaths.append(arg)
         } else {
-            Logger.shared.log("WARNING: Path does not exist, skipping: \(arg)")
             skippedNonexistent += 1
         }
     }
-}
-
-Logger.shared.log("Parsed arguments: \(commandPaths.count) valid paths, fullscreen=\(isFullscreenMode), skipped \(skippedNonexistent) non-existent")
-for path in commandPaths {
-    Logger.shared.log("  Path: \(path)")
 }
 
 // Create the AppKit app delegate instance

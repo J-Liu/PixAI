@@ -32,9 +32,7 @@ final class PowerAssertion {
 
         if result == kIOReturnSuccess {
             isActive = true
-            Logger.shared.log("PowerAssertion: enabled (\(reason))")
         } else {
-            Logger.shared.log("PowerAssertion: failed to enable (error: \(result))")
         }
     }
 
@@ -49,9 +47,7 @@ final class PowerAssertion {
         let result = IOPMAssertionRelease(assertionID)
         if result == kIOReturnSuccess {
             isActive = false
-            Logger.shared.log("PowerAssertion: disabled")
         } else {
-            Logger.shared.log("PowerAssertion: failed to disable (error: \(result))")
         }
     }
 

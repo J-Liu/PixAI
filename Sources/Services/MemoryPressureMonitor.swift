@@ -27,8 +27,7 @@ final class MemoryPressureMonitor {
             queue: .main
         )
         src.setEventHandler { [weak self] in
-            guard let self, let event = self.source?.data else { return }
-            Logger.shared.log("Memory pressure \(event.contains(.critical) ? "CRITICAL" : "warning") — clearing image cache")
+            guard let self, self.source?.data != nil else { return }
             ImageCache.shared.removeAll()
         }
         src.activate()

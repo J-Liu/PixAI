@@ -32,13 +32,12 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Log the loaded config state (no-op while logging is disabled).
-        AppConfig.shared.logLoadedState()
-        Logger.shared.log("applicationDidFinishLaunching")
-
         // Disable Sparkle's built-in automatic check - we handle it ourselves
         // to avoid showing progress dialogs (silent background check only).
         updaterController.updater.automaticallyChecksForUpdates = false
+
+        // Apply saved theme
+        applyTheme(AppConfig.shared.theme)
 
         // Clear the image cache when the system signals a memory warning
         // (Dispatch memory-pressure source — macOS has no AppKit equivalent
@@ -73,11 +72,9 @@ class PixAIApp: NSObject, NSApplicationDelegate {
                    let pngData = bitmap.representation(using: .png, properties: [:]) {
                     do {
                         try pngData.write(to: tempURL)
-                        Logger.shared.log("New window: opening clipboard image as file")
                         _ = self?.makeNewWindow(paths: [tempURL])
                         return
                     } catch {
-                        Logger.shared.log("Failed to save clipboard image: \(error)")
                     }
                 }
             }
@@ -125,7 +122,6 @@ class PixAIApp: NSObject, NSApplicationDelegate {
             first.window.toggleFullScreen(nil)
         }
 
-        Logger.shared.log("PixAIApp initialized with \(imageWindows.count) window(s)")
 
         // Rebuild the menu bar when the UI language changes (all titles go
         // through L10n).
@@ -167,7 +163,6 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     /// when the Finder/Dock reactivates an already running app).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            Logger.shared.log("Dock icon clicked with no visible windows, opening a new window")
             makeNewWindow(paths: [])
         }
         return true
@@ -205,15 +200,12 @@ class PixAIApp: NSObject, NSApplicationDelegate {
         // All windows closed: release every cached image. The app keeps
         // running (default setting); the cache refills as new images load.
         if imageWindows.isEmpty {
-            Logger.shared.log("All windows closed — releasing all image cache")
             ImageCache.shared.removeAll()
         }
-        Logger.shared.log("Window closed, \(imageWindows.count) window(s) remain")
     }
 
     /// Handle file open from Finder (double-click or "Open With").
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        Logger.shared.log("openFile called: \(filename)")
         let url = URL(fileURLWithPath: filename)
         AppConfig.shared.addRecentFile(url.path)
         if let win = activeWindow() {
@@ -226,7 +218,6 @@ class PixAIApp: NSObject, NSApplicationDelegate {
 
     /// Handle multiple files opened from Finder.
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        Logger.shared.log("openFiles called: \(filenames.count) files")
         let urls = filenames.map { URL(fileURLWithPath: $0) }
         for url in urls {
             AppConfig.shared.addRecentFile(url.path)
@@ -284,6 +275,19 @@ class PixAIApp: NSObject, NSApplicationDelegate {
     static func checkForUpdatesFromPreferences() {
         shared?.checkForUpdates()
     }
+
+    private func applyTheme(_ theme: String) {
+        let appearance: NSAppearance?
+        switch theme {
+        case "light":
+            appearance = NSAppearance(named: .aqua)
+        case "dark":
+            appearance = NSAppearance(named: .darkAqua)
+        default:
+            appearance = nil // System default
+        }
+        NSApplication.shared.windows.forEach { $0.appearance = appearance }
+    }
 }
 
 /// Delegate for Sparkle's standard user driver to ensure update dialogs are shown
@@ -292,12 +296,6 @@ private class SparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate
     /// Always allow the update dialog to be shown for scheduled/background checks.
     /// Return YES to let Sparkle handle showing the update dialog automatically.
     func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
-        Logger.shared.log("Sparkle: showing scheduled update \(update.displayVersionString), immediateFocus=\(immediateFocus)")
         return true
-    }
-
-    /// Called before an update will be shown to the user.
-    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        Logger.shared.log("Sparkle: will show update \(update.displayVersionString), handleShowing=\(handleShowingUpdate), userInitiated=\(state.userInitiated)")
     }
 }
