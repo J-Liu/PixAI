@@ -165,7 +165,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         window.delegate = self  // Set delegate for windowShouldClose
         self.window = window
 
-        // Container (light gray background) that accepts dropped images/folders.
+        // Container that accepts dropped images/folders.
         let container = ViewerContainerView(onDrop: { [weak self] urls in
             self?.loadImages(from: urls)
         })

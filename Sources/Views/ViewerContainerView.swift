@@ -4,7 +4,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Content container for a viewer window (light gray background).
+/// Content container for a viewer window.
 ///
 /// All children are positioned EXPLICITLY in `layoutChildren()`, which is called
 /// from both `layout()` and `setFrameSize(_:)`. No autoresizing masks are used:
@@ -40,8 +40,6 @@ class ViewerContainerView: NSView {
     init(onDrop: @escaping ([URL]) -> Void) {
         self.onDrop = onDrop
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         registerForDraggedTypes(DragDropHelper.draggedTypes)
     }
 

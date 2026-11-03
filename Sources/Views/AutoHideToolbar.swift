@@ -482,6 +482,8 @@ class AutoHideToolbar: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         guard hoverEnabled else { return }
+        // Only trigger hover behavior when images are loaded
+        guard hasImages else { return }
         isHovered = true
         onVisibilityChange?(true)
         NSAnimationContext.runAnimationGroup { context in
@@ -491,6 +493,8 @@ class AutoHideToolbar: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        // Only trigger auto-hide when images are loaded
+        guard hasImages else { return }
         isHovered = false
         onVisibilityChange?(false)
         let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
