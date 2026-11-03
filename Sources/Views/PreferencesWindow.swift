@@ -407,30 +407,6 @@ final class PreferencesWindow: NSWindow {
         let stack = makeVerticalStack()
         let t = L10n.shared.t
 
-        quitCheckbox = NSButton(checkboxWithTitle: t("Quit app when the last window is closed"), target: self, action: #selector(toggleQuitOnLastClose(_:)))
-        quitCheckbox.state = AppConfig.shared.quitOnLastWindowClosed ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: quitCheckbox))
-
-        deleteConfirmCheckbox = NSButton(checkboxWithTitle: t("Ask for confirmation before deleting a file"), target: self, action: #selector(toggleDeleteConfirm(_:)))
-        deleteConfirmCheckbox.state = AppConfig.shared.deleteConfirmationEnabled ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: deleteConfirmCheckbox))
-
-        modelCheckPromptCheckbox = NSButton(checkboxWithTitle: t("Ask to download AI models at startup when missing"), target: self, action: #selector(toggleModelCheckPrompt(_:)))
-        modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: modelCheckPromptCheckbox))
-
-        cropLivePhotoConfirmCheckbox = NSButton(checkboxWithTitle: t("Confirm before cropping a Live Photo (result is a still image)"), target: self, action: #selector(toggleCropLivePhotoConfirm(_:)))
-        cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: cropLivePhotoConfirmCheckbox))
-
-        liveAutoPlayCheckbox = NSButton(checkboxWithTitle: t("Auto-play Live Photos when displayed"), target: self, action: #selector(toggleLiveAutoPlay(_:)))
-        liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: liveAutoPlayCheckbox))
-
-        liveMutedCheckbox = NSButton(checkboxWithTitle: t("Mute Live Photo playback"), target: self, action: #selector(toggleLiveMuted(_:)))
-        liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
-        stack.addArrangedSubview(makeRow(label: "", control: liveMutedCheckbox))
-
         // Theme selection
         themePopup = NSPopUpButton()
         themePopup.addItem(withTitle: t("System Default"))
@@ -561,6 +537,31 @@ final class PreferencesWindow: NSWindow {
         maxRecentFilesField.target = self
         maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
         stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentFilesField))
+
+        // Checkboxes at the bottom
+        quitCheckbox = NSButton(checkboxWithTitle: t("Quit app when the last window is closed"), target: self, action: #selector(toggleQuitOnLastClose(_:)))
+        quitCheckbox.state = AppConfig.shared.quitOnLastWindowClosed ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: quitCheckbox))
+
+        deleteConfirmCheckbox = NSButton(checkboxWithTitle: t("Ask for confirmation before deleting a file"), target: self, action: #selector(toggleDeleteConfirm(_:)))
+        deleteConfirmCheckbox.state = AppConfig.shared.deleteConfirmationEnabled ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: deleteConfirmCheckbox))
+
+        modelCheckPromptCheckbox = NSButton(checkboxWithTitle: t("Ask to download AI models at startup when missing"), target: self, action: #selector(toggleModelCheckPrompt(_:)))
+        modelCheckPromptCheckbox.state = AppConfig.shared.modelCheckPromptEnabled ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: modelCheckPromptCheckbox))
+
+        cropLivePhotoConfirmCheckbox = NSButton(checkboxWithTitle: t("Confirm before cropping a Live Photo (result is a still image)"), target: self, action: #selector(toggleCropLivePhotoConfirm(_:)))
+        cropLivePhotoConfirmCheckbox.state = AppConfig.shared.cropLivePhotoConfirm ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: cropLivePhotoConfirmCheckbox))
+
+        liveAutoPlayCheckbox = NSButton(checkboxWithTitle: t("Auto-play Live Photos when displayed"), target: self, action: #selector(toggleLiveAutoPlay(_:)))
+        liveAutoPlayCheckbox.state = AppConfig.shared.livePhotoAutoPlay ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: liveAutoPlayCheckbox))
+
+        liveMutedCheckbox = NSButton(checkboxWithTitle: t("Mute Live Photo playback"), target: self, action: #selector(toggleLiveMuted(_:)))
+        liveMutedCheckbox.state = AppConfig.shared.livePhotoMuted ? .on : .off
+        stack.addArrangedSubview(makeRow(label: "", control: liveMutedCheckbox))
 
         let restoreBtn = NSButton(title: t("Restore This Page Defaults"), target: self, action: #selector(restoreGeneralDefaults(_:)))
         restoreBtn.bezelStyle = .rounded
