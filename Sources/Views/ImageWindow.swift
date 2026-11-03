@@ -305,6 +305,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         container.toolbar = toolbar
         self.toolbar = toolbar
         container.addSubview(toolbar)
+        toolbar.setHasImages(false)  // Initially visible (no images loaded yet)
 
         // Empty-state placeholder (big icon + hint), centered in the image area.
         let placeholder = PlaceholderView(
