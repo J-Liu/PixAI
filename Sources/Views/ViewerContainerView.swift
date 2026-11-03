@@ -41,7 +41,7 @@ class ViewerContainerView: NSView {
         self.onDrop = onDrop
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(white: 0.92, alpha: 1).cgColor
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         registerForDraggedTypes(DragDropHelper.draggedTypes)
     }
 
