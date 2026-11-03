@@ -1616,11 +1616,18 @@ final class PreferencesWindow: NSWindow {
         GNU AFFERO GENERAL PUBLIC LICENSE
         Version 3, 19 November 2007
 
-        Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
-
-        PixAI is licensed under the GNU Affero General Public License v3.0 or later.
-
+        Copyright (C) 2007 Free Software Foundation, Inc.
         Copyright (C) 2026 Jia Liu
+
+        This program is free software: you can redistribute it and/or modify
+        it under the terms of the GNU Affero General Public License as published
+        by the Free Software Foundation, either version 3 of the License, or
+        (at your option) any later version.
+
+        This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+        GNU Affero General Public License for more details.
 
         Full license text:
         https://github.com/J-Liu/PixAI/blob/main/LICENSE
@@ -1630,11 +1637,7 @@ final class PreferencesWindow: NSWindow {
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         ])
 
-        // Make URLs clickable
-        let fsfRange = (licenseText as NSString).range(of: "https://fsf.org/")
-        attributedString.addAttribute(.link, value: "https://fsf.org/", range: fsfRange)
-        attributedString.addAttribute(.foregroundColor, value: NSColor.linkColor, range: fsfRange)
-
+        // Make URL clickable
         let urlRange = (licenseText as NSString).range(of: "https://github.com/J-Liu/PixAI/blob/main/LICENSE")
         attributedString.addAttribute(.link, value: "https://github.com/J-Liu/PixAI/blob/main/LICENSE", range: urlRange)
         attributedString.addAttribute(.foregroundColor, value: NSColor.linkColor, range: urlRange)
