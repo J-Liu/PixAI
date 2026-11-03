@@ -215,6 +215,8 @@ final class L10n {
         "Large image warning": "大图警告",
         "“%@” is %@, larger than 50 MB. Displaying it may use a lot of memory.": "“%@”为%@，超过 50 MB。显示它可能占用大量内存。",
         "OK": "好",
+        "License": "许可证",
+        "Notice": "声明",
         "Playback ended": "播放结束",
         "Unsupported format": "不支持的格式",
 
@@ -532,6 +534,8 @@ final class L10n {
         "Large image warning": "大圖警告",
         "\u{201C}%@\u{201D} is %@, larger than 50 MB. Displaying it may use a lot of memory.": "\u{201C}%@\u{201D}為%@，超過 50 MB。顯示它可能佔用大量記憶體。",
         "OK": "好",
+        "License": "授權條款",
+        "Notice": "聲明",
         "Playback ended": "播放結束",
         "Unsupported format": "不支援的格式",
 

@@ -1011,6 +1011,20 @@ final class PreferencesWindow: NSWindow {
         checkUpdatesButton.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(checkUpdatesButton)
 
+        let licenseButton = NSButton(title: t("License"), target: self, action: #selector(showLicense))
+        licenseButton.bezelStyle = .rounded
+        licenseButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let noticeButton = NSButton(title: t("Notice"), target: self, action: #selector(showNotice))
+        noticeButton.bezelStyle = .rounded
+        noticeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let buttonRow = NSStackView(views: [licenseButton, noticeButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 16
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(buttonRow)
+
         NSLayoutConstraint.activate([
             appIcon.topAnchor.constraint(equalTo: container.topAnchor, constant: 40),
             appIcon.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -1024,7 +1038,9 @@ final class PreferencesWindow: NSWindow {
             githubButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             checkUpdatesButton.topAnchor.constraint(equalTo: githubButton.bottomAnchor, constant: 12),
             checkUpdatesButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            checkUpdatesButton.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -20)
+            buttonRow.topAnchor.constraint(equalTo: checkUpdatesButton.bottomAnchor, constant: 12),
+            buttonRow.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            buttonRow.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -20)
         ])
 
         return container
@@ -1588,6 +1604,87 @@ final class PreferencesWindow: NSWindow {
         if let url = URL(string: "https://github.com/J-Liu/PixAI") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func showLicense() {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 350))
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+
+        let licenseText = """
+        GNU AFFERO GENERAL PUBLIC LICENSE
+        Version 3, 19 November 2007
+
+        Copyright (C) 2007 Free Software Foundation, Inc.
+
+        Additional Permission under Section 7
+
+        As an additional permission under section 7, you are allowed to distribute
+        the software through an app store, even if that store has restrictive terms
+        and conditions that are incompatible with the AGPL, provided that the source
+        is also available under the AGPL with or without this permission through a
+        channel without those restrictive terms and conditions.
+
+        Copyright (C) 2026 Jia Liu
+
+        Full license text:
+        https://github.com/J-Liu/PixAI/blob/main/LICENSE
+        """
+
+        let attributedString = NSMutableAttributedString(string: licenseText, attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        ])
+
+        // Make URL clickable
+        let urlRange = (licenseText as NSString).range(of: "https://github.com/J-Liu/PixAI/blob/main/LICENSE")
+        attributedString.addAttribute(.link, value: "https://github.com/J-Liu/PixAI/blob/main/LICENSE", range: urlRange)
+        attributedString.addAttribute(.foregroundColor, value: NSColor.linkColor, range: urlRange)
+
+        textView.textStorage?.setAttributedString(attributedString)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 370))
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        let alert = NSAlert()
+        alert.messageText = L10n.shared.t("License")
+        alert.accessoryView = scrollView
+        alert.addButton(withTitle: L10n.shared.t("OK"))
+        alert.beginSheetModal(for: self)
+    }
+
+    @objc private func showNotice() {
+        let t = L10n.shared.t
+        let notice = """
+        PixAI — A macOS image viewer with AI enhancement features.
+        Copyright 2026 Jia Liu
+
+        This product includes software developed by Jia Liu.
+
+        This software is licensed under AGPL-3.0-or-later with an additional
+        permission under Section 7. See LICENSE for details.
+        """
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 200))
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.font = .systemFont(ofSize: 13, weight: .regular)
+        textView.string = notice
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 220))
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        let alert = NSAlert()
+        alert.messageText = t("Notice")
+        alert.accessoryView = scrollView
+        alert.addButton(withTitle: t("OK"))
+        alert.beginSheetModal(for: self)
     }
 
     // MARK: - Restore Defaults
