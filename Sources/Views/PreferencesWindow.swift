@@ -1616,7 +1616,9 @@ final class PreferencesWindow: NSWindow {
         GNU AFFERO GENERAL PUBLIC LICENSE
         Version 3, 19 November 2007
 
-        Copyright (C) 2007 Free Software Foundation, Inc.
+        Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+
+        PixAI is licensed under the GNU Affero General Public License v3.0 or later.
 
         Additional Permission under Section 7
 
@@ -1636,7 +1638,11 @@ final class PreferencesWindow: NSWindow {
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         ])
 
-        // Make URL clickable
+        // Make URLs clickable
+        let fsfRange = (licenseText as NSString).range(of: "https://fsf.org/")
+        attributedString.addAttribute(.link, value: "https://fsf.org/", range: fsfRange)
+        attributedString.addAttribute(.foregroundColor, value: NSColor.linkColor, range: fsfRange)
+
         let urlRange = (licenseText as NSString).range(of: "https://github.com/J-Liu/PixAI/blob/main/LICENSE")
         attributedString.addAttribute(.link, value: "https://github.com/J-Liu/PixAI/blob/main/LICENSE", range: urlRange)
         attributedString.addAttribute(.foregroundColor, value: NSColor.linkColor, range: urlRange)
@@ -1659,13 +1665,14 @@ final class PreferencesWindow: NSWindow {
     @objc private func showNotice() {
         let t = L10n.shared.t
         let notice = """
-        PixAI — A macOS image viewer with AI enhancement features.
+        PixAI - A lightweight, fast, AI-powered image viewer for macOS
         Copyright 2026 Jia Liu
 
         This product includes software developed by Jia Liu.
 
-        This software is licensed under AGPL-3.0-or-later with an additional
-        permission under Section 7. See LICENSE for details.
+        The original PixAI project and its contributors must be credited
+        in any redistribution or derivative work. This attribution notice must
+        be retained in all copies or substantial portions of the software.
         """
 
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 200))
