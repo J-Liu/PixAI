@@ -476,7 +476,21 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     /// Center the window and show it.
     func show() {
         window.center()
+        // Apply current theme to this window
+        applyThemeToWindow(window)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func applyThemeToWindow(_ window: NSWindow) {
+        let theme = AppConfig.shared.theme
+        switch theme {
+        case "light":
+            window.appearance = NSAppearance(named: .aqua)
+        case "dark":
+            window.appearance = NSAppearance(named: .darkAqua)
+        default:
+            window.appearance = nil
+        }
     }
 
     /// Refresh the status bar when the window is resized (zoom ratio changes).

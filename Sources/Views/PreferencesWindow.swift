@@ -185,9 +185,22 @@ final class PreferencesWindow: NSWindow {
 
     func showWindow() {
         syncControlsFromConfig()
+        applyThemeToWindow(self)
         center()
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyThemeToWindow(_ window: NSWindow) {
+        let theme = AppConfig.shared.theme
+        switch theme {
+        case "light":
+            window.appearance = NSAppearance(named: .aqua)
+        case "dark":
+            window.appearance = NSAppearance(named: .darkAqua)
+        default:
+            window.appearance = nil
+        }
     }
 
     func showAboutTab() {
