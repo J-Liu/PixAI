@@ -35,6 +35,8 @@ class AutoHideToolbar: NSView {
     private var isHovered = false
     /// Whether images are loaded (affects default visibility)
     private var hasImages = false
+    /// Force toolbar to stay visible (for unsupported format case)
+    private var forceVisible = false
     private let onLeftTap: () -> Void
     private let onRightTap: () -> Void
     private let onZoomInTap: () -> Void
@@ -482,6 +484,8 @@ class AutoHideToolbar: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         guard hoverEnabled else { return }
+        // Don't change visibility when force visible
+        guard !forceVisible else { return }
         // Only trigger hover behavior when images are loaded
         guard hasImages else { return }
         isHovered = true
@@ -493,6 +497,8 @@ class AutoHideToolbar: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        // Don't change visibility when force visible
+        guard !forceVisible else { return }
         // Only trigger auto-hide when images are loaded
         guard hasImages else { return }
         isHovered = false
@@ -526,8 +532,8 @@ class AutoHideToolbar: NSView {
     /// - When images loaded: toolbar is hidden by default, appears on hover
     func setHasImages(_ hasImages: Bool) {
         self.hasImages = hasImages
-        // Only update if not currently hovered
-        guard !isHovered else { return }
+        // Only update if not currently hovered and not forced visible
+        guard !isHovered && !forceVisible else { return }
         let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
         if hasImages {
             // Images loaded: start hidden
@@ -535,6 +541,22 @@ class AutoHideToolbar: NSView {
         } else {
             // No images: start visible
             self.alphaValue = 0.9
+        }
+    }
+
+    /// Force toolbar to stay visible (for unsupported format case).
+    /// When true, hover events are ignored and toolbar stays at 0.9 alpha.
+    func setForceVisible(_ force: Bool) {
+        self.forceVisible = force
+        if force {
+            // Force visible: set to full opacity
+            self.alphaValue = 0.9
+        } else {
+            // Resume normal behavior
+            let hiddenAlpha = AppConfig.shared.toolbarHiddenAlpha
+            if hasImages && !isHovered {
+                self.alphaValue = hiddenAlpha
+            }
         }
     }
 }

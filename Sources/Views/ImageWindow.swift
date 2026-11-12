@@ -4144,10 +4144,14 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
         unsupportedViewLabel?.stringValue = L10n.shared.t("Unsupported format")
         unsupportedView?.isHidden = false
+        // Keep toolbar visible when showing unsupported format
+        container?.toolbar?.setForceVisible(true)
     }
 
     private func hideUnsupportedView() {
         unsupportedView?.isHidden = true
+        // Resume normal toolbar behavior
+        container?.toolbar?.setForceVisible(false)
     }
 
     // MARK: - Status bar blink (wrap-around hints)
