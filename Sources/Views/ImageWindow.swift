@@ -4139,6 +4139,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         if unsupportedView == nil {
             let view = UnsupportedFormatView()
             container?.addSubview(view)
+            container?.unsupportedView = view
             unsupportedView = view
             unsupportedViewLabel = view.messageLabel
         }
