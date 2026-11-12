@@ -4142,6 +4142,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             container?.unsupportedView = view
             unsupportedView = view
             unsupportedViewLabel = view.messageLabel
+            // Trigger immediate layout to center the view
+            container?.needsLayout = true
+            container?.layout()
         }
         unsupportedViewLabel?.stringValue = L10n.shared.t("Unsupported format")
         unsupportedView?.isHidden = false
