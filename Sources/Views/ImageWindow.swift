@@ -4141,6 +4141,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func showUnsupportedView() {
         container?.imageView?.image = nil
         container?.imageView?.livePhotoURL = nil
+        container?.imageView?.needsDisplay = true  // Force redraw to clear old image
         container?.placeholder?.isHidden = true
         if unsupportedView == nil {
             let view = UnsupportedFormatView()
