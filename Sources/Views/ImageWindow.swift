@@ -819,6 +819,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self.currentFormat = nil
                 self.hideLoadSpinner()
                 self.showUnsupportedView()
+                // Update window title and status bar for this file
+                self.updateWindowTitle()
+                self.updateStatusBar()
             }
         }
     }
@@ -1287,6 +1290,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             if currentImageIsScaled {
                 resolution += " (\(L10n.shared.t("scaled")))"
             }
+        } else if !imageURLs.isEmpty {
+            // Unsupported format: show dash for resolution
+            resolution = "-"
         }
         statusBar.resolutionLabel.stringValue = resolution
 
