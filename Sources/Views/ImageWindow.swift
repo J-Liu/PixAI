@@ -4135,6 +4135,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func showUnsupportedView() {
         container?.imageView?.image = nil
         container?.imageView?.livePhotoURL = nil
+        container?.placeholder?.isHidden = true
         if unsupportedView == nil {
             let view = UnsupportedFormatView()
             container?.addSubview(view)
@@ -4590,16 +4591,16 @@ private final class UnsupportedFormatView: NSView {
     private let iconView = NSImageView()
 
     init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 170))
+        super.init(frame: NSRect(x: 0, y: 0, width: 720, height: 490))
         wantsLayer = true
         iconView.image = NSImage(systemSymbolName: "photo.badge.exclamationmark", accessibilityDescription: nil)
-        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)
-        iconView.contentTintColor = NSColor(white: 0.5, alpha: 1)
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 120, weight: .light)
+        iconView.contentTintColor = NSColor(white: 0.55, alpha: 1)
         iconView.imageScaling = .scaleProportionallyUpOrDown
         addSubview(iconView)
 
-        messageLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        messageLabel.textColor = NSColor(white: 0.5, alpha: 1)
+        messageLabel.font = NSFont.systemFont(ofSize: 34, weight: .medium)
+        messageLabel.textColor = NSColor(white: 0.55, alpha: 1)
         messageLabel.alignment = .center
         messageLabel.maximumNumberOfLines = 2
         addSubview(messageLabel)
@@ -4609,10 +4610,10 @@ private final class UnsupportedFormatView: NSView {
 
     override func layout() {
         super.layout()
-        let iconSize: CGFloat = 80
-        iconView.frame = NSRect(x: (bounds.width - iconSize) / 2, y: bounds.height - iconSize - 14, width: iconSize, height: iconSize)
+        let iconSize: CGFloat = 160
+        iconView.frame = NSRect(x: (bounds.width - iconSize) / 2, y: bounds.height - iconSize - 50, width: iconSize, height: iconSize)
         messageLabel.sizeToFit()
-        let lw = min(messageLabel.frame.width, bounds.width - 16)
-        messageLabel.frame = NSRect(x: (bounds.width - lw) / 2, y: 14, width: lw, height: messageLabel.frame.height)
+        let lw = min(messageLabel.frame.width, bounds.width - 40)
+        messageLabel.frame = NSRect(x: (bounds.width - lw) / 2, y: 50, width: lw, height: messageLabel.frame.height)
     }
 }

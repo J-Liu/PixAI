@@ -93,9 +93,9 @@ class ViewerContainerView: NSView {
                 height: size.height
             )
         }
-        // Unsupported-format placeholder: centered in the image area.
+        // Unsupported-format placeholder: centered in the image area, same size as placeholder.
         if let unsupportedView {
-            let size = unsupportedView.frame.size
+            let size = PlaceholderView.preferredSize
             let areaHeight = max(0, b.height - statusH)
             unsupportedView.frame = NSRect(
                 x: (b.width - size.width) / 2,
