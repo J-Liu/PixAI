@@ -296,7 +296,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             onDeleteTap: { [weak self] in
                 self?.deleteCurrentImage()
             },
-            onExitTap: { [weak self] in
+            onExitTap: {
                 NSApp.terminate(nil)
             }
         )
