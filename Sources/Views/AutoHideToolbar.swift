@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// A semi-transparent toolbar that auto-hides (dims) when not hovered.
 /// Layout (left → right):
-/// [◀] | [⇅] [⇆] | [↻] [↺] [+] [−] [fit/100%] [crop] | [▶/⏸] | [enhance] [dewatermark] [upscale] [dedup] | [save] [delete] | [▶]
+/// [◀] | [save] [crop] | [⇅] [⇆] [↻] [↺] | [▶/⏸] | [enhance] [dewatermark] [upscale] [dedup] | [delete] [exit] | [▶]
 class AutoHideToolbar: NSView {
     let leftButton: NSButton
     let rightButton: NSButton
@@ -25,12 +25,14 @@ class AutoHideToolbar: NSView {
     let flipVerticalButton: NSButton
     let saveButton: NSButton
     let deleteButton: NSButton
+    let exitButton: NSButton
     private let leftDivider: NSView
     private let flipGroupDivider: NSView
     private let rotateGroupDivider: NSView
     private let zoomGroupDivider: NSView
     private let aiGroupLeftDivider: NSView
     private let saveGroupDivider: NSView
+    private let exitGroupDivider: NSView
 
     private var isHovered = false
     /// Whether images are loaded (affects default visibility)
@@ -54,6 +56,7 @@ class AutoHideToolbar: NSView {
     private let onFlipVerticalTap: () -> Void
     private let onSaveTap: () -> Void
     private let onDeleteTap: () -> Void
+    private let onExitTap: () -> Void
     private var l10nObserver: NSObjectProtocol?
 
     /// Called when toolbar visibility changes due to hover (true = visible, false = hidden).
@@ -117,7 +120,8 @@ class AutoHideToolbar: NSView {
          onFlipHorizontalTap: @escaping () -> Void,
          onFlipVerticalTap: @escaping () -> Void,
          onSaveTap: @escaping () -> Void,
-         onDeleteTap: @escaping () -> Void) {
+         onDeleteTap: @escaping () -> Void,
+         onExitTap: @escaping () -> Void) {
         self.onLeftTap = onLeftTap
         self.onRightTap = onRightTap
         self.onZoomInTap = onZoomInTap
@@ -135,6 +139,7 @@ class AutoHideToolbar: NSView {
         self.onFlipVerticalTap = onFlipVerticalTap
         self.onSaveTap = onSaveTap
         self.onDeleteTap = onDeleteTap
+        self.onExitTap = onExitTap
         leftButton = NSButton()
         rightButton = NSButton()
         zoomInButton = NSButton()
@@ -152,6 +157,7 @@ class AutoHideToolbar: NSView {
         flipVerticalButton = NSButton()
         saveButton = NSButton()
         deleteButton = NSButton()
+        exitButton = NSButton()
         // Thin vertical dividers (must be set before super.init, as they are
         // stored `let` properties).
         leftDivider = Self.makeDivider()
@@ -160,6 +166,7 @@ class AutoHideToolbar: NSView {
         zoomGroupDivider = Self.makeDivider()
         aiGroupLeftDivider = Self.makeDivider()
         saveGroupDivider = Self.makeDivider()
+        exitGroupDivider = Self.makeDivider()
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -184,28 +191,27 @@ class AutoHideToolbar: NSView {
         configureButton(flipVerticalButton, symbolName: "arrow.up.arrow.down")
         configureButton(saveButton, symbolName: "square.and.arrow.down")
         configureButton(deleteButton, symbolName: "trash")
+        configureButton(exitButton, symbolName: "power")
 
         addSubview(leftButton)
         addSubview(leftDivider)
+        addSubview(saveButton)
+        addSubview(cropButton)
+        addSubview(flipGroupDivider)
         addSubview(flipVerticalButton)
         addSubview(flipHorizontalButton)
-        addSubview(flipGroupDivider)
         addSubview(rotateClockwiseButton)
         addSubview(rotateCounterclockwiseButton)
-        addSubview(zoomInButton)
-        addSubview(zoomOutButton)
-        addSubview(fitToggleButton)
         addSubview(rotateGroupDivider)
         addSubview(playPauseButton)
         addSubview(zoomGroupDivider)
-        addSubview(cropButton)
         addSubview(aiEnhanceQualityButton)
         addSubview(aiDewatermarkButton)
         addSubview(aiUpscaleButton)
         addSubview(aiDedupButton)
         addSubview(aiGroupLeftDivider)
-        addSubview(saveButton)
         addSubview(deleteButton)
+        addSubview(exitButton)
         addSubview(saveGroupDivider)
         addSubview(rightButton)
 
@@ -254,6 +260,7 @@ class AutoHideToolbar: NSView {
         aiDedupButton.toolTip = t("AI dedup")
         saveButton.toolTip = t("Save (overwrite)")
         deleteButton.toolTip = t("Delete (move to Trash)")
+        exitButton.toolTip = t("Exit")
     }
 
     private static func makeDivider() -> NSView {
@@ -340,7 +347,7 @@ class AutoHideToolbar: NSView {
     }
 
     /// Position all controls in a centered row:
-    /// [◀] | [⇅] [⇆] | [↻] [↺] [+] [−] [fit] | [▶/⏸] | [crop] [enhance] [dewatermark] [upscale] [dedup] | [save] [delete] | [▶].
+    /// [◀] | [save] [crop] | [⇅] [⇆] [↻] [↺] | [▶/⏸] | [enhance] [dewatermark] [upscale] [dedup] | [delete] [exit] | [▶]
     override func layout() {
         super.layout()
 
@@ -349,49 +356,54 @@ class AutoHideToolbar: NSView {
         let dividerW: CGFloat = 1
         let dividerH: CGFloat = 30
         let dividerPad: CGFloat = 12
-        let flipGroupWidth = buttonSize * 2 + gap
-        let rotateZoomGroupWidth = buttonSize * 5 + gap * 4
-        let cropAiGroupWidth = buttonSize * 5 + gap * 4
-        let saveGroupWidth = buttonSize * 2 + gap
+        let saveCropGroupWidth = buttonSize * 2 + gap
+        let flipRotateGroupWidth = buttonSize * 4 + gap * 3
+        let aiGroupWidth = buttonSize * 4 + gap * 3
+        let deleteExitGroupWidth = buttonSize * 2 + gap
         let totalWidth = buttonSize
-            + dividerPad + dividerW + dividerPad + flipGroupWidth
-            + dividerPad + dividerW + dividerPad + rotateZoomGroupWidth
+            + dividerPad + dividerW + dividerPad + saveCropGroupWidth
+            + dividerPad + dividerW + dividerPad + flipRotateGroupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
-            + dividerPad + dividerW + dividerPad + cropAiGroupWidth
-            + dividerPad + dividerW + dividerPad + saveGroupWidth
+            + dividerPad + dividerW + dividerPad + aiGroupWidth
+            + dividerPad + dividerW + dividerPad + deleteExitGroupWidth
             + dividerPad + dividerW + dividerPad + buttonSize
 
         var x = (bounds.width - totalWidth) / 2
         let y = (bounds.height - buttonSize) / 2
 
+        // [◀]
         leftButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         leftDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
-        flipVerticalButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+
+        // [save] [crop]
+        saveButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
-        flipHorizontalButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        cropButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         flipGroupDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
+
+        // [⇅] [⇆] [↻] [↺]
+        flipVerticalButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        flipHorizontalButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
         rotateClockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
         rotateCounterclockwiseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
-        zoomInButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
-        zoomOutButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
-        fitToggleButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         rotateGroupDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
+
+        // [▶/⏸]
         playPauseButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         zoomGroupDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
-        cropButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
+
+        // [enhance] [dewatermark] [upscale] [dedup]
         aiEnhanceQualityButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + gap
         aiDewatermarkButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
@@ -402,12 +414,16 @@ class AutoHideToolbar: NSView {
         x += buttonSize + dividerPad
         aiGroupLeftDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
-        saveButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
-        x += buttonSize + gap
+
+        // [delete] [exit]
         deleteButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
+        x += buttonSize + gap
+        exitButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
         x += buttonSize + dividerPad
         saveGroupDivider.frame = NSRect(x: x, y: (bounds.height - dividerH) / 2, width: dividerW, height: dividerH)
         x += dividerW + dividerPad
+
+        // [▶]
         rightButton.frame = NSRect(x: x, y: y, width: buttonSize, height: buttonSize)
     }
 
@@ -454,6 +470,8 @@ class AutoHideToolbar: NSView {
             onSaveTap()
         } else if sender == deleteButton {
             onDeleteTap()
+        } else if sender == exitButton {
+            onExitTap()
         }
     }
 

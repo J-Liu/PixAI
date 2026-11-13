@@ -295,6 +295,9 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             },
             onDeleteTap: { [weak self] in
                 self?.deleteCurrentImage()
+            },
+            onExitTap: { [weak self] in
+                NSApp.terminate(nil)
             }
         )
         toolbar.onVisibilityChange = { [weak self] visible in
@@ -4285,6 +4288,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         let oneClickItem = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
         oneClickItem.isEnabled = !isAnimated
+        menu.addItem(.separator())
+        _ = item(t("Exit"), #selector(contextExit))
         return menu
     }
 
@@ -4320,6 +4325,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc private func contextAIEnhance() { toggleAIEnhance() }
     @objc private func contextAIDedup() { runAIDedup() }
     @objc private func contextAIOneClick() { runAIOneClickEnhance() }
+    @objc private func contextExit() { NSApp.terminate(nil) }
 
     // MARK: - NSMenuDelegate
 

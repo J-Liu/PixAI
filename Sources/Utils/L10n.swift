@@ -217,6 +217,7 @@ final class L10n {
         "OK": "好",
         "License": "许可证",
         "Notice": "声明",
+        "Exit": "退出",
         "Playback ended": "播放结束",
         "Unsupported format": "不支持的格式",
 
@@ -536,6 +537,7 @@ final class L10n {
         "OK": "好",
         "License": "授權條款",
         "Notice": "聲明",
+        "Exit": "結束",
         "Playback ended": "播放結束",
         "Unsupported format": "不支援的格式",
 
