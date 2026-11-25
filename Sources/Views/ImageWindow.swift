@@ -141,7 +141,6 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     // Cursor auto-hide
     private var cursorHideTimer: Timer?
     private var cursorHidden = false
-    private var mouseMovedMonitor: Any?
 
     /// Refreshes localized chrome when the UI language changes.
     private var l10nObserver: NSObjectProtocol?
@@ -4207,31 +4206,34 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     // MARK: - Cursor auto-hide
 
+    private var lastMouseLocation: NSPoint = .zero
+    private var idleSeconds: TimeInterval = 0
+
     private func startCursorAutoHide() {
         stopCursorAutoHide()
+        lastMouseLocation = NSEvent.mouseLocation
+        idleSeconds = 0
 
-        // Monitor mouse movement - show cursor immediately on any movement
-        mouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
-            guard let self = self else { return }
-            if self.cursorHidden {
-                NSCursor.unhide()
-                self.cursorHidden = false
+        cursorHideTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+            guard let self = self, let window = self.window, window.isVisible else {
+                timer.invalidate()
+                return
             }
-            self.resetCursorHideTimer()
-        }
 
-        // Start the idle timer
-        resetCursorHideTimer()
-    }
+            let currentLocation = NSEvent.mouseLocation
 
-    private func resetCursorHideTimer() {
-        cursorHideTimer?.invalidate()
-        cursorHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
-            // Check if cursor is still in window
-            if let window = self.window, window.isVisible {
-                let mouseLoc = NSEvent.mouseLocation
-                if window.frame.contains(mouseLoc) && !self.cursorHidden {
+            if currentLocation != self.lastMouseLocation {
+                // Mouse moved
+                self.lastMouseLocation = currentLocation
+                self.idleSeconds = 0
+                if self.cursorHidden {
+                    NSCursor.unhide()
+                    self.cursorHidden = false
+                }
+            } else if window.frame.contains(currentLocation) {
+                // Mouse is idle and inside window
+                self.idleSeconds += 0.1
+                if self.idleSeconds >= 3.0 && !self.cursorHidden {
                     NSCursor.hide()
                     self.cursorHidden = true
                 }
@@ -4242,10 +4244,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func stopCursorAutoHide() {
         cursorHideTimer?.invalidate()
         cursorHideTimer = nil
-        if let monitor = mouseMovedMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseMovedMonitor = nil
-        }
+        idleSeconds = 0
         if cursorHidden {
             NSCursor.unhide()
             cursorHidden = false
