@@ -138,6 +138,11 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private var blinkRemainingTicks = 0
     private var blinkMessage = ""
 
+    // Cursor auto-hide
+    private var cursorHideTimer: Timer?
+    private var lastMouseLocation: NSPoint = .zero
+    private var cursorHidden = false
+
     /// Refreshes localized chrome when the UI language changes.
     private var l10nObserver: NSObjectProtocol?
     /// Drives slideshow playback (P / Space keys, toolbar play-pause button).
@@ -463,6 +468,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
             self.blinkTimer?.invalidate()
             self.blinkTimer = nil
+            self.stopCursorAutoHide()
 
             self.onClose?(self)
         }
@@ -679,6 +685,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             window.title = "PixAI"
             container?.placeholder?.isHidden = false
             updateStatusBar()
+            stopCursorAutoHide()
         }
     }
 
@@ -817,6 +824,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self.applyAutoAIIfNeeded(url: url)
                 // Adjust slideshow interval for animated images
                 self.adjustSlideshowIntervalForAnimated()
+                // Start cursor auto-hide when images are loaded
+                self.startCursorAutoHide()
             } catch {
                 guard generation == self.loadGeneration else { return }
                 self.currentFormat = nil
@@ -4193,6 +4202,46 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
             let on = (self.blinkRemainingTicks % 2 == 0)
             self.statusBar?.filenameLabel.stringValue = self.blinkMessage
             self.statusBar?.filenameLabel.textColor = on ? AutoHideToolbar.buttonColor : Self.statusBarTextColor
+        }
+    }
+
+    // MARK: - Cursor auto-hide
+
+    private func startCursorAutoHide() {
+        stopCursorAutoHide()
+        lastMouseLocation = NSEvent.mouseLocation
+        cursorHideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            let currentLocation = NSEvent.mouseLocation
+            if currentLocation == self.lastMouseLocation {
+                // Mouse hasn't moved, check if cursor is in window
+                if let window = self.window, window.isVisible {
+                    let windowFrame = window.frame
+                    if windowFrame.contains(currentLocation) {
+                        // Cursor is in window and hasn't moved - hide it
+                        if !self.cursorHidden {
+                            NSCursor.hide()
+                            self.cursorHidden = true
+                        }
+                    }
+                }
+            } else {
+                // Mouse moved - show cursor if hidden and reset timer
+                self.lastMouseLocation = currentLocation
+                if self.cursorHidden {
+                    NSCursor.unhide()
+                    self.cursorHidden = false
+                }
+            }
+        }
+    }
+
+    private func stopCursorAutoHide() {
+        cursorHideTimer?.invalidate()
+        cursorHideTimer = nil
+        if cursorHidden {
+            NSCursor.unhide()
+            cursorHidden = false
         }
     }
 
