@@ -6,6 +6,18 @@
         <description>PixAI releases</description>
         <language>en</language>
     <item>
+    <title>Version 0.1.19</title>
+    <pubDate>Wed, 25 Nov 2026 13:48:41 +0000</pubDate>
+    <sparkle:version>12</sparkle:version>
+    <sparkle:shortVersionString>0.1.19</sparkle:shortVersionString>
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+    <enclosure
+        url="https://github.com/J-Liu/PixAI/releases/download/v0.1.19/PixAI-0.1.19.zip"
+        sparkle:edSignature="pmgOv4fIfRzyqs0FrcVIHOLeQleZDg1PnUjEqp0aiaTqiz5JOn4oa3SKwKJRnlNmxiXtuA2e458/tDkfIGqYBQ=="
+        length="3425080"
+        type="application/octet-stream"/>
+</item>
+    <item>
     <title>Version 0.1.18</title>
     <pubDate>Fri, 13 Nov 2026 11:59:50 +0000</pubDate>
     <sparkle:version>11</sparkle:version>
