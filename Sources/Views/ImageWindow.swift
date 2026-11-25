@@ -140,8 +140,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     // Cursor auto-hide
     private var cursorHideTimer: Timer?
-    private var lastMouseLocation: NSPoint = .zero
     private var cursorHidden = false
+    private var mouseMovedMonitor: Any?
 
     /// Refreshes localized chrome when the UI language changes.
     private var l10nObserver: NSObjectProtocol?

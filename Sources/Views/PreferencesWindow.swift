@@ -422,7 +422,7 @@ final class PreferencesWindow: NSWindow {
 
         // Theme selection
         themePopup = NSPopUpButton()
-        themePopup.addItem(withTitle: t("System Default"))
+        themePopup.addItem(withTitle: t("System"))
         themePopup.addItem(withTitle: t("Light"))
         themePopup.addItem(withTitle: t("Dark"))
         let themeIdx: Int
@@ -439,7 +439,7 @@ final class PreferencesWindow: NSWindow {
 
         // Language selection
         languagePopup = NSPopUpButton()
-        languagePopup.addItem(withTitle: t("System Default"))
+        languagePopup.addItem(withTitle: t("System"))
         languagePopup.addItem(withTitle: "English")
         languagePopup.addItem(withTitle: "简体中文")
         languagePopup.addItem(withTitle: "繁體中文")
