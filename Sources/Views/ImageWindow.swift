@@ -141,7 +141,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     // Cursor auto-hide
     private var cursorHideTimer: Timer?
     private var cursorHidden = false
-    private var mouseEventMonitor: Any?
+    private var mouseLocalMonitor: Any?
+    private var mouseGlobalMonitor: Any?
 
     /// Refreshes localized chrome when the UI language changes.
     private var l10nObserver: NSObjectProtocol?
@@ -4210,8 +4211,19 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func startCursorAutoHide() {
         stopCursorAutoHide()
 
-        // Listen for mouse events (movement, click, scroll, etc.) - show cursor on any activity
-        mouseEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] _ in
+        // Local monitor for when app is active (inside app)
+        mouseLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
+            guard let self = self else { return event }
+            if self.cursorHidden {
+                NSCursor.unhide()
+                self.cursorHidden = false
+            }
+            self.resetCursorIdleTimer()
+            return event
+        }
+
+        // Global monitor for when app is in background
+        mouseGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] _ in
             guard let self = self else { return }
             if self.cursorHidden {
                 NSCursor.unhide()
@@ -4243,13 +4255,17 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func stopCursorAutoHide() {
         cursorHideTimer?.invalidate()
         cursorHideTimer = nil
-        if let monitor = mouseEventMonitor {
+        if let monitor = mouseLocalMonitor {
             NSEvent.removeMonitor(monitor)
-            mouseEventMonitor = nil
+            mouseLocalMonitor = nil
+        }
+        if let monitor = mouseGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseGlobalMonitor = nil
         }
         if cursorHidden {
             NSCursor.unhide()
-            cursorHidden = false
+            self.cursorHidden = false
         }
     }
 
