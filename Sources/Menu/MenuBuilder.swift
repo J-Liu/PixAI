@@ -103,6 +103,7 @@ class MenuBuilder {
         actionItem(fileMenu, t("Save As..."), #selector(MenuActions.saveAs(_:)), key: "s", mask: [.command, .shift])
         actionItem(fileMenu, t("Rename..."), #selector(MenuActions.rename(_:)))
         actionItem(fileMenu, t("Delete"), #selector(MenuActions.delete(_:)), key: "\u{7F}")
+        actionItem(fileMenu, t("Set as Wallpaper"), #selector(MenuActions.setAsWallpaper(_:)))
         fileMenu.addItem(NSMenuItem.separator())
 
         // Standard close: goes through the responder chain to the key window.
@@ -320,6 +321,7 @@ final class MenuActions: NSObject, NSMenuItemValidation {
     @objc func aiOneClick(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.runAIOneClickEnhance() }
     @objc func copy(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.copyImage() }
     @objc func paste(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.pasteImage() }
+    @objc func setAsWallpaper(_ sender: Any?) { MenuBuilder.activeWindowProvider?()?.setAsWallpaper() }
 
     // MARK: - NSMenuItemValidation
 

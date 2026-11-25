@@ -1638,6 +1638,84 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         }
     }
 
+    /// Set the current image as desktop wallpaper.
+    func setAsWallpaper() {
+        guard !imageURLs.isEmpty, imageURLs.indices.contains(currentIndex) else { return }
+        let url = imageURLs[currentIndex]
+
+        // For animated images, use the first frame or a poster frame
+        let imageUrl: URL
+        if isCurrentImageAnimated {
+            // Animated images can't be set as wallpaper directly; create a temporary poster
+            guard let base = baseImage, let cgImage = base.sourceCGImage else {
+                showStatusMessage(L10n.shared.t("Cannot set as wallpaper"))
+                return
+            }
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent("wallpaper_\(UUID().uuidString).png")
+            guard let data = Self.encodeImage(cgImage, fileExtension: "png") else {
+                showStatusMessage(L10n.shared.t("Cannot set as wallpaper"))
+                return
+            }
+            do {
+                try data.write(to: tempFile, options: .atomic)
+                imageUrl = tempFile
+            } catch {
+                showStatusMessage(L10n.shared.t("Cannot set as wallpaper"))
+                return
+            }
+        } else {
+            imageUrl = url
+        }
+
+        // Determine wallpaper options based on configured mode
+        // macOS 4 options: Fill Screen, Fit to Screen, Stretch to Fill Screen, Center
+        let mode = AppConfig.shared.wallpaperMode
+        let options: [NSWorkspace.DesktopImageOptionKey: Any]
+        switch mode {
+        case "fill":
+            // Fill Screen: scale proportionally to fill screen, clip overflow
+            options = [
+                .allowClipping: true,
+                .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue
+            ]
+        case "fit":
+            // Fit to Screen: scale proportionally to fit, no clipping
+            options = [
+                .allowClipping: false,
+                .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue
+            ]
+        case "stretch":
+            // Stretch to Fill Screen: stretch to fill, ignore aspect ratio
+            options = [
+                .allowClipping: true,
+                .imageScaling: NSImageScaling.scaleAxesIndependently.rawValue
+            ]
+        case "center":
+            // Center: no scaling, centered
+            options = [
+                .allowClipping: false,
+                .imageScaling: NSImageScaling.scaleNone.rawValue
+            ]
+        default:
+            options = [
+                .allowClipping: true,
+                .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue
+            ]
+        }
+
+        do {
+            // Get all screens and set wallpaper for each
+            let screens = NSScreen.screens
+            for screen in screens {
+                try NSWorkspace.shared.setDesktopImageURL(imageUrl, for: screen, options: options)
+            }
+            showStatusMessage(L10n.shared.t("Wallpaper set successfully"))
+        } catch {
+            showStatusMessage(L10n.shared.tf("Failed to set wallpaper: %@", error.localizedDescription))
+        }
+    }
+
     /// Encode a CGImage to file data in the format suggested by the extension.
     /// Lossy formats are written at 95% quality to preserve image fidelity.
     private static func encodeImage(_ cgImage: CGImage, fileExtension ext: String) -> Data? {
@@ -4362,6 +4440,8 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
         let oneClickItem = item(t("One-Click AI Auto-Enhance"), #selector(contextAIOneClick))
         oneClickItem.isEnabled = !isAnimated
         menu.addItem(.separator())
+        _ = item(t("Set as Wallpaper"), #selector(contextSetAsWallpaper))
+        menu.addItem(.separator())
         _ = item(t("Exit"), #selector(contextExit))
         return menu
     }
@@ -4398,6 +4478,7 @@ class ImageWindow: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc private func contextAIEnhance() { toggleAIEnhance() }
     @objc private func contextAIDedup() { runAIDedup() }
     @objc private func contextAIOneClick() { runAIOneClickEnhance() }
+    @objc private func contextSetAsWallpaper() { setAsWallpaper() }
     @objc private func contextExit() { NSApp.terminate(nil) }
 
     // MARK: - NSMenuDelegate

@@ -108,6 +108,7 @@ final class PreferencesWindow: NSWindow {
     private var updateFrequencyPopup: NSPopUpButton!
     private var checkUpdatesButton: NSButton!
     private var maxRecentFilesField: NSTextField!
+    private var wallpaperModePopup: NSPopUpButton!
 
     // Controls – AI Enhance
     private var enhanceVibranceField: NSTextField!
@@ -550,6 +551,24 @@ final class PreferencesWindow: NSWindow {
         maxRecentFilesField.target = self
         maxRecentFilesField.action = #selector(maxRecentFilesFieldChanged(_:))
         stack.addArrangedSubview(makeRow(label: t("Max recent files (0–50)"), control: maxRecentFilesField))
+
+        // Wallpaper mode
+        wallpaperModePopup = NSPopUpButton()
+        wallpaperModePopup.addItem(withTitle: t("Fill Screen"))
+        wallpaperModePopup.addItem(withTitle: t("Fit to Screen"))
+        wallpaperModePopup.addItem(withTitle: t("Stretch to Fill Screen"))
+        wallpaperModePopup.addItem(withTitle: t("Center"))
+        let currentMode = AppConfig.shared.wallpaperMode
+        switch currentMode {
+        case "fit": wallpaperModePopup.selectItem(at: 1)
+        case "stretch": wallpaperModePopup.selectItem(at: 2)
+        case "center": wallpaperModePopup.selectItem(at: 3)
+        default: wallpaperModePopup.selectItem(at: 0)
+        }
+        wallpaperModePopup.target = self
+        wallpaperModePopup.action = #selector(wallpaperModeChanged(_:))
+        wallpaperModePopup.widthAnchor.constraint(equalToConstant: controlWidth).isActive = true
+        stack.addArrangedSubview(makeRow(label: t("Wallpaper Mode"), control: wallpaperModePopup))
 
         // Checkboxes at the bottom
         quitCheckbox = NSButton(checkboxWithTitle: t("Quit app when the last window is closed"), target: self, action: #selector(toggleQuitOnLastClose(_:)))
@@ -1114,6 +1133,15 @@ final class PreferencesWindow: NSWindow {
             let maxRecentStr = String(AppConfig.shared.maxRecentFiles)
             if self.maxRecentFilesField.stringValue != maxRecentStr { self.maxRecentFilesField.stringValue = maxRecentStr }
 
+            let wallpaperIdx: Int
+            switch AppConfig.shared.wallpaperMode {
+            case "fit": wallpaperIdx = 1
+            case "stretch": wallpaperIdx = 2
+            case "center": wallpaperIdx = 3
+            default: wallpaperIdx = 0
+            }
+            if self.wallpaperModePopup.indexOfSelectedItem != wallpaperIdx { self.wallpaperModePopup.selectItem(at: wallpaperIdx) }
+
             let vibranceStr = String(format: "%.2f", AppConfig.shared.enhanceVibrance)
             if self.enhanceVibranceField.stringValue != vibranceStr { self.enhanceVibranceField.stringValue = vibranceStr }
             if abs(self.enhanceVibranceStepper.doubleValue - AppConfig.shared.enhanceVibrance) > 0.001 {
@@ -1363,6 +1391,13 @@ final class PreferencesWindow: NSWindow {
         let clamped = min(max(value, 0), 50)
         sender.integerValue = clamped
         AppConfig.shared.maxRecentFiles = clamped
+    }
+
+    @objc private func wallpaperModeChanged(_ sender: NSPopUpButton) {
+        let modes = ["fill", "fit", "stretch", "center"]
+        let idx = sender.indexOfSelectedItem
+        guard idx >= 0, idx < modes.count else { return }
+        AppConfig.shared.wallpaperMode = modes[idx]
     }
 
     // MARK: - Actions – AI Enhance

@@ -96,6 +96,8 @@ final class AppConfig {
         static let lastUpdateCheck: String = ""
         /// Maximum number of recent files to remember (default 20, range 0...50).
         static let maxRecentFiles = 20
+        /// Wallpaper mode: "fill", "fit", "stretch", "center"
+        static let wallpaperMode: String = "fill"
     }
 
     /// Allowed range for the image cache count.
@@ -156,6 +158,8 @@ final class AppConfig {
         // Recent files
         var maxRecentFiles: Int?
         var recentFiles: [String]?
+        // Wallpaper
+        var wallpaperMode: String?
     }
 
     private let fileURL: URL
@@ -214,6 +218,7 @@ final class AppConfig {
     // Recent files
     private var _maxRecentFiles: Int = Defaults.maxRecentFiles
     private var _recentFiles: [String] = []
+    private var _wallpaperMode: String = Defaults.wallpaperMode
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         fileURL = home.appendingPathComponent(".pixai/config.json")
@@ -988,6 +993,34 @@ final class AppConfig {
         if changed { save(); notifyChange() }
     }
 
+    // MARK: - Wallpaper mode
+
+    /// Wallpaper mode: "center", "tile", "stretch"
+    var wallpaperMode: String {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _wallpaperMode
+        }
+        set {
+            let normalized = Self.normalizeWallpaperMode(newValue)
+            lock.lock()
+            let changed = _wallpaperMode != normalized
+            if changed { _wallpaperMode = normalized }
+            lock.unlock()
+            if changed { save(); notifyChange() }
+        }
+    }
+
+    static func normalizeWallpaperMode(_ value: String) -> String {
+        switch value {
+        case "fill": return "fill"
+        case "fit": return "fit"
+        case "stretch": return "stretch"
+        case "center": return "center"
+        default: return "fill"
+        }
+    }
+
     static func normalizeCropMode(_ value: String) -> String {
         switch value {
         case "select": return "select"
@@ -1214,6 +1247,8 @@ final class AppConfig {
         // Recent files
         if let v = payload.maxRecentFiles { _maxRecentFiles = min(max(v, 0), 50) }
         if let v = payload.recentFiles { _recentFiles = v.filter { !$0.isEmpty } }
+        // Wallpaper
+        if let v = payload.wallpaperMode { _wallpaperMode = Self.normalizeWallpaperMode(v) }
         lock.unlock()
     }
 
@@ -1260,7 +1295,8 @@ final class AppConfig {
             updateCheckFrequency: _updateCheckFrequency,
             lastUpdateCheck: _lastUpdateCheck.isEmpty ? nil : _lastUpdateCheck,
             maxRecentFiles: _maxRecentFiles,
-            recentFiles: _recentFiles.isEmpty ? nil : _recentFiles
+            recentFiles: _recentFiles.isEmpty ? nil : _recentFiles,
+            wallpaperMode: _wallpaperMode == Defaults.wallpaperMode ? nil : _wallpaperMode
         )
         lock.unlock()
         do {
